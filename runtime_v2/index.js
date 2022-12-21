@@ -2,6 +2,8 @@ import { _createBlock, _createComponent, onCleanup, useWindow, WindowProvider } 
 import { _declareBlock } from './blocks.js';
 import { createSignal, createMemo, createEffect, createContext, useContext, onError, untrack } from './signals.js';
 
+import { createServer } from './server.js';
+
 export {
     createSignal,
     createMemo,
@@ -15,5 +17,7 @@ export {
     untrack,
     _declareBlock,
     _createBlock,
-    _createComponent
+    _createComponent,
+
+    createServer
 }
