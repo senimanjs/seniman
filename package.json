@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "",
   "main": "./runtime_v2/index.js",
   "type": "module",
