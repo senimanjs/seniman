@@ -23,6 +23,12 @@ if (!fs.existsSync(target_directory)) {
     fs.mkdirSync(target_directory);
 }
 
+export async function runFullBuild() {
+    await compileAll({ throwErrorOnSyntaxError: true });
+    await buildClientScaffolding();
+    await copyPublicFiles();
+    await compileGlobalCSS();
+}
 
 export async function buildClientScaffolding() {
     let jsCode = await fs.promises.readFile(__dirname + '/frontend/index-entry.js');

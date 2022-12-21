@@ -1,8 +1,5 @@
-import { buildClientScaffolding, compileAll, compileGlobalCSS, copyPublicFiles } from './shared.js';
+import { runFullBuild } from '../compiler/build.js';
 
-await compileAll({ throwErrorOnSyntaxError: true });
-await buildClientScaffolding();
-await copyPublicFiles();
-await compileGlobalCSS();
+await runFullBuild();
 
 console.log('Build finished.');
