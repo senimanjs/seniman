@@ -17,7 +17,6 @@ let PENDING = 2;
 
 
 export function createRoot(fn, detachedOwner, window) {
-
     let listener = Listener, owner = Owner;
     let root = {
         owned: null,
@@ -412,7 +411,7 @@ export function createSignal(initialValue) {
 }
 
 export function getActiveWindow() {
-    return Owner.window;
+    return Owner?.window;
 }
 
 function createComputation(fn, init, pure, state, options) {

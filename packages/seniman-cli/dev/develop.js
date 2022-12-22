@@ -1,9 +1,10 @@
 import chokidar from 'chokidar';
 
 import { buildClientScaffolding, compileAll, recompile, compileGlobalCSS, copyPublicFiles, addFilesToCompile, getConfig } from '../compiler/build.js';
-import { createServer, updateBuildDev } from '../runtime_v2/server.js';
 
-export async function develop() {
+export async function develop(senimanModule) {
+
+    let { createServer, updateBuildDev } = senimanModule;
     let config = await getConfig();
 
     await compileAll({ config, throwErrorOnSyntaxError: false });

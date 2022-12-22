@@ -3,7 +3,7 @@ import zlib from 'node:zlib';
 
 import path from 'path';
 import fsExtra from 'fs-extra';
-import { getCompiledCompressionMap, processFile } from '../compiler/compiler.js';
+import { getCompiledCompressionMap, processFile } from './compiler.js';
 import { fileURLToPath } from 'url';
 import uglifyjs from 'uglify-js';
 import CleanCSS from 'clean-css';
@@ -61,7 +61,7 @@ export async function buildClientScaffolding(config) {
 
 export async function compileFile(config, fileName) {
     let full_path = fileName == '_platform.js' ?
-        path.join(__dirname, '../runtime_v2/_platform.js') :
+        path.join(__dirname, '/files/_platform.js') :
         path.join(config.componentDirectory, fileName);
 
     let fileString = await fs.promises.readFile(full_path);

@@ -2,16 +2,15 @@
 
 import { program } from 'commander';
 import { develop } from './dev/develop.js';
-//import { build } from './dev/build.js';
-
 import { runFullBuild, getConfig } from './compiler/build.js';
-import { createServer } from './runtime_v2/server.js';
 
 program
     .command('dev')
     .description('Run the development process -- run it in the application folder.')
-    .action(() => {
-        develop();
+    .action(async () => {
+        // TODO: is there a cleaner way to make sure the CLI uses the application's local seniman installation?
+        let senimanModule = await import(process.cwd() + '/node_modules/seniman/index.js');
+        develop(senimanModule);
     });
 
 program
@@ -24,12 +23,16 @@ program
 
 program
     .command('run')
-    .description('Run the built application code in the target folder.')
+    .description('Run the built application code in the target folders.')
     .action(async () => {
+
+
+        // TODO: is there a cleaner way to make sure the CLI uses the application's local seniman installation?
+        let senimanModule = await import(process.cwd() + '/node_modules/seniman/index.js');
         let config = await getConfig();
         let port = parseInt(process.env.PORT) || 3002;
 
-        await createServer({ port: port, buildPath: config.targetDirectory });
+        await senimanModule.createServer({ port: port, buildPath: config.targetDirectory });
     });
 
 program

@@ -2,6 +2,8 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { Window } from './window.js';
 import fs from 'node:fs';
 
+console.log('Starting worker');
+
 let windowMap = new Map();
 let buildPath = workerData.buildPath;
 
