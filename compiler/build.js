@@ -8,6 +8,8 @@ import { fileURLToPath } from 'url';
 import uglifyjs from 'uglify-js';
 import CleanCSS from 'clean-css';
 
+const __dirname = path.dirname(fileURLToPath(new URL(import.meta.url)));
+
 export async function getConfig() {
     let cwd = process.cwd();
     let configPath = cwd + '/config.js';
@@ -34,7 +36,6 @@ export async function buildClientScaffolding(config) {
 
     let targetDirectory = config.targetDirectory;
 
-    const __dirname = path.dirname(fileURLToPath(new URL(import.meta.url)));
     let jsCode = await fs.promises.readFile(__dirname + '/frontend/index-entry.js');
 
     let jsCodeString = jsCode.toString();
@@ -59,7 +60,10 @@ export async function buildClientScaffolding(config) {
 }
 
 export async function compileFile(config, fileName) {
-    let full_path = path.join(config.componentDirectory, fileName);
+    let full_path = fileName == '_platform.js' ?
+        path.join(__dirname, '../runtime_v2/_platform.js') :
+        path.join(config.componentDirectory, fileName);
+
     let fileString = await fs.promises.readFile(full_path);
     let code = processFile(fileName, fileString);
 
@@ -121,8 +125,9 @@ export async function compileAll({ config, throwErrorOnSyntaxError }) {
         fs.mkdirSync(config.targetDirectory);
     }
 
-    let fileNames = fs.readdirSync(config.componentDirectory).reverse(); // need _reverse() so _platform file comes first.
+    let fileNames = fs.readdirSync(config.componentDirectory).reverse();
 
+    addFilesToCompile(['_platform.js']);
     addFilesToCompile(fileNames);
 
     let { success } = await recompile(config);

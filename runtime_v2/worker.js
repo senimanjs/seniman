@@ -5,15 +5,17 @@ import fs from 'node:fs';
 let windowMap = new Map();
 let buildPath = workerData.buildPath;
 
-
 let importStartTime = performance.now();
 
-// TODO: set rootComponent path from config value instead of hardcoding
 let platformComponent = await import(buildPath + '/_platform.js');
+
+// TODO: set rootComponent path from config value instead of hardcoding
+let RootComponent = (await import(buildPath + '/RootComponent.js')).default;
 
 let build = {
     HeadTag: platformComponent.HeadTag,
     BodyTag: platformComponent.BodyTag,
+    RootComponent: RootComponent,
 
     compressionCommandBuffer: await (fs.promises.readFile(buildPath + '/compression-command.bin')),
     globalCss: (await (fs.promises.readFile(buildPath + '/global.css'))).toString()

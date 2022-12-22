@@ -111,7 +111,7 @@ export class Window {
             rootOwner = getOwner();
 
             this._attach(1, 0, _createComponent(build.HeadTag, { cssText: build.globalCss, pageTitle, window: this.windowContext }));
-            this._attach(2, 0, _createComponent(build.BodyTag, { syntaxErrors: build.syntaxErrors, window: this.windowContext }));
+            this._attach(2, 0, _createComponent(build.BodyTag, { syntaxErrors: build.syntaxErrors, window: this.windowContext, RootComponent: build.RootComponent }));
 
             this.rootDisposer = dispose;
 
