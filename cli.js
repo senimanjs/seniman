@@ -2,8 +2,10 @@
 
 import { program } from 'commander';
 import { develop } from './dev/develop.js';
-import { run } from './dev/run.js';
-import { build } from './dev/build.js';
+//import { build } from './dev/build.js';
+
+import { runFullBuild, getConfig } from './compiler/build.js';
+import { createServer } from './runtime_v2/server.js';
 
 program
     .command('dev')
@@ -16,15 +18,25 @@ program
     .command('build')
     .description('Compile the application code.')
     .action(() => {
-        build();
+        runFullBuild();
         console.log('Build finished.');
     });
 
 program
     .command('run')
     .description('Run the built application code in the target folder.')
-    .action(() => {
-        run();
+    .action(async () => {
+        let config = await getConfig();
+        let port = parseInt(process.env.PORT) || 3002;
+
+        await createServer({ port: port, buildPath: config.targetDirectory });
+    });
+
+program
+    .command('create')
+    .description('Create application.')
+    .action((appName) => {
+        console.log('Creating application', appName);
     });
 
 program.parse(process.argv);

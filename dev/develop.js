@@ -1,23 +1,25 @@
 import chokidar from 'chokidar';
 
-import { buildClientScaffolding, compileAll, recompile, compileGlobalCSS, copyPublicFiles, target_directory, directory_name, addFilesToCompile } from '../compiler/build.js';
+import { buildClientScaffolding, compileAll, recompile, compileGlobalCSS, copyPublicFiles, addFilesToCompile, getConfig } from '../compiler/build.js';
 import { createServer, updateBuildDev } from '../runtime_v2/server.js';
 
 export async function develop() {
-    await compileAll({ throwErrorOnSyntaxError: false });
-    await buildClientScaffolding();
-    await copyPublicFiles();
-    await compileGlobalCSS();
+    let config = await getConfig();
 
-    await createServer({ port: 3002, buildPath: target_directory });
+    await compileAll({ config, throwErrorOnSyntaxError: false });
+    await buildClientScaffolding(config);
+    await copyPublicFiles(config);
+    await compileGlobalCSS(config);
+
+    await createServer({ port: 3002, buildPath: config.targetDirectory });
 
     const sleep = (s) =>
         new Promise((p) => setTimeout(p, s));
 
-    const watcher = chokidar.watch(directory_name, { persistent: true })
+    const watcher = chokidar.watch(config.componentDirectory, { persistent: true })
         .on('change', async path => {
 
-            let fileName = path.split(directory_name + '/')[1];
+            let fileName = path.split(config.componentDirectory + '/')[1];
             console.log(`File ${fileName} has been changed`);
 
             // exit the current worker, and start compilation.
@@ -28,7 +30,7 @@ export async function develop() {
             addFilesToCompile([fileName]);
 
             await sleep(10);
-            await recompile();
+            await recompile(config);
             updateBuildDev();
         });
 }
