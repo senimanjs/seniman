@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import path from 'path';
+import fs from 'fs';
+import fsExtra from 'fs-extra';
+import { fileURLToPath } from 'url';
 
 import { program } from 'commander';
 import { develop } from './dev/develop.js';
@@ -36,10 +40,22 @@ program
     });
 
 program
-    .command('create')
+    .command('create <appName>')
     .description('Create application.')
-    .action((appName) => {
+    .action(async (appName) => {
         console.log('Creating application', appName);
+        const __dirname = path.dirname(fileURLToPath(new URL(import.meta.url)));
+
+        await fsExtra.copy(__dirname + '/new-app-template', process.cwd() + '/' + appName);
+
+        let targetSenimanVersion = '0.0.7';
+
+        let packageJsonStringTemplate = await fs.promises.readFile(process.cwd() + '/' + appName + '/package.json', 'utf-8');
+        let packageJsonString = packageJsonStringTemplate.replace('$APP_NAME', appName).replace('$SENIMAN_VERSION', '^' + targetSenimanVersion);
+
+        await fs.promises.writeFile(process.cwd() + '/' + appName + '/package.json', packageJsonString);
+
+        console.log('Created!');
     });
 
 program.parse(process.argv);
