@@ -101,7 +101,7 @@ export async function recompile(config) {
 
         if (err.name == 'SyntaxError') {
             trackedSyntaxErrors[fileName] = {
-                file: 'file://' + directory_name + '/' + fileName,
+                file: 'file://' + config.componentDirectory + '/' + fileName,
                 name: err.name,
                 message: err.message,
                 lineNumber: err.loc.line,
