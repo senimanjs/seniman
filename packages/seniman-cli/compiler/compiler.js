@@ -53,7 +53,8 @@ const validElementAttributeNames = new Set([
     'onclick',
     'id',
     'name',
-    'content'
+    'content',
+    'placeholder'
 ]);
 
 const compressionRegistry = {
@@ -291,7 +292,8 @@ export function processFile(fileName, fileString) {
                     // Allocate a target entry to this element.
                     // TODO: do better checking on this. 
                     // only need to target if element has *dynamic* styling, not static.
-                    element.isTarget = hasEventHandlers || hasStyling || attributeNames.has('value');
+                    // TODO: REALLY fix this soon.. especially dynamic attribute value checking
+                    element.isTarget = hasEventHandlers || hasStyling || attributeNames.has('value') || attributeNames.has('src');
 
                     if (element.isTarget) {
                         targetId = contextBlock.targetElementCount;
