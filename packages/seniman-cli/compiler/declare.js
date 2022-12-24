@@ -1,6 +1,5 @@
 import { encode } from 'base64-arraybuffer';
 
-
 export function createDeclareBlockExpression(block, encodeCompressionMap) {
 
     return {

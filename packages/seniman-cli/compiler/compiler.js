@@ -214,6 +214,45 @@ function stylingAttributeInAttributeNames(names) {
     return false;
 }
 
+function isStaticExpression(expression) {
+    return expression.type == 'StringLiteral' || expression.type == 'NumericLiteral';
+}
+
+function nodeHasDynamicAttribute(node) {
+    let attributes = node.openingElement.attributes;
+
+    for (let i = 0; i < attributes.length; i++) {
+        let attr = attributes[i];
+        let attrName = attr.name.name;
+        let value = attr.value;
+
+        if (attrName == 'style') {
+            if (value.type == 'JSXExpressionContainer') {
+                // Only support ObjectExpression for now
+                for (let j = 0; j < value.expression.properties.length; j++) {
+                    let prop = value.expression.properties[j];
+
+                    if (!isStaticExpression(prop.value)) {
+                        return true;
+                    }
+                }
+
+            } else {
+                // Don't support static string styles for now
+                throw new Error();
+            }
+        } else {
+            if (value.type == 'JSXExpressionContainer') {
+                if (!isStaticExpression(value.expression)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 export function processFile(fileName, fileString) {
 
     console.log('========================\nprocessing', fileName);
@@ -257,7 +296,7 @@ export function processFile(fileName, fileString) {
                 let attributeNames = getAttributeNames(node);
                 let hasAttributes = attributeNames.size > 0;
                 let hasEventHandlers = hasAttributes && eventNameInAttributeNames(attributeNames);
-                let hasStyling = hasAttributes && stylingAttributeInAttributeNames(attributeNames);
+                //let hasStyling = hasAttributes && stylingAttributeInAttributeNames(attributeNames);
 
                 let element = {
                     type: elementName,
@@ -268,7 +307,6 @@ export function processFile(fileName, fileString) {
                 };
 
                 let targetId;
-
 
                 if (isNewBlockEnclosingElement) {
                     contextBlock = {
@@ -287,13 +325,10 @@ export function processFile(fileName, fileString) {
                 } else {
                     parentElement.children.push(element);
 
-                    //let hasDynamicStyling = elementHasDynamicStyling(element);
+                    let hasDynamicAttribute = nodeHasDynamicAttribute(node);
 
                     // Allocate a target entry to this element.
-                    // TODO: do better checking on this. 
-                    // only need to target if element has *dynamic* styling, not static.
-                    // TODO: REALLY fix this soon.. especially dynamic attribute value checking
-                    element.isTarget = hasEventHandlers || hasStyling || attributeNames.has('value') || attributeNames.has('src');
+                    element.isTarget = hasEventHandlers || hasDynamicAttribute;
 
                     if (element.isTarget) {
                         targetId = contextBlock.targetElementCount;
