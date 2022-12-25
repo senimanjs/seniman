@@ -365,7 +365,14 @@ export function processFile(fileName, fileString) {
                 let props = {};
 
                 node.openingElement.attributes.forEach(attribute => {
-                    props[attribute.name.name] = attribute.value.expression;
+                    // check if attribute.value is a stringliteral or numericliteral
+                    // if so, just add it to the props object
+                    // if not, add it to the props object as an expression
+                    if (attribute.value.type == 'StringLiteral' || attribute.value.type == 'NumericLiteral') {
+                        props[attribute.name.name] = attribute.value;
+                    } else {
+                        props[attribute.name.name] = attribute.value.expression;
+                    }
                 })
 
                 if (node.children.length > 0) {
@@ -828,6 +835,10 @@ function createSingleConditionStyleEffectBodyBlockStatement(styleCondition) {
     };
 }
 
+function camelCaseToDash(str) {
+    return str.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+}
+
 let supportedAttrs = new Set(['href', 'src', 'type', 'value', 'autocapitalize', 'id', 'name', 'content', 'onclick']);
 
 function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node, element) {
@@ -859,7 +870,7 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
                     let key;
 
                     if (prop.key.type == 'Identifier') {
-                        key = prop.key.name;
+                        key = camelCaseToDash(prop.key.name);
                     } else if (prop.key.type == 'StringLiteral') {
                         key = prop.key.value;
                     }
