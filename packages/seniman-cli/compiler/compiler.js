@@ -439,67 +439,72 @@ export function processFile(fileName, fileString) {
 
             let anchorExpression = process(node.expression);
 
-            if (node.expression.type == 'CallExpression') {
-                anchorExpression = {
-                    "type": "ArrowFunctionExpression",
-                    "params": [],
-                    "body": anchorExpression
-                };
-            } else if (node.expression.type == 'ConditionalExpression') {
-                let testExpression = node.expression.test;
+            // if the expression is an identifier, we'll do nothing
+            // if it isn't, then there's special handling to do
+            if (node.expression.type != 'Identifier') {
 
-                anchorExpression = {
-                    type: 'ArrowFunctionExpression',
-                    params: [],
-                    body: {
-                        "type": "BlockStatement",
-                        body: [
-                            {
-                                "type": "VariableDeclaration",
-                                declarations: [
-                                    {
-                                        "type": "VariableDeclarator",
-                                        "id": {
-                                            "type": "Identifier",
-                                            "name": "_c"
-                                        },
-                                        "init": {
+                if (node.expression.type == 'ConditionalExpression') {
+                    let testExpression = node.expression.test;
+
+                    anchorExpression = {
+                        type: 'ArrowFunctionExpression',
+                        params: [],
+                        body: {
+                            "type": "BlockStatement",
+                            body: [
+                                {
+                                    "type": "VariableDeclaration",
+                                    declarations: [
+                                        {
+                                            "type": "VariableDeclarator",
+                                            "id": {
+                                                "type": "Identifier",
+                                                "name": "_c"
+                                            },
+                                            "init": {
+                                                "type": "CallExpression",
+                                                "callee": {
+                                                    "type": "Identifier",
+                                                    "name": "createMemo"
+                                                },
+                                                "arguments": [
+                                                    {
+                                                        "type": "ArrowFunctionExpression",
+                                                        "params": [],
+                                                        "body": testExpression
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    ],
+                                    "kind": "let"
+                                },
+                                {
+                                    "type": "ReturnStatement",
+                                    "argument": {
+                                        "type": "ConditionalExpression",
+                                        "test": {
                                             "type": "CallExpression",
                                             "callee": {
                                                 "type": "Identifier",
-                                                "name": "createMemo"
+                                                "name": "_c"
                                             },
-                                            "arguments": [
-                                                {
-                                                    "type": "ArrowFunctionExpression",
-                                                    "params": [],
-                                                    "body": testExpression
-                                                }
-                                            ]
-                                        }
-                                    }
-                                ],
-                                "kind": "let"
-                            },
-                            {
-                                "type": "ReturnStatement",
-                                "argument": {
-                                    "type": "ConditionalExpression",
-                                    "test": {
-                                        "type": "CallExpression",
-                                        "callee": {
-                                            "type": "Identifier",
-                                            "name": "_c"
+                                            "arguments": []
                                         },
-                                        "arguments": []
-                                    },
-                                    "consequent": processJSX(node.expression.consequent),
-                                    "alternate": processJSX(node.expression.alternate)
+                                        "consequent": processJSX(node.expression.consequent),
+                                        "alternate": processJSX(node.expression.alternate)
+                                    }
                                 }
-                            }
-                        ]
-                    }
-                };
+                            ]
+                        }
+                    };
+                } else {
+                    anchorExpression = {
+                        "type": "ArrowFunctionExpression",
+                        "params": [],
+                        "body": anchorExpression
+                    };
+                }
             }
 
             if (contextBlock) {
