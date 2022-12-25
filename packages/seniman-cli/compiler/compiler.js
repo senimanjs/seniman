@@ -54,7 +54,8 @@ const validElementAttributeNames = new Set([
     'id',
     'name',
     'content',
-    'placeholder'
+    'placeholder',
+    'checked'
 ]);
 
 const compressionRegistry = {
@@ -844,8 +845,6 @@ function camelCaseToDash(str) {
     return str.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
 }
 
-let supportedAttrs = new Set(['href', 'src', 'type', 'value', 'autocapitalize', 'id', 'name', 'content', 'onclick']);
-
 function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node, element) {
 
     let styleConditions = []; // { type: 'classList', key: 'selected', condition: expression }
@@ -915,7 +914,7 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
             } else if (value.type == 'JSXExpressionContainer') {
                 styleConditions.push({ type: 'class', condition: value.expression });
             }
-        } else if (supportedAttrs.has(attrName)) {
+        } else if (validElementAttributeNames.has(attrName)) {
             let value = attr.value;
 
             if (value.type == 'StringLiteral') {

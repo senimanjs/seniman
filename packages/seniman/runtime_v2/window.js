@@ -743,7 +743,7 @@ export class Window {
                     buf.write(propValue, offset, propValue.length);
                 },
                 setStyleProperty: (propName, propValue) => {
-                    elRef._staticHelper(UPDATE_MODE_STYLEPROP, propName, propValue);
+                    elRef._staticHelper(UPDATE_MODE_STYLEPROP, propName, propValue || '');
                 },
                 setAttribute: (propName, propValue) => {
 
