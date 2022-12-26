@@ -39,7 +39,8 @@ const validHtmlElementNames = new Set([
     'option',
     'meta',
     'style',
-    'title'
+    'title',
+    'textarea'
 ]);
 
 const validElementAttributeNames = new Set([
