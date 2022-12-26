@@ -720,7 +720,10 @@ export class Window {
             let UPDATE_MODE_ATTR = 2;
             let UPDATE_MODE_SET_CLASS = 3;
             let UPDATE_MODE_REMOVE_CLASS = 4;
+            let UPDATE_MODE_REMOVE_ATTR = 5;
+            let UPDATE_MODE_SET_CHECKED = 6;
 
+            // TODO: improve this abstraction
             let elRef = {
                 _staticHelper: (mode, propName, propValue) => {
                     let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1 + 1 + propValue.length);
@@ -742,9 +745,31 @@ export class Window {
                     offset++;
                     buf.write(propValue, offset, propValue.length);
                 },
+
+                _staticHelperPropKeyOnly: (updateMode, propKey) => {
+                    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1);
+
+                    buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
+                    buf.writeUint16BE(blockId, 1);
+                    buf.writeUint8(targetId, 3);
+                    buf.writeUint8(updateMode, 4);
+                    buf.writeUint8(propKey, 5);
+                },
+
                 setStyleProperty: (propName, propValue) => {
                     elRef._staticHelper(UPDATE_MODE_STYLEPROP, propName, propValue || '');
                 },
+
+                setChecked: (value) => {
+                    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1);
+
+                    buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
+                    buf.writeUint16BE(blockId, 1);
+                    buf.writeUint8(targetId, 3);
+                    buf.writeUint8(UPDATE_MODE_SET_CHECKED, 4);
+                    buf.writeUint8(value ? 1 : 0, 5);
+                },
+
                 setAttribute: (propName, propValue) => {
 
                     if (!propValue) {
@@ -756,14 +781,7 @@ export class Window {
                     elRef._staticHelper(UPDATE_MODE_ATTR, propName, propValue);
                 },
                 toggleClass: (className, value) => {
-                    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1 + className.length);
-
-                    buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
-                    buf.writeUint16BE(blockId, 1);
-                    buf.writeUint8(targetId, 3);
-                    buf.writeUint8(value ? UPDATE_MODE_SET_CLASS : UPDATE_MODE_REMOVE_CLASS, 4);
-                    buf.writeUint8(className.length, 5);
-                    buf.write(className, 6, className.length);
+                    elRef._staticHelperPropKeyOnly(value ? UPDATE_MODE_SET_CLASS : UPDATE_MODE_REMOVE_CLASS, className);
                 },
                 setClassName: (className) => {
                     elRef.toggleClass(className, true);

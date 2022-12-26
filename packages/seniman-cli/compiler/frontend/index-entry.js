@@ -294,29 +294,48 @@
         let UPDATE_MODE_STYLEPROP = 1;
         let UPDATE_MODE_ATTR = 2;
         let UPDATE_MODE_SET_CLASS = 3;
-        let UPDATE_MODE_REMOVE_CLASS = 4;`
+        let UPDATE_MODE_REMOVE_CLASS = 4;
+        let UPDATE_MODE_REMOVE_ATTR = 5;
+        let UPDATE_MODE_SET_CHECKED = 6;
         */
 
-        if (updateMode == 1 || updateMode == 2) {
-            let mapIndex = getUint8();
-            let propName = (updateMode == 1 ? stylePropertyKeyMap : staticAttributeMap)[mapIndex];
-            //let propName = getString(6, propNameLength);
-            let propValueLength = getUint8();
-            let propValue = getString(propValueLength);
+        switch (updateMode) {
+            case 1:
+            case 2:
+                {
+                    let mapIndex = getUint8();
+                    let propName = (updateMode == 1 ? stylePropertyKeyMap : staticAttributeMap)[mapIndex];
+                    //let propName = getString(6, propNameLength);
+                    let propValueLength = getUint8();
+                    let propValue = getString(propValueLength);
 
-            //console.log('blockId', blockId, targetId, updateMode, propName, propValue);
-            if (updateMode == 1) {
-                targetHandlerElement.style.setProperty(propName, propValue);
-            } else {
-                targetHandlerElement.setAttribute(propName, propValue);
-            }
-            //_moveOffset(1 + 2 + 1 + 1 + 1 + 1 + propValueLength);
-        } else {
-            let classNameLength = getUint8();
-            let className = getString(classNameLength);
+                    //console.log('blockId', blockId, targetId, updateMode, propName, propValue);
+                    if (updateMode == 1) {
+                        targetHandlerElement.style.setProperty(propName, propValue);
+                    } else {
+                        targetHandlerElement.setAttribute(propName, propValue);
+                    }
+                    break;
+                }
+            case 3:
+            case 4:
+                {
+                    let nameLength = getUint8();
+                    let name = getString(nameLength);
 
-            targetHandlerElement.classList.toggle(className, updateMode == 3); // if updateMode == 4, then class is removed
-            //_moveOffset(1 + 2 + 1 + 1 + 1 + classNameLength);
+                    targetHandlerElement.classList.toggle(name, updateMode == 3); // if updateMode == 4, then class is removed
+                    break;
+                }
+            case 5:
+                {
+                    let mapIndex = getUint8();
+                    let propName = staticAttributeMap[mapIndex];
+                    targetHandlerElement.removeAttribute(propName);
+                }
+            case 6:
+                let isActive = getUint8() == 1;
+                targetHandlerElement.checked = isActive;
+                break;
         }
     }
 

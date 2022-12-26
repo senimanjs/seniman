@@ -723,6 +723,15 @@ function _buildStyleConditionValueExpression(cond) {
 }
 
 function _buildElRefCallExpression(cond, _arguments) {
+
+    let functionName = {
+        'attribute': 'setAttribute',
+        'style': 'setStyleProperty',
+        'classList': 'toggleClass',
+        'class': 'setClassName',
+        'checked': 'setChecked'
+    }[cond.type];
+
     return {
         type: 'CallExpression',
         callee: {
@@ -733,7 +742,7 @@ function _buildElRefCallExpression(cond, _arguments) {
             },
             property: {
                 type: 'Identifier',
-                name: { 'attribute': 'setAttribute', 'style': 'setStyleProperty', 'classList': 'toggleClass', 'class': 'setClassName' }[cond.type]
+                name: functionName
             }
         },
 
@@ -776,7 +785,8 @@ function createMultiConditionStyleEffectBodyBlockStatement(styleConditions) {
         // _v$2 !== _p$._v$2 && elRef.toggleClass("selected", _p$._v$ = _v$);
         let _arguments;
 
-        if (cond.type == 'class') {
+        if (cond.type == 'class' || cond.type == 'checked') {
+
             _arguments = [buildValueAssignmentExpression(index)];
         } else {
             // TODO: handle style creations that are not in the static compression map
@@ -824,7 +834,7 @@ function createSingleConditionStyleEffectBodyBlockStatement(styleCondition) {
 
     let _arguments;
 
-    if (styleCondition.type == 'class') {
+    if (styleCondition.type == 'class' || styleCondition.type == 'checked') {
         _arguments = [_buildStyleConditionValueExpression(styleCondition)];
     } else {
 
@@ -920,7 +930,12 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
             if (value.type == 'StringLiteral') {
                 element.attributes[attrName] = value.value;
             } else if (value.type == 'JSXExpressionContainer') {
-                styleConditions.push({ type: 'attribute', key: attrName, condition: value.expression });
+                // handle special-cased attributes
+                if (attrName == 'checked') {
+                    styleConditions.push({ type: 'checked', condition: value.expression });
+                } else {
+                    styleConditions.push({ type: 'attribute', key: attrName, condition: value.expression });
+                }
             }
         } else {
             //console.warn('Unsupported attribute', attrName);
