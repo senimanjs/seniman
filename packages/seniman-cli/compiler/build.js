@@ -67,7 +67,11 @@ export async function compileFile(config, fileName) {
     let fileString = await fs.promises.readFile(full_path);
     let code = processFile(fileName, fileString);
 
-    await fs.promises.writeFile(config.targetDirectory + '/' + fileName, code);
+    let fullPath = path.join(config.targetDirectory, fileName);
+    let directoryPath = path.dirname(fullPath);
+
+    await fs.promises.mkdir(directoryPath, { recursive: true })
+    await fs.promises.writeFile(fullPath, code);
 }
 
 export async function compileCompressionMap(config) {
@@ -119,13 +123,28 @@ export async function recompile(config) {
     }
 }
 
+const readdirRecursive = async dir => {
+    const files = await fs.promises.readdir(dir, { withFileTypes: true });
+
+    const paths = files.map(async file => {
+        const _path = path.join(dir, file.name);
+
+        if (file.isDirectory()) return await readdirRecursive(_path);
+
+        return _path;
+    });
+
+    return (await Promise.all(paths)).flat(Infinity);
+}
+
 export async function compileAll({ config, throwErrorOnSyntaxError }) {
 
     if (!fs.existsSync(config.targetDirectory)) {
         fs.mkdirSync(config.targetDirectory);
     }
 
-    let fileNames = fs.readdirSync(config.componentDirectory).reverse();
+    let fileNames = (await readdirRecursive(config.componentDirectory))
+        .map(fileName => fileName.split(config.componentDirectory + '/')[1]);
 
     addFilesToCompile(['_platform.js']);
     addFilesToCompile(fileNames);
