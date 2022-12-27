@@ -40,7 +40,9 @@ const validHtmlElementNames = new Set([
     'meta',
     'style',
     'title',
-    'textarea'
+    'textarea',
+    'svg',
+    'path'
 ]);
 
 const validElementAttributeNames = new Set([
@@ -56,7 +58,13 @@ const validElementAttributeNames = new Set([
     'name',
     'content',
     'placeholder',
-    'checked'
+    'checked',
+    'd',
+    'viewBox',
+    'width',
+    'height',
+    'fill',
+    'focusable'
 ]);
 
 const compressionRegistry = {
@@ -107,6 +115,8 @@ export function getCompiledCompressionMap() {
 
         ptr += (1 + name.length);
     });
+
+    //console.log('LENS:', compressionRegistry.elementNames.size, compressionRegistry.elementAttributeNames.size, compressionRegistry.stylePropertyKeys.size, compressionRegistry.stylePropertyValues.size);
 
     buf.writeUint8(0, ptr);
     ptr += 1;
