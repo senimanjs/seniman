@@ -297,12 +297,17 @@ export function processFile(fileName, fileString) {
             };
 
         } else if (node.type == 'JSXElement') {
-            let elementName = node.openingElement.name.name;
-            let isHTMLElement = validHtmlElementNames.has(elementName);
+
+            let isHTMLElement = node.openingElement.name.type == 'JSXIdentifier' &&
+                validHtmlElementNames.has(node.openingElement.name.name);
+
             let isNewBlockEnclosingElement = parentElement == null;
 
             // is dom element
             if (isHTMLElement) {
+
+                let elementName = node.openingElement.name.name;
+
                 compressionRegistry.elementNames.add(elementName);
 
                 let attributeNames = getAttributeNames(node);
@@ -404,7 +409,7 @@ export function processFile(fileName, fileString) {
                     }
                 }
 
-                let createComponentExpression = createCreateComponentExpression(node.openingElement.name.name, props, process);
+                let createComponentExpression = createCreateComponentExpression(node.openingElement.name, props, process);
 
                 if (!isNewBlockEnclosingElement) {
                     // add new anchor to the currently active UI block
@@ -1105,14 +1110,9 @@ function createBlockEventHandlerEntryExpression(targetId, type, fnExpression) {
     }
 }
 
-function createCreateComponentExpression(componentName, props, process) {
+function createCreateComponentExpression(componentIdentifier, props, process) {
 
-    let arguments_ = [
-        {
-            "type": "Identifier",
-            "name": componentName
-        }
-    ];
+    let arguments_ = [componentIdentifier];
 
     if (Object.keys(props).length) {
 
