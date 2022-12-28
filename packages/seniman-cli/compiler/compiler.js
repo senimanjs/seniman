@@ -16,8 +16,8 @@ function createNewBlockId() {
 
 const eventTypeIdMap = {
     'onClick': 1,
-    'onBlur': 2,
-    'onFocus': 3,
+    'onFocus': 2,
+    'onBlur': 3,
     'onValueChange': 4,
     'onScroll': 5
 };
