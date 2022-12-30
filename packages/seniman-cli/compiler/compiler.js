@@ -3,7 +3,7 @@ import generator from "@babel/generator";
 import fs from 'fs';
 import path from 'path';
 
-import { createDeclareBlockExpression } from "./declare.js";
+import { createDeclareBlockExpression, createDeclareClientFunctionExpression } from "./declare.js";
 
 let generate = generator.default;
 
@@ -12,6 +12,13 @@ let lastBlockId = 3000;
 function createNewBlockId() {
     lastBlockId++;
     return lastBlockId;
+}
+
+let lastClientFunctionId = 1000;
+
+function createNewClientFunctionId() {
+    lastClientFunctionId++;
+    return lastClientFunctionId;
 }
 
 const eventTypeIdMap = {
@@ -42,7 +49,8 @@ const validHtmlElementNames = new Set([
     'title',
     'textarea',
     'svg',
-    'path'
+    'path',
+    'strong'
 ]);
 
 const validElementAttributeNames = new Set([
@@ -283,7 +291,7 @@ export function processFile(fileName, fileString) {
     });
 
     let gatheredUIBlocks = [];
-
+    let gatheredClientFunctions = [];
 
     function processJSX(node, parentElement, contextBlock) {
 
@@ -564,6 +572,10 @@ export function processFile(fileName, fileString) {
                 node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareBlockExpression(block, encodeCompressionMap));
             });
 
+            gatheredClientFunctions.forEach((clientFunction, index) => {
+                node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareClientFunctionExpression(clientFunction));
+            });
+
             return node;
         } else if (node.type == 'IfStatement') {
             node.consequent = process(node.consequent);
@@ -599,7 +611,6 @@ export function processFile(fileName, fileString) {
                 node.argument = process(node.argument);
             }
 
-
             return node;
         } else if (node.type == 'JSXText') {
             throw new Error('JSXText happens outside processJSX');
@@ -611,9 +622,37 @@ export function processFile(fileName, fileString) {
             return processJSX(node, null, null);
         } else if (node.type == 'CallExpression') {
 
-            node.arguments.map((bodyNode, index) => {
-                node.arguments[index] = process(bodyNode);
-            });
+            // if the function name is runOnClient, then we'll need to do some special handling
+            if (node.callee.type == 'Identifier' && node.callee.name == '$c') {
+
+                // assign a unique ID to this client function
+                let clientFunctionId = createNewClientFunctionId();
+
+                // tranform the argument signature into a list of argument names
+                let argNames = node.arguments[0].params.map((param) => {
+                    return param.name;
+                });
+
+                // transform the function body ast (without the outer function) into a string
+                let functionBody = generate(node.arguments[0].body).code;
+
+                let clientFunction = {
+                    id: clientFunctionId,
+                    argNames,
+                    body: functionBody
+                };
+
+                // get the first argument, which is the function to run
+                gatheredClientFunctions.push(clientFunction);
+
+                // rewrite the CallExpression node to a NumericLiteral node of the client function ID
+                node.type = 'NumericLiteral';
+                node.value = clientFunctionId;
+            } else {
+                node.arguments.map((bodyNode, index) => {
+                    node.arguments[index] = process(bodyNode);
+                });
+            }
 
             return node;
 
@@ -635,6 +674,18 @@ export function processFile(fileName, fileString) {
             for (let i = 0; i < node.consequent.length; i++) {
                 node.consequent[i] = process(node.consequent[i]);
             }
+
+            return node;
+        } else if (node.type == 'LogicalExpression') {
+            node.left = process(node.left);
+            node.right = process(node.right);
+            return node;
+        } else if (node.type == 'OptionalCallExpression') {
+            // do we need to process the callee?
+            //node.callee = process(node.callee);
+            node.arguments.map((bodyNode, index) => {
+                node.arguments[index] = process(bodyNode);
+            });
 
             return node;
         } else if (node.type == 'ExpressionStatement') {

@@ -47,3 +47,10 @@ export function compileBlockDefinitionToInstallCommand(templateId) {
 
     return buf;
 }
+
+
+export let clientFunctionDefinitions = new Map();
+
+export function _declareClientFunction(id, def) {
+    clientFunctionDefinitions.set(id, def);
+}

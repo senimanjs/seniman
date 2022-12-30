@@ -145,6 +145,7 @@
 
     let _blocksMap = new Map();
     let templateDefinitionMap = new Map();
+    let clientFunctionsMap = new Map();
 
     let selfClosingTagSet = new Set(['hr', 'img', 'input']);
     let typeIdMapping = [];
@@ -581,6 +582,8 @@
     let CMD_ELEMENT_UPDATE = 7;
     let CMD_INIT_BLOCK = 8;
     let CMD_REMOVE_BLOCKS = 9;
+    let CMD_INSTALL_CLIENT_FUNCTION = 10;
+    let CMD_RUN_CLIENT_FUNCTION = 11;
 
     let _processMap = {
         [CMD_INIT_BLOCK]: _initBlock,
@@ -608,6 +611,24 @@
                 //console.log('removing', blockId);
                 _blocksMap.delete(blockId);
             }
+        },
+        [CMD_INSTALL_CLIENT_FUNCTION]: () => {
+            let clientFunctionId = getUint16();
+            let functionJsonStringLength = getUint16();
+            let clientFunction = JSON.parse(getString(functionJsonStringLength));
+
+            // create a dynamic function using the function body and the dynamic argument names
+            let fn = new Function(clientFunction.argNames, clientFunction.body);
+
+            clientFunctionsMap.set(clientFunctionId, fn);
+        },
+        [CMD_RUN_CLIENT_FUNCTION]: () => {
+            let clientFunctionId = getUint16();
+            let argsJsonLength = getUint16();
+            let str = getString(argsJsonLength);
+            let argsList = JSON.parse(str);
+
+            clientFunctionsMap.get(clientFunctionId).apply(null, argsList);
         }
     }
 

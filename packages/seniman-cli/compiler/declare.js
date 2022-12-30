@@ -1,7 +1,6 @@
 import { encode } from 'base64-arraybuffer';
 
 export function createDeclareBlockExpression(block, encodeCompressionMap) {
-
     return {
         "type": "CallExpression",
         "callee": {
@@ -20,6 +19,66 @@ export function createDeclareBlockExpression(block, encodeCompressionMap) {
             }
         ]
     }
+}
+
+export function createDeclareClientFunctionExpression(clientFunction) {
+    return {
+        "type": "ExpressionStatement",
+        "expression": {
+            "type": "CallExpression",
+            "callee": {
+                "type": "Identifier",
+                "name": "_declareClientFunction"
+            },
+            "arguments": [
+                {
+                    "type": "NumericLiteral",
+                    "value": clientFunction.id
+                },
+                {
+                    "type": "ObjectExpression",
+                    "properties": [
+                        {
+                            "type": "ObjectProperty",
+                            "key": {
+                                "type": "Identifier",
+                                "name": "argNames"
+                            },
+                            "computed": false,
+                            "value": {
+                                "type": "ArrayExpression",
+                                "elements": clientFunction.argNames.map(argName => {
+                                    return {
+                                        "type": "StringLiteral",
+                                        "value": argName
+                                    };
+                                })
+                            },
+                            "kind": "init",
+                            "method": false,
+                            "shorthand": false
+                        },
+                        {
+                            "type": "ObjectProperty",
+                            "key": {
+                                "type": "Identifier",
+                                "name": "body"
+                            },
+                            "computed": false,
+                            "value": {
+                                "type": "StringLiteral",
+                                "value": clientFunction.body
+                            },
+                            "kind": "init",
+
+                            "method": false,
+                            "shorthand": false
+                        }
+                    ]
+                }
+            ]
+        }
+    };
 }
 
 function getTemplateStringInit(block, encodeCompressionMap) {

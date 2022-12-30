@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 
 //import blocks from './components/blocks.js';
 import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
-import { blockDefinitions, compileBlockDefinitionToInstallCommand } from './blocks.js';
+import { blockDefinitions, clientFunctionDefinitions, compileBlockDefinitionToInstallCommand } from './declare.js';
 
 export { createSignal, onCleanup };
 
@@ -23,6 +23,8 @@ let CMD_NAV = 6;
 let CMD_ELEMENT_UPDATE = 7;
 let CMD_INIT_BLOCK = 8;
 let CMD_REMOVE_BLOCKS = 9;
+let CMD_INSTALL_CLIENT_FUNCTION = 10;
+let CMD_RUN_CLIENT_FUNCTION = 11;
 
 let PAGE_SIZE = 8192; //32678;
 
@@ -55,6 +57,8 @@ export class Window {
 
         this.deleteEnqueuedBlockIds = new Set();
         this.clientTemplateInstallationSet = new Set();
+        this.clientFunctionInstallationSet = new Set();
+
         this.lastEventHandlerId = 0;
         this.eventHandlers = new Map();
 
@@ -75,6 +79,28 @@ export class Window {
             navigateFromBack_internal: (path) => {
                 console.log('navigateFromBack_internal', path);
                 setPath(path);
+            },
+            runOnClient: (clientFunctionId, args) => {
+
+                if (!this.clientTemplateInstallationSet.has(clientFunctionId)) {
+                    let clientFnString = JSON.stringify(clientFunctionDefinitions.get(clientFunctionId));
+                    let buf = this._allocCommandBuffer(1 + 2 + 2 + clientFnString.length);
+
+                    buf.writeUInt8(CMD_INSTALL_CLIENT_FUNCTION, 0);
+                    buf.writeUInt16BE(clientFunctionId, 1);
+                    buf.writeUInt16BE(clientFnString.length, 3);
+                    buf.write(clientFnString, 5);
+
+                    this.clientTemplateInstallationSet.add(clientFunctionId);
+                }
+
+                let argJsonString = JSON.stringify(args);
+                let buf = this._allocCommandBuffer(1 + 2 + 2 + argJsonString.length);
+
+                buf.writeUInt8(CMD_RUN_CLIENT_FUNCTION, 0);
+                buf.writeUInt16BE(clientFunctionId, 1);
+                buf.writeUInt16BE(argJsonString.length, 3);
+                buf.write(argJsonString, 5);
             },
             setClientData: (value) => {
                 let buf = this._allocCommandBuffer(1 + 2 + value.length + 4);
