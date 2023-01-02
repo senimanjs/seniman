@@ -205,6 +205,83 @@
     }
     */
 
+    function bareServerCallWithPreventDefault(e) {
+        e.preventDefault();
+        this.serverFunctions[0]();
+    }
+
+    let EventMap = { 2: 'focus', 3: 'blur', 4: 'input', 5: 'scroll', 6: 'keydown' };
+
+    let _attachEventHandlerV2 = () => {
+        let blockId = getUint16(); //buf.writeUint16LE(parentBlockId, 1);
+        let targetId = getUint8();
+        let eventType = getUint8(); // 1: click, 2: focus, 3: blur, 4: input, 5: scroll
+        let targetHandlerElement = _getBlockTargetElement(blockId, targetId);
+
+        /*
+
+        window.runClientFunction($c(() => {
+    
+        }), [args1, args2]);
+
+        eventHandler initialization type
+
+        1) Direct passing of server-side function
+        For click, this is the most standard form:
+        onClick={someServerFunction}
+
+        // under the hood, this is translated during runtime to:
+        { clientFn: 1, serverFunctions: [someServerFunction] }  // 1 is a native client function that calls e.preventDefault()
+
+        2) Server-side function assignment that does not require e.preventDefault()
+
+        onClick={ev(NO_PREVENT_DEFAULT, someServerHandler)} // NO_PREVENT_DEFAULT is a constant for a native client function that does not call e.preventDefault()
+
+        // under the hood, this is translated during runtime to:
+        { clientFn: 2, serverFunctions: [someServerFunction] }  // 2 is a native client function that does not call e.preventDefault()
+
+        3) inline custom function with a server-side function dependency
+        
+        onClick={$c(e => {
+            e.preventDefault(); 
+
+            // call some server function
+            $s(someServerFunction)(e.target.value);
+        })}
+
+        // this is compiled to:
+        onClick={{ clientFn: 1001, serverFunctions: [someServerFunction] }}
+
+        */
+
+        let clientFnId = getUint16(); //buf.writeUint16LE(parentBlockId, 1);
+        let fn = clientFnId == 1 ? bareServerCallWithPreventDefault : clientFunctionsMap.get(clientFnId);
+
+        let serverFunctions = [];
+        let bindId;
+
+        while ((bindId = getUint16())) {
+            let _bindId = bindId;
+
+            serverFunctions.push((data) => {
+                _sendEvent(_bindId, data);
+            });
+        }
+
+        if (serverFunctions.length) {
+            fn = fn.bind({ serverFunctions });
+        }
+
+        if (eventType == 1) {
+            clickEventHandlerIdWeakMap.set(targetHandlerElement, fn);
+        } else {
+            let eventName = EventMap[eventType];
+
+            _addEventListener(targetHandlerElement, eventName, fn);
+        }
+    }
+
+    /*
     let _attachEventHandler = () => {
         let blockId = getUint16(); //buf.writeUint16LE(parentBlockId, 1);
         let targetId = getUint8();
@@ -235,16 +312,24 @@
                 });
                 break;
             case EVENT_TYPE_SCROLL:
-                /*
+                
                     _addEventListener(targetHandlerElement, "scroll", throttleDebounce((e) => {
                         //_sendEvent(handlerId, e.target.value);
                         //console.log('scroll', e.target.scrollLeft, e.target.scrollTop);
                         //_sendEvent(handlerId,)
                     }, 300));
-                */
+                
                 break;
+
         }
     }
+
+    let _createEventHandlerFunction = (handlerId) => {
+        return () => {
+            _sendEvent(handlerId);
+        }
+    }
+    */
 
     let _sendEvent = (handlerId, data) => {
         let dataLength = data?.length || 0;
@@ -262,11 +347,6 @@
         _socketSend(buf);
     }
 
-    let _createEventHandlerFunction = (handlerId) => {
-        return () => {
-            _sendEvent(handlerId);
-        }
-    }
 
     let textDecoder = new TextDecoder();
     let processOffset = 0;
@@ -577,7 +657,7 @@
     let CMD_INIT_WINDOW = 2;
     let CMD_ATTACH_ANCHOR = 3;
     let CMD_CLIENT_DATA_SET = 4;
-    let CMD_ATTACH_EVENT = 5;
+    let CMD_ATTACH_EVENT_V2 = 5;
     let CMD_NAV = 6;
     let CMD_ELEMENT_UPDATE = 7;
     let CMD_INIT_BLOCK = 8;
@@ -589,7 +669,8 @@
         [CMD_INIT_BLOCK]: _initBlock,
         [CMD_INSTALL_TEMPLATE]: _installTemplate2,
         [CMD_ATTACH_ANCHOR]: _attachAtAnchorV2,
-        [CMD_ATTACH_EVENT]: _attachEventHandler,
+        //[CMD_ATTACH_EVENT]: _attachEventHandler,
+        [CMD_ATTACH_EVENT_V2]: _attachEventHandlerV2,
         [CMD_NAV]: () => {
             let pathLength = getUint16();
             let path = getString(pathLength);// textDecoder.decode(buffer.slice(1 + 2, 1 + 2 + pathLength));//.toString('utf8');
@@ -721,52 +802,18 @@
     let eventHandler = (e) => {
         let node = e.target; //(e.composedPath && e.composedPath()[0]) || e.target;
 
-        // simulate currentTarget
-        /*
-        Object.defineProperty(e, "currentTarget", {
-            configurable: true,
-            get() {
-                return node || document;
-            }
-        });
-        */
-
-        //console.log('e', e);
-        // e.preventDefault();
-
-        //e.preventDefault();
-
         while (node !== null) {
+            let handlerFn = clickEventHandlerIdWeakMap.get(node);
 
-            let handlerId = clickEventHandlerIdWeakMap.get(node);
-
-            if (handlerId) {
-                e.preventDefault();
-                _sendEvent(handlerId);
-                return;
+            if (handlerFn) {
+                handlerFn(e);
+                if (e.defaultPrevented) {
+                    return;
+                }
             }
-
-            /*
-            const handler = node[key];
-            if (handler && !node.disabled) {
-                const data = node[`${key}Data`];
-                data !== undefined ? handler(data, e) : handler(e);
-                if (e.cancelBubble) return;
-            }
-    
-            if (node.getAttribute('data-ev')) {
-                console.log('clicked proper');
-            }
-    
-            */
-            //console.log('node', node)
 
             node = node.parentNode;
-
-            //node.host && node.host !== node && node.host instanceof Node ? node.host : node.parentNode;
         }
-
-        //console.log('no click handler');
     }
 
     _addEventListener(_document, "click", eventHandler);

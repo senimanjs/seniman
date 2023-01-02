@@ -18,7 +18,7 @@ export function useWindow() {
 let CMD_INIT_WINDOW = 2;
 let CMD_ATTACH_ANCHOR = 3;
 let CMD_CLIENT_DATA_SET = 4;
-let CMD_ATTACH_EVENT = 5;
+let CMD_ATTACH_EVENT_V2 = 5;
 let CMD_NAV = 6;
 let CMD_ELEMENT_UPDATE = 7;
 let CMD_INIT_BLOCK = 8;
@@ -80,25 +80,17 @@ export class Window {
                 console.log('navigateFromBack_internal', path);
                 setPath(path);
             },
-            runOnClient: (clientFunctionId, args) => {
+            runOnClient: (clientFnSpec, args) => {
 
-                if (!this.clientTemplateInstallationSet.has(clientFunctionId)) {
-                    let clientFnString = JSON.stringify(clientFunctionDefinitions.get(clientFunctionId));
-                    let buf = this._allocCommandBuffer(1 + 2 + 2 + clientFnString.length);
+                let { clientFnId } = clientFnSpec;
 
-                    buf.writeUInt8(CMD_INSTALL_CLIENT_FUNCTION, 0);
-                    buf.writeUInt16BE(clientFunctionId, 1);
-                    buf.writeUInt16BE(clientFnString.length, 3);
-                    buf.write(clientFnString, 5);
-
-                    this.clientTemplateInstallationSet.add(clientFunctionId);
-                }
+                this._streamFunctionInstallCommand(clientFnId);
 
                 let argJsonString = JSON.stringify(args);
                 let buf = this._allocCommandBuffer(1 + 2 + 2 + argJsonString.length);
 
                 buf.writeUInt8(CMD_RUN_CLIENT_FUNCTION, 0);
-                buf.writeUInt16BE(clientFunctionId, 1);
+                buf.writeUInt16BE(clientFnId, 1);
                 buf.writeUInt16BE(argJsonString.length, 3);
                 buf.write(argJsonString, 5);
             },
@@ -336,10 +328,12 @@ export class Window {
             let buffer = Buffer.from(message);
             let handlerId = buffer.readUint16LE(1);
             let dataLength = buffer.readUint16LE(3);
-            let data = null;
+            let data;
 
             if (dataLength > 0) {
                 data = buffer.subarray(5, 5 + dataLength).toString();
+            } else {
+                data = '';
             }
 
             this._executeClientEvent({ handlerId, data });
@@ -460,11 +454,7 @@ export class Window {
             return;
         }
 
-        if (command.data) {
-            eventHandler(command.data);
-        } else {
-            eventHandler();
-        }
+        eventHandler(command.data);
     }
 
     _streamInitWindow(build) {
@@ -485,6 +475,8 @@ export class Window {
         this.port.postMessage(msg);
     }
 
+    /*
+
     _streamEventInitCommand(blockId, targetId, eventType, handlerId) {
         let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2);
 
@@ -493,6 +485,27 @@ export class Window {
         buf.writeUint8(targetId, 3);
         buf.writeUint8(eventType, 4);
         buf.writeUint16BE(handlerId, 5);
+    }
+    */
+
+    _streamEventInitCommandV2(blockId, targetId, eventType, clientFnId, serverBindIds) {
+
+        let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + ((serverBindIds.length * 2) + 2));
+
+        buf.writeUint8(CMD_ATTACH_EVENT_V2, 0);
+        buf.writeUint16BE(blockId, 1);
+        buf.writeUint8(targetId, 3);
+        buf.writeUint8(eventType, 4);
+        buf.writeUint16BE(clientFnId, 5);
+
+        let offset = 7;
+
+        serverBindIds.forEach(bindId => {
+            buf.writeUint16BE(bindId, offset);
+            offset += 2;
+        });
+
+        buf.writeUint16BE(0, offset);
     }
 
     _streamTemplateInstallCommand(templateId) {
@@ -503,6 +516,21 @@ export class Window {
             templateBuf.copy(commandBuf);
 
             this.clientTemplateInstallationSet.add(templateId);
+        }
+    }
+
+    _streamFunctionInstallCommand(functionId) {
+
+        if (functionId > 1 && !this.clientFunctionInstallationSet.has(functionId)) {
+            let clientFnString = JSON.stringify(clientFunctionDefinitions.get(functionId));
+            let buf = this._allocCommandBuffer(1 + 2 + 2 + clientFnString.length);
+
+            buf.writeUInt8(CMD_INSTALL_CLIENT_FUNCTION, 0);
+            buf.writeUInt16BE(functionId, 1);
+            buf.writeUInt16BE(clientFnString.length, 3);
+            buf.write(clientFnString, 5);
+
+            this.clientFunctionInstallationSet.add(functionId);
         }
     }
 
@@ -727,9 +755,25 @@ export class Window {
         let eventHandlerIds = [];
 
         eventHandlers.forEach((eventHandler, index) => {
-            let handlerId = this._allocateEventHandler(eventHandler.fn);
-            eventHandlerIds.push(handlerId);
-            this._streamEventInitCommand(newBlockId, eventHandler.targetId, eventHandler.type, handlerId);
+            let clientFnId;
+            let serverBindFns;
+
+            if (eventHandler.fn instanceof Function) {
+                clientFnId = 1;
+                serverBindFns = [eventHandler.fn];
+            } else if (eventHandler.fn.clientFnId) {
+                clientFnId = eventHandler.fn.clientFnId;
+                serverBindFns = eventHandler.fn.serverBindFns || [];
+            }
+
+            let serverBindIds = serverBindFns.map(bindFn => {
+                let handlerId = this._allocateEventHandler(bindFn);
+                eventHandlerIds.push(handlerId);
+                return handlerId;
+            });
+
+            this._streamFunctionInstallCommand(clientFnId);
+            this._streamEventInitCommandV2(newBlockId, eventHandler.targetId, eventHandler.type, clientFnId, serverBindIds);
         });
 
         onCleanup(() => {
@@ -831,7 +875,6 @@ export function _createComponent(componentFunction, props) {
 export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffects) {
     return getActiveWindow()._createBlock3(blockTemplateId, anchors, eventHandlers, styleEffects);
 }
-
 
 function dispose(d) {
     for (let i = 0; i < d.length; i++) d[i]();

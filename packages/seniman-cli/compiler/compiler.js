@@ -1,5 +1,7 @@
 import parser from "@babel/parser";
 import generator from "@babel/generator";
+import traverse from "@babel/traverse";
+
 import fs from 'fs';
 import path from 'path';
 
@@ -26,7 +28,8 @@ const eventTypeIdMap = {
     'onFocus': 2,
     'onBlur': 3,
     'onValueChange': 4,
-    'onScroll': 5
+    'onScroll': 5,
+    'onKeyDown': 6,
 };
 
 const eventNames = Object.keys(eventTypeIdMap);
@@ -362,7 +365,7 @@ export function processFile(fileName, fileString) {
                 }
 
                 if (hasEventHandlers) {
-                    handleCreateBlockEventsExpression(contextBlock, targetId, node);
+                    handleCreateBlockEventsExpression(contextBlock, targetId, node, process);
                 }
 
                 handleCreateElementEffectsEntryExpression(contextBlock, targetId, node, element);
@@ -628,26 +631,51 @@ export function processFile(fileName, fileString) {
                 // assign a unique ID to this client function
                 let clientFunctionId = createNewClientFunctionId();
 
-                // tranform the argument signature into a list of argument names
-                let argNames = node.arguments[0].params.map((param) => {
-                    return param.name;
-                });
-
-                // transform the function body ast (without the outer function) into a string
-                let functionBody = generate(node.arguments[0].body).code;
+                // node.arguments[0] is the function called within $c((arg1, arg2) => {...})
+                let cParsed = parse$CDefinition(node.arguments[0]);
 
                 let clientFunction = {
                     id: clientFunctionId,
-                    argNames,
-                    body: functionBody
+                    argNames: cParsed.argNames,
+                    body: cParsed.body
                 };
 
                 // get the first argument, which is the function to run
                 gatheredClientFunctions.push(clientFunction);
 
-                // rewrite the CallExpression node to a NumericLiteral node of the client function ID
-                node.type = 'NumericLiteral';
-                node.value = clientFunctionId;
+                // rewrite the CallExpression node to an object
+                // example: { clientFnId: 3 }
+                node.type = 'ObjectExpression';
+
+                let props = [
+                    {
+                        type: 'ObjectProperty',
+                        key: {
+                            type: 'Identifier',
+                            name: 'clientFnId'
+                        },
+                        value: {
+                            type: 'NumericLiteral',
+                            value: clientFunctionId
+                        }
+                    }
+                ];
+
+                if (cParsed.serverBindNodes.length > 0) {
+                    props.push({
+                        type: 'ObjectProperty',
+                        key: {
+                            type: 'Identifier',
+                            name: 'serverBindFns'
+                        },
+                        value: {
+                            type: 'ArrayExpression',
+                            elements: cParsed.serverBindNodes
+                        }
+                    })
+                }
+
+                node.properties = props;
             } else {
                 node.arguments.map((bodyNode, index) => {
                     node.arguments[index] = process(bodyNode);
@@ -719,13 +747,61 @@ export function processFile(fileName, fileString) {
 }
 
 
-function handleCreateBlockEventsExpression(contextBlock, targetId, node) {
+function parse$CDefinition(functionNode) {
+    // TODO: create a faster implementation that does not implementing print-ing and re-parsing
+    // the $c source code
+    let functionNodeString = generate(functionNode.body).code;
+    let newFunctionAst = parser.parse(functionNodeString);
+
+    let serverBindNodes = [];
+
+    traverse.default(newFunctionAst, {
+        CallExpression: function (path) {
+
+            if (path.node.callee.type == 'Identifier' && path.node.callee.name == '$s') {
+                serverBindNodes.push(path.node.arguments[0]);
+
+                // replace it with a this.serverFunctions[id] call
+                path.replaceWith({
+                    type: 'MemberExpression',
+                    object: {
+                        type: 'MemberExpression',
+                        object: {
+                            type: 'ThisExpression'
+                        },
+                        property: {
+                            type: 'Identifier',
+                            name: 'serverFunctions'
+                        }
+                    },
+                    property: {
+                        type: 'NumericLiteral',
+                        value: serverBindNodes.length - 1
+                    }
+                });
+            }
+        },
+    });
+
+    // tranform the argument signature into a list of argument names
+    let argNames = functionNode.params.map((param) => {
+        return param.name;
+    });
+
+    return {
+        body: generate(newFunctionAst).code,
+        argNames,
+        serverBindNodes
+    }
+}
+
+function handleCreateBlockEventsExpression(contextBlock, targetId, node, process) {
     eventNames.forEach(eventName => {
         let eventAttribute = getAttribute(node, eventName);
 
         if (eventAttribute) {
             let fnExpression = eventAttribute.expression;
-            contextBlock.eventHandlers.push(createBlockEventHandlerEntryExpression(targetId, eventTypeIdMap[eventName], fnExpression));
+            contextBlock.eventHandlers.push(createBlockEventHandlerEntryExpression(targetId, eventTypeIdMap[eventName], process(fnExpression)));
         }
     });
 }
