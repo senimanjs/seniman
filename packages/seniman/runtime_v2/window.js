@@ -80,19 +80,45 @@ export class Window {
                 console.log('navigateFromBack_internal', path);
                 setPath(path);
             },
-            runOnClient: (clientFnSpec, args) => {
 
-                let { clientFnId } = clientFnSpec;
+            clientExec: (clientFnSpec, args) => {
+                let eventHandlerIds = [];
+                let { clientFnId, serverBindFns } = clientFnSpec;
 
                 this._streamFunctionInstallCommand(clientFnId);
 
+                let serverBindIds = (serverBindFns || []).map(bindFn => {
+                    let handlerId = this._allocateEventHandler(bindFn);
+                    eventHandlerIds.push(handlerId);
+                    return handlerId;
+                });
+
                 let argJsonString = JSON.stringify(args);
-                let buf = this._allocCommandBuffer(1 + 2 + 2 + argJsonString.length);
+                let buf = this._allocCommandBuffer(1 + 2 + ((serverBindIds.length * 2) + 2) + 2 + argJsonString.length);
 
                 buf.writeUInt8(CMD_RUN_CLIENT_FUNCTION, 0);
                 buf.writeUInt16BE(clientFnId, 1);
-                buf.writeUInt16BE(argJsonString.length, 3);
-                buf.write(argJsonString, 5);
+
+                let offset = 3;
+
+                serverBindIds.forEach(bindId => {
+                    buf.writeUint16BE(bindId, offset);
+                    offset += 2;
+                });
+
+                buf.writeUint16BE(0, offset);
+                offset += 2;
+                buf.writeUInt16BE(argJsonString.length, offset);
+                offset += 2;
+                buf.write(argJsonString, offset);
+
+                if (eventHandlerIds.length) {
+                    onCleanup(() => {
+                        this._deallocateEventHandlers(eventHandlerIds);
+                    });
+                }
+
+                //});
             },
             setClientData: (value) => {
                 let buf = this._allocCommandBuffer(1 + 2 + value.length + 4);
@@ -120,6 +146,8 @@ export class Window {
             pageTitle: pageTitle,
             setPageTitle: (title) => set_pageTitle(title)
         }
+
+        this.windowContext.runOnClient = this.windowContext.clientExec;
 
         this.rootDisposer = null;
 
@@ -331,7 +359,7 @@ export class Window {
             let data;
 
             if (dataLength > 0) {
-                data = buffer.subarray(5, 5 + dataLength).toString();
+                data = JSON.parse(buffer.subarray(5, 5 + dataLength).toString());
             } else {
                 data = '';
             }

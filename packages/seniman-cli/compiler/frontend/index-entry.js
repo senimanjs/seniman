@@ -2,6 +2,7 @@
     let _window = window;
     let _document = document;
     let _location = location;
+    let head = _document.head;
 
     let socket;
     let windowId = '';
@@ -142,6 +143,21 @@
     //////////////////////////////////////////////////////////////////////////////
     //// GLOBAL STATE
     //////////////////////////////////////////////////////////////////////////////
+
+
+    let _clientVarMap = new Map();
+
+    _window.setVar = (varName, varValue) => {
+        _clientVarMap.set(varName, varValue);
+    }
+
+    _window.readVar = (varName) => {
+        return _clientVarMap.get(varName);
+    }
+
+    _window.deleteVar = (varName) => {
+        _clientVarMap.delete(varName);
+    }
 
     let _blocksMap = new Map();
     let templateDefinitionMap = new Map();
@@ -332,7 +348,15 @@
     */
 
     let _sendEvent = (handlerId, data) => {
-        let dataLength = data?.length || 0;
+        let dataLength;
+
+        if (data) {
+            data = JSON.stringify(data);
+            dataLength = data.length;
+        } else {
+            dataLength = 0;
+        }
+
         let buf = createBuffer(5 + dataLength);
         let EVENT_COMMAND = 1;
 
@@ -340,7 +364,7 @@
         writeUint16LE(buf, handlerId, 1);
         writeUint16LE(buf, dataLength, 3);
 
-        if (data) {
+        if (dataLength) {
             writeString(buf, data, 5);
         }
 
@@ -705,11 +729,28 @@
         },
         [CMD_RUN_CLIENT_FUNCTION]: () => {
             let clientFunctionId = getUint16();
+            let serverFunctions = [];
+            let bindId;
+
+            while ((bindId = getUint16())) {
+                let _bindId = bindId;
+
+                serverFunctions.push((data) => {
+                    _sendEvent(_bindId, data);
+                });
+            }
+
             let argsJsonLength = getUint16();
             let str = getString(argsJsonLength);
             let argsList = JSON.parse(str);
 
-            clientFunctionsMap.get(clientFunctionId).apply(null, argsList);
+            let thisContext = null;
+
+            if (serverFunctions.length) {
+                thisContext = { serverFunctions };
+            }
+
+            clientFunctionsMap.get(clientFunctionId).apply(thisContext, argsList);
         }
     }
 
@@ -740,7 +781,7 @@
             windowId = getString(21);
 
             // head = 1, body = 2
-            _blocksMap.set(1, initializeRootBlockWithElement(_document.head));
+            _blocksMap.set(1, initializeRootBlockWithElement(head));
             _blocksMap.set(2, initializeRootBlockWithElement(_document.body));
 
             let length;
@@ -845,5 +886,49 @@
 
     let writeString = (buf, string, offset) => {
         blitBuffer(encoder.encode(string), buf, offset, string.length);
+    }
+
+    window.loadStyle = (url) => {
+        // Create new link Element
+        var link = _document.createElement('link');
+
+        // set the attributes for link element
+        link.rel = 'stylesheet';
+        link.type = 'text/css';
+        link.href = url;
+
+        // Get HTML head element to append
+        // link element to it
+        head.appendChild(link);
+    }
+
+    window.loadScript = (src, cb, opts) => {
+        var script = _document.createElement('script')
+
+        opts = opts || {}
+        cb = cb || function () { }
+
+        script.type = opts.type || 'text/javascript';
+        script.charset = opts.charset || 'utf8';
+        script.async = 'async' in opts ? !!opts.async : true;
+        script.src = src
+
+        stdOnEnd(script, cb);
+
+        head.appendChild(script);
+
+        function stdOnEnd(script, cb) {
+            script.onload = function () {
+                this.onerror = this.onload = null
+                cb(null, script)
+            }
+
+            script.onerror = function () {
+                // this.onload = null here is necessary
+                // because even IE9 works not like others
+                this.onerror = this.onload = null
+                cb(new Error('Failed to load ' + this.src), script)
+            }
+        }
     }
 }
