@@ -707,7 +707,10 @@
             let clientDataString = getString(len);
             let expiration = getUint32();
 
-            _document.cookie = `__CD=${clientDataString};`;
+            let key = '__CD';
+
+            _document.cookie = key + '=; Max-Age=-1;';
+            _document.cookie = key + "=" + clientDataString + ";";
         },
         [CMD_REMOVE_BLOCKS]: () => {
             let blockId;
@@ -902,6 +905,8 @@
         head.appendChild(link);
     }
 
+
+    // logic taken from npm package load-script
     window.loadScript = (src, cb, opts) => {
         var script = _document.createElement('script')
 
