@@ -709,7 +709,7 @@
 
             let key = '__CD';
 
-            _document.cookie = key + '=; Max-Age=-1;';
+            _document.cookie = key + '=;Path=/;Max-Age=0';
             _document.cookie = key + "=" + clientDataString + ";";
         },
         [CMD_REMOVE_BLOCKS]: () => {
