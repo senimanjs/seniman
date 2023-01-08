@@ -578,7 +578,7 @@ export class Window {
 
     _attach(blockId, anchorIndex, nodeResult) {
 
-        if (nodeResult == null) {
+        if (!nodeResult) {
             this._streamTextInitCommand(blockId, anchorIndex, '');
         } else if (typeof nodeResult == 'string') {
             this._streamTextInitCommand(blockId, anchorIndex, nodeResult);
@@ -815,7 +815,7 @@ export class Window {
             let targetId = elementEffect.targetId;
 
             let UPDATE_MODE_STYLEPROP = 1;
-            let UPDATE_MODE_ATTR = 2;
+            let UPDATE_MODE_SET_ATTR = 2;
             let UPDATE_MODE_SET_CLASS = 3;
             let UPDATE_MODE_REMOVE_CLASS = 4;
             let UPDATE_MODE_REMOVE_ATTR = 5;
@@ -868,15 +868,28 @@ export class Window {
                     buf.writeUint8(value ? 1 : 0, 5);
                 },
 
+                removeAttribute: (propName) => {
+                    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1);
+
+                    buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
+                    buf.writeUint16BE(blockId, 1);
+                    buf.writeUint8(targetId, 3);
+                    buf.writeUint8(UPDATE_MODE_REMOVE_ATTR, 4);
+                    buf.writeUint8(propName, 5); // propName is in this case a number -- map index.
+                },
+
                 setAttribute: (propName, propValue) => {
 
                     if (!propValue) {
-                        propValue = '';
-                    } else if (typeof propValue != 'string') {
+                        elRef.removeAttribute(propName);
+                        return;
+                    }
+
+                    if (typeof propValue != 'string') {
                         propValue = propValue.toString();
                     }
 
-                    elRef._staticHelper(UPDATE_MODE_ATTR, propName, propValue);
+                    elRef._staticHelper(UPDATE_MODE_SET_ATTR, propName, propValue);
                 },
                 toggleClass: (className, value) => {
                     elRef._staticHelperPropKeyOnly(value ? UPDATE_MODE_SET_CLASS : UPDATE_MODE_REMOVE_CLASS, className);

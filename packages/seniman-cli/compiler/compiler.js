@@ -27,7 +27,7 @@ const eventTypeIdMap = {
     'onClick': 1,
     'onFocus': 2,
     'onBlur': 3,
-    'onValueChange': 4,
+    'onChange': 4,
     'onScroll': 5,
     'onKeyDown': 6,
 };
@@ -40,6 +40,7 @@ const validHtmlElementNames = new Set([
     'div',
     'span',
     'input',
+    'label',
     'img',
     'p',
     'a',
@@ -75,7 +76,8 @@ const validElementAttributeNames = new Set([
     'width',
     'height',
     'fill',
-    'focusable'
+    'focusable',
+    'disabled'
 ]);
 
 const compressionRegistry = {
@@ -719,6 +721,14 @@ export function processFile(fileName, fileString) {
         } else if (node.type == 'ExpressionStatement') {
             node.expression = process(node.expression);
             return node;
+        } else if (node.type == 'ObjectExpression') {
+            node.properties.map((bodyNode, index) => {
+                node.properties[index] = process(bodyNode);
+            });
+            return node;
+        } else if (node.type == 'ObjectProperty') {
+            node.value = process(node.value);
+            return node;
         } else if (node.type == 'AssignmentExpression') {
             node.right = process(node.right);
             return node;
@@ -1249,6 +1259,7 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
 
                 let propExpression = props[propKey];
 
+                /*
                 if (propExpression.type == 'Identifier') {
 
                     //console.log('propExpression standard', propExpression);
@@ -1261,7 +1272,10 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
                         },
                         "value": process(propExpression)
                     };
-                } else if (propExpression.type == 'ArrowFunctionExpression') {
+                } else 
+                
+                */
+                if (propExpression.type == 'ArrowFunctionExpression') {
                     return {
                         "type": "ObjectProperty",
                         "key": {
