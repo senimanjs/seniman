@@ -93,7 +93,7 @@ export class Window {
                     return handlerId;
                 });
 
-                let argJsonString = JSON.stringify(args);
+                let argJsonString = JSON.stringify(args || []);
                 let buf = this._allocCommandBuffer(1 + 2 + ((serverBindIds.length * 2) + 2) + 2 + argJsonString.length);
 
                 buf.writeUInt8(CMD_RUN_CLIENT_FUNCTION, 0);
@@ -599,6 +599,11 @@ export class Window {
 
     // TODO: this might be doing it too cleverly -- will be hard to understand without comments.
     // also lots of optimizations can be done.
+
+    // what we're doing here is creating a single effect scope to capture all of the callables, then
+    // passing the resolved values down to the recursive _attachList call, down to the final code path
+    // where no callables are present, and we can start streaming the values to the client.
+    // TODO: this doesn't currently handle nested lists
     _attachList(blockId, anchorIndex, list) {
         let includesCallables = false;
         let listLength = list.length;
@@ -617,7 +622,6 @@ export class Window {
             // create an effect scope to capture any of the callables, then pass the resolved values down the
             // recursive _attachList call
             // TODO: optimize this
-
             let valueList = [];
 
             // TODO: optimize -- hint from the compiler?
@@ -644,8 +648,18 @@ export class Window {
             });
 
         } else {
-            // once we got rid of all the callables, stream down the list.
-            this._streamAttachListCommand(blockId, anchorIndex, list);
+            // once we got rid of all the callables, stream down the list 
+            // after some value cleanups
+            this._streamAttachListCommand(blockId, anchorIndex, list.map(value => {
+                if (!value) {
+                    value = '';
+                } else if (Array.isArray(value)) {
+                    if (value.length == 0) {
+                        value = '';
+                    }
+                }
+                return value;
+            }));
         }
     }
 
@@ -707,10 +721,10 @@ export class Window {
     }
 
     _streamAttachListCommand(blockId, anchorIndex, nodeResultsArray) {
-
-        //console.log('_streamAttachListCommand', blockId, anchorIndex, nodeResultsArray);
         let length = 1 + 2 + 1 + 2;
         let count = nodeResultsArray.length;
+
+        //console.log('_streamAttachListCommand', blockId, anchorIndex, count, nodeResultsArray);
 
         // TODO: handle text in the results array
         for (let i = 0; i < count; i++) {
@@ -778,7 +792,6 @@ export class Window {
         };
     }
 
-
     _handleBlockEventHandlers(newBlockId, eventHandlers) {
         let eventHandlerIds = [];
 
@@ -786,7 +799,10 @@ export class Window {
             let clientFnId;
             let serverBindFns;
 
-            if (eventHandler.fn instanceof Function) {
+            // do nothing if the event handler is undefined
+            if (!eventHandler.fn) {
+                return;
+            } else if (eventHandler.fn instanceof Function) {
                 clientFnId = 1;
                 serverBindFns = [eventHandler.fn];
             } else if (eventHandler.fn.clientFnId) {
@@ -855,6 +871,13 @@ export class Window {
                 },
 
                 setStyleProperty: (propName, propValue) => {
+                    // if propValue is a number, we need to convert it to a string
+                    // TODO: insert some intelligence around adding 'px' to the end of the string like React does?
+                    // (only on certain properties)
+                    if (typeof propValue == 'number') {
+                        propValue = propValue.toString();
+                    }
+
                     elRef._staticHelper(UPDATE_MODE_STYLEPROP, propName, propValue || '');
                 },
 

@@ -395,10 +395,18 @@ export function processFile(fileName, fileString) {
                 let props = {};
 
                 node.openingElement.attributes.forEach(attribute => {
-                    // check if attribute.value is a stringliteral or numericliteral
-                    // if so, just add it to the props object
-                    // if not, add it to the props object as an expression
-                    if (attribute.value.type == 'StringLiteral' || attribute.value.type == 'NumericLiteral') {
+                    // if the prop does not have a value
+                    // example: <MyComponent myProp />
+                    if (!attribute.value) {
+                        // assign true to the prop
+                        props[attribute.name.name] = {
+                            "type": "BooleanLiteral",
+                            "value": true
+                        };
+                    } else if (attribute.value.type == 'StringLiteral' || attribute.value.type == 'NumericLiteral') {
+                        // check if attribute.value is a stringliteral or numericliteral
+                        // if so, just add it to the props object
+                        // if not, add it to the props object as an expression
                         props[attribute.name.name] = attribute.value;
                     } else {
                         props[attribute.name.name] = attribute.value.expression;
@@ -555,6 +563,8 @@ export function processFile(fileName, fileString) {
     }
 
     function process(node) {
+
+        // TODO: we probably need to move to the visitor pattern here
 
         if (node.type == 'File') {
             node.program = process(node.program);
@@ -742,6 +752,19 @@ export function processFile(fileName, fileString) {
             if (node.init) {
                 node.init = process(node.init);
             }
+            return node;
+        }
+        // handle class and its methods
+        else if (node.type == 'ClassDeclaration') {
+            node.body.body.forEach((method, index) => {
+                node.body.body[index] = process(method);
+            });
+            return node;
+        } else if (node.type == 'ClassMethod') {
+            node.body = process(node.body);
+            return node;
+        } else if (node.type == 'ClassProperty') {
+            node.value = process(node.value);
             return node;
         } else {
             //console.log('unknown node', node.type);
