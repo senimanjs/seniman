@@ -92,41 +92,66 @@ export function getCompiledCompressionMap() {
     let buf = Buffer.alloc(32678); //1 + 2 + bufContentLength);
     let ptr = 0;
 
-    compressionRegistry.elementNames.forEach(name => {
+    // note: stylePropertyValues is currently not be needed since we don't compress
+    // the values, only the keys
+    let reverseIndexMap = {
+        elementNames: {},
+        elementAttributeNames: {},
+        stylePropertyKeys: {},
+        //stylePropertyValues: {}
+    }
+
+    let i = 0;
+
+    compressionRegistry.elementNames.forEach((name) => {
         buf.writeUint8(name.length, ptr);
         buf.write(name, ptr + 1, name.length);
 
         ptr += (1 + name.length);
+
+        reverseIndexMap.elementNames[name] = i;
+        i++;
     });
 
     buf.writeUint8(0, ptr);
     ptr += 1;
 
-    compressionRegistry.elementAttributeNames.forEach(name => {
+    i = 0;
+    compressionRegistry.elementAttributeNames.forEach((name) => {
         buf.writeUint8(name.length, ptr);
         buf.write(name, ptr + 1, name.length);
 
         ptr += (1 + name.length);
+
+        reverseIndexMap.elementAttributeNames[name] = i;
+        i++;
     });
 
     buf.writeUint8(0, ptr);
     ptr += 1;
 
-    compressionRegistry.stylePropertyKeys.forEach(name => {
+    i = 0;
+    compressionRegistry.stylePropertyKeys.forEach((name) => {
         buf.writeUint8(name.length, ptr);
         buf.write(name, ptr + 1, name.length);
 
         ptr += (1 + name.length);
+
+        reverseIndexMap.stylePropertyKeys[name] = i;
+        i++;
     });
 
     buf.writeUint8(0, ptr);
     ptr += 1;
 
-    compressionRegistry.stylePropertyValues.forEach(name => {
+    //i = 0;
+    compressionRegistry.stylePropertyValues.forEach((name) => {
         buf.writeUint8(name.length, ptr);
         buf.write(name, ptr + 1, name.length);
 
         ptr += (1 + name.length);
+        //reverseIndexMap.stylePropertyValues[name] = i;
+        //i++;
     });
 
     //console.log('LENS:', compressionRegistry.elementNames.size, compressionRegistry.elementAttributeNames.size, compressionRegistry.stylePropertyKeys.size, compressionRegistry.stylePropertyValues.size);
@@ -137,7 +162,10 @@ export function getCompiledCompressionMap() {
 
     //buf.writeUint16LE(ptr - 3, 1);
 
-    return buf.subarray(0, ptr);
+    return {
+        compressionMapInstallBuffer: buf.subarray(0, ptr),
+        reverseIndexMapJsonString: JSON.stringify(reverseIndexMap, null, 4)
+    };
 }
 
 
@@ -903,6 +931,7 @@ function _buildElRefCallExpression(cond, _arguments) {
     let functionName = {
         'attribute': 'setAttribute',
         'style': 'setStyleProperty',
+        'multiStyleProp': 'setMultiStyleProperties',
         'classList': 'toggleClass',
         'class': 'setClassName',
         'checked': 'setChecked'
@@ -960,9 +989,9 @@ function createMultiConditionStyleEffectBodyBlockStatement(styleConditions) {
     styleConditions.forEach((cond, index) => {
         // _v$2 !== _p$._v$2 && elRef.toggleClass("selected", _p$._v$ = _v$);
         let _arguments;
+        let conditionType = cond.type;
 
-        if (cond.type == 'class' || cond.type == 'checked') {
-
+        if (conditionType == 'class' || conditionType == 'checked' || conditionType == 'multiStyleProp') {
             _arguments = [buildValueAssignmentExpression(index)];
         } else {
             // TODO: handle style creations that are not in the static compression map
@@ -1009,8 +1038,10 @@ function createMultiConditionStyleEffectBodyBlockStatement(styleConditions) {
 function createSingleConditionStyleEffectBodyBlockStatement(styleCondition) {
 
     let _arguments;
+    let conditionType = styleCondition.type;
 
-    if (styleCondition.type == 'class' || styleCondition.type == 'checked') {
+    // if a single parameter function call (e.g. toggleClass, setMultiStyleProps, setChecked)
+    if (conditionType == 'class' || conditionType == 'checked' || conditionType == 'multiStyleProp') {
         _arguments = [_buildStyleConditionValueExpression(styleCondition)];
     } else {
 
@@ -1055,33 +1086,40 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
             function processStyleObject(objectExpression) {
                 let staticStyleStringables = [];
 
-                objectExpression.properties.forEach(prop => {
+                // handle style={{ color: 'red', ... }} style initialization
+                if (objectExpression.type == 'ObjectExpression') {
+                    objectExpression.properties.forEach(prop => {
 
-                    let key;
+                        let key;
 
-                    if (prop.key.type == 'Identifier') {
-                        key = camelCaseToDash(prop.key.name);
-                    } else if (prop.key.type == 'StringLiteral') {
-                        key = prop.key.value;
-                    }
+                        if (prop.key.type == 'Identifier') {
+                            key = camelCaseToDash(prop.key.name);
+                        } else if (prop.key.type == 'StringLiteral') {
+                            key = prop.key.value;
+                        }
 
-                    compressionRegistry.stylePropertyKeys.add(key);
+                        compressionRegistry.stylePropertyKeys.add(key);
 
-                    if (prop.value.type == 'StringLiteral' || prop.value.type == 'NumericLiteral') {
+                        if (prop.value.type == 'StringLiteral' || prop.value.type == 'NumericLiteral') {
 
-                        let valueString = prop.value.value.toString();
-                        compressionRegistry.stylePropertyValues.add(valueString);
+                            let valueString = prop.value.value.toString();
+                            compressionRegistry.stylePropertyValues.add(valueString);
 
-                        element.style.push([key, valueString]);
+                            element.style.push([key, valueString]);
 
-                        staticStyleStringables.push(`${key}:${prop.value.value}`);
-                    } else {
-                        styleConditions.push({ type: 'style', key, condition: prop.value });
-                    }
+                            staticStyleStringables.push(`${key}:${prop.value.value}`);
+                        } else {
+                            styleConditions.push({ type: 'style', key, condition: prop.value });
+                        }
 
-                });
+                    });
 
-                element.attributes.style = staticStyleStringables.join(';');
+
+                    element.attributes.style = staticStyleStringables.join(';');
+                } else {
+                    // handle dynamic style initialization
+                    styleConditions.push({ type: 'multiStyleProp', condition: objectExpression });
+                }
             }
 
             if (value.type == 'StringLiteral') {

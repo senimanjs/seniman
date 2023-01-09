@@ -76,7 +76,12 @@ export async function compileFile(config, fileName) {
 
 export async function compileCompressionMap(config) {
 
-    await fs.promises.writeFile(config.targetDirectory + '/compression-command.bin', getCompiledCompressionMap());
+    let { compressionMapInstallBuffer, reverseIndexMapJsonString } = getCompiledCompressionMap();
+
+    await fs.promises.writeFile(config.targetDirectory + '/compression-command.bin', compressionMapInstallBuffer);
+
+    // also put in the reverse map
+    await fs.promises.writeFile(config.targetDirectory + '/reverse-index-map.json', reverseIndexMapJsonString);
 }
 
 let fileNames = new Set();

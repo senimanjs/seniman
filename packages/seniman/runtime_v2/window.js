@@ -13,6 +13,22 @@ export function useWindow() {
     return useContext(WindowContext);
 }
 
+const camelCaseToKebabCaseRegex = /([a-z0-9])([A-Z])/g;
+
+// TODO: use a LRU cache
+const camelCache = new Map();
+
+function camelCaseToKebabCase(str) {
+    if (camelCache.has(str)) {
+        return camelCache.get(str);
+    }
+
+    const result = str.replace(camelCaseToKebabCaseRegex, '$1-$2').toLowerCase();
+    camelCache.set(str, result);
+    return result;
+}
+
+
 //let CMD_PING = 0;
 //let CMD_INSTALL_TEMPLATE = 1;
 let CMD_INIT_WINDOW = 2;
@@ -578,12 +594,12 @@ export class Window {
 
     _attach(blockId, anchorIndex, nodeResult) {
 
-        if (!nodeResult) {
-            this._streamTextInitCommand(blockId, anchorIndex, '');
-        } else if (typeof nodeResult == 'string') {
+        if (typeof nodeResult == 'string') {
             this._streamTextInitCommand(blockId, anchorIndex, nodeResult);
         } else if (typeof nodeResult == 'number') {
             this._streamTextInitCommand(blockId, anchorIndex, nodeResult.toString());
+        } else if (!nodeResult) {
+            this._streamTextInitCommand(blockId, anchorIndex, '');
         } else if (nodeResult.type == 'block') {
             //console.log('_attachBlock', nodeResult.id);
             this._streamAttachBlockCommand(blockId, anchorIndex, nodeResult.id);
@@ -836,6 +852,7 @@ export class Window {
             let UPDATE_MODE_REMOVE_CLASS = 4;
             let UPDATE_MODE_REMOVE_ATTR = 5;
             let UPDATE_MODE_SET_CHECKED = 6;
+            let UPDATE_MODE_MULTI_STYLEPROP = 7;
 
             // TODO: improve this abstraction
             let elRef = {
@@ -879,6 +896,26 @@ export class Window {
                     }
 
                     elRef._staticHelper(UPDATE_MODE_STYLEPROP, propName, propValue || '');
+                },
+
+                setMultiStyleProperties: (styleProps) => {
+                    const kebabCaseObj = {};
+
+                    for (const key in styleProps) {
+                        const kebabCaseKey = camelCaseToKebabCase(key);
+                        kebabCaseObj[kebabCaseKey] = styleProps[key];
+                    }
+
+                    let jsonString = JSON.stringify(kebabCaseObj);
+
+                    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + jsonString.length);
+
+                    buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
+                    buf.writeUint16BE(blockId, 1);
+                    buf.writeUint8(targetId, 3);
+                    buf.writeUint8(UPDATE_MODE_MULTI_STYLEPROP, 4);
+                    buf.writeUInt16BE(jsonString.length, 5);
+                    buf.write(jsonString, 7, jsonString.length);
                 },
 
                 setChecked: (value) => {

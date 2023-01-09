@@ -403,26 +403,35 @@
         let UPDATE_MODE_REMOVE_ATTR = 5;
         let UPDATE_MODE_SET_CHECKED = 6;
         */
+
+        let UPDATE_MODE_STYLEPROP = 1;
+        let UPDATE_MODE_SET_ATTR = 2;
+        let UPDATE_MODE_SET_CLASS = 3;
+        let UPDATE_MODE_REMOVE_CLASS = 4;
+        let UPDATE_MODE_REMOVE_ATTR = 5;
+        let UPDATE_MODE_SET_CHECKED = 6;
+        let UPDATE_MODE_MULTI_STYLEPROP = 7;
+
         switch (updateMode) {
-            case 1:
-            case 2:
+            case UPDATE_MODE_STYLEPROP:
+            case UPDATE_MODE_SET_ATTR:
                 {
                     let mapIndex = getUint8();
-                    let propName = (updateMode == 1 ? stylePropertyKeyMap : staticAttributeMap)[mapIndex];
+                    let propName = (updateMode == UPDATE_MODE_STYLEPROP ? stylePropertyKeyMap : staticAttributeMap)[mapIndex];
                     //let propName = getString(6, propNameLength);
                     let propValueLength = getUint8();
                     let propValue = getString(propValueLength);
 
                     //console.log('blockId', blockId, targetId, updateMode, propName, propValue);
-                    if (updateMode == 1) {
+                    if (updateMode == UPDATE_MODE_STYLEPROP) {
                         targetHandlerElement.style.setProperty(propName, propValue);
                     } else {
                         targetHandlerElement.setAttribute(propName, propValue);
                     }
                     break;
                 }
-            case 3:
-            case 4:
+            case UPDATE_MODE_SET_CLASS:
+            case UPDATE_MODE_REMOVE_CLASS:
                 {
                     let nameLength = getUint8();
                     let name = getString(nameLength);
@@ -430,17 +439,29 @@
                     targetHandlerElement.classList.toggle(name, updateMode == 3); // if updateMode == 4, then class is removed
                     break;
                 }
-            case 5:
+            case UPDATE_MODE_REMOVE_ATTR:
                 {
                     let mapIndex = getUint8();
                     let propName = staticAttributeMap[mapIndex];
                     targetHandlerElement.removeAttribute(propName);
                     break;
                 }
-            case 6:
+            case UPDATE_MODE_SET_CHECKED:
                 // TODO: probably handle this through the regular SET_ATTR / REMOVE_ATTR code path
                 let isActive = getUint8() == 1;
                 targetHandlerElement.checked = isActive;
+                break;
+            case UPDATE_MODE_MULTI_STYLEPROP:
+                let jsonStringLength = getUint16();
+                let jsonString = getString(jsonStringLength);
+                let stylePropMap = JSON.parse(jsonString);
+
+                // clear the target element's styles, then apply the new ones
+                targetHandlerElement.style.cssText = '';
+                for (let key in stylePropMap) {
+                    targetHandlerElement.style.setProperty(key, stylePropMap[key]);
+                }
+
                 break;
         }
     }
@@ -450,8 +471,9 @@
         let totalElementCount = getUint16();
         let totalProcessed = 0;
         let templateString = '';
+        let isSvg = false;
 
-        let dig = () => {
+        let dig = (isRoot) => {
 
             while (totalProcessed < totalElementCount) {
                 let firstByte = getUint8();
@@ -471,6 +493,10 @@
                     let isSelfClosing = selfClosingTagSet.has(tagName);
 
                     templateString += `<${tagName}`;
+
+                    if (isRoot && tagName == 'path') {
+                        isSvg = true;
+                    }
 
                     while (attrId = getUint8()) {
                         let attrName = staticAttributeMap[attrId];
@@ -502,7 +528,7 @@
                     let hasChildren = (firstByte & 64) > 0; // 7th-bit
 
                     if (hasChildren) {
-                        dig();
+                        dig(false);
                     }
 
                     if (!isSelfClosing) {
@@ -518,23 +544,32 @@
             }
         }
 
-        dig();
+        dig(true);
 
-        return templateString;
+        // TODO: this is a hack to make SVG work -- do this during compilation?
+        if (isSvg) {
+            templateString = `<svg>${templateString}</svg>`;
+        }
+
+        return [templateString, isSvg];
     }
 
     let _installTemplate2 = () => {
         let templateId = getUint16();
-
-        //let start = performance.now();
-        let templateString = _compileTemplate();
+        let [templateString, isSvg] = _compileTemplate();
 
         //console.log('templateString', templateId, templateString);
         const t = _document.createElement("template");
         t.innerHTML = templateString;
 
+        let node = t.content.firstChild;
+
+        if (isSvg) {
+            node = node.firstChild;
+        }
+
         templateDefinitionMap.set(templateId, {
-            tpl: t.content.firstChild,
+            tpl: node,
             fn: _compileFn2(templateId)
         })
     }
