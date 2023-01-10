@@ -422,11 +422,14 @@
                     let propValueLength = getUint8();
                     let propValue = getString(propValueLength);
 
-                    //console.log('blockId', blockId, targetId, updateMode, propName, propValue);
                     if (updateMode == UPDATE_MODE_STYLEPROP) {
                         targetHandlerElement.style.setProperty(propName, propValue);
                     } else {
-                        targetHandlerElement.setAttribute(propName, propValue);
+                        if (propName == 'value') {
+                            targetHandlerElement.value = propValue;
+                        } else {
+                            targetHandlerElement.setAttribute(propName, propValue);
+                        }
                     }
                     break;
                 }

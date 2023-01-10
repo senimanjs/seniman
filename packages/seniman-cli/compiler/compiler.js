@@ -811,7 +811,7 @@ export function processFile(fileName, fileString) {
 function parse$CDefinition(functionNode) {
     // TODO: create a faster implementation that does not implementing print-ing and re-parsing
     // the $c source code
-    let functionNodeString = generate(functionNode.body).code;
+    let functionNodeString = generate(functionNode).code;
     let newFunctionAst = parser.parse(functionNodeString);
 
     let serverBindNodes = [];
@@ -849,8 +849,13 @@ function parse$CDefinition(functionNode) {
         return param.name;
     });
 
+    // fetch the first function node from the program AST
+    let functionNodeAst = newFunctionAst.program.body[0].expression.body;
+
+    let newFunctionBodyString = generate(functionNodeAst).code;
+
     return {
-        body: generate(newFunctionAst).code,
+        body: newFunctionBodyString,
         argNames,
         serverBindNodes
     }
