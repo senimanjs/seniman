@@ -221,8 +221,8 @@
     }
     */
 
-    function bareServerCallWithPreventDefault(e) {
-        e.preventDefault();
+    function bareServerCallWithoutPreventDefault(e) {
+        //e.preventDefault();
         this.serverFunctions[0]();
     }
 
@@ -271,7 +271,7 @@
         */
 
         let clientFnId = getUint16(); //buf.writeUint16LE(parentBlockId, 1);
-        let fn = clientFnId == 1 ? bareServerCallWithPreventDefault : clientFunctionsMap.get(clientFnId);
+        let fn = clientFnId == 1 ? bareServerCallWithoutPreventDefault : clientFunctionsMap.get(clientFnId);
 
         let serverFunctions = [];
         let bindId;
