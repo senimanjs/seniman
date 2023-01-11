@@ -748,8 +748,8 @@
 
             let key = '__CD';
 
-            _document.cookie = key + '=;Path=/;Max-Age=0';
-            _document.cookie = key + "=" + clientDataString + ";";
+            _document.cookie = key + '=;Max-Age=0';
+            _document.cookie = key + "=" + clientDataString + ";Path=/;";
         },
         [CMD_REMOVE_BLOCKS]: () => {
             let blockId;

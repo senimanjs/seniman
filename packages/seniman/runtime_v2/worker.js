@@ -36,9 +36,9 @@ parentPort.on('message', async (msg) => {
 
     if (msg.type == 'new_window') {
         console.log('new window');
-        let { windowId, initialPath, clientIdentifier, port2 } = msg;
+        let { windowId, initialPath, cookieString, port2 } = msg;
 
-        let window = new Window(windowId, initialPath, clientIdentifier, build, port2);
+        let window = new Window(windowId, initialPath, cookieString, build, port2);
         windowMap.set(windowId, window);
 
         window.onDestroy(() => {
@@ -48,9 +48,8 @@ parentPort.on('message', async (msg) => {
         });
 
     } else if (msg.type == 'reconnect_window') {
-        let { windowId, clientIdentifier, readOffset } = msg;
-
-        windowMap.get(windowId).reconnect(clientIdentifier, readOffset);
+        let { windowId, cookieString, readOffset } = msg;
+        windowMap.get(windowId).reconnect(cookieString, readOffset);
 
     } else if (msg.type == 'disconnect_window') {
         let { windowId } = msg;

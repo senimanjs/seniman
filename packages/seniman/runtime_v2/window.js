@@ -28,6 +28,14 @@ function camelCaseToKebabCase(str) {
     return result;
 }
 
+const parseCookie = str =>
+    str
+        .split(';')
+        .map(v => v.split('='))
+        .reduce((acc, v) => {
+            acc[decodeURIComponent(v[0].trim())] = decodeURIComponent(v[1].trim());
+            return acc;
+        }, {});
 
 //let CMD_PING = 0;
 //let CMD_INSTALL_TEMPLATE = 1;
@@ -48,7 +56,7 @@ let pingBuffer = Buffer.from([0]);
 
 export class Window {
 
-    constructor(id, initialPath, clientIdentifierString, build, port) {
+    constructor(id, initialPath, cookieString, build, port) {
 
         if (build.syntaxErrors) {
             console.error('Starting a window with syntax errors');
@@ -68,6 +76,10 @@ export class Window {
         this.latestBlockId = 10;
 
         let [path, setPath] = createSignal(initialPath);
+
+        // TODO: make sure to not throw errors when the cookie string is malformed
+        let clientIdentifierString = cookieString ? (parseCookie(cookieString)['__CD'] || '') : '';
+
         let [clientData, setClientData] = createSignal(clientIdentifierString);
         let [pageTitle, set_pageTitle] = createSignal('');
 
@@ -326,7 +338,8 @@ export class Window {
         }
     }
 
-    reconnect(readOffset) {
+    reconnect(cookieString, readOffset) {
+        // TODO: do something with cookieString -- it's possibly have changed since last time
 
         console.log('reconnected in window', this.id, readOffset);
 

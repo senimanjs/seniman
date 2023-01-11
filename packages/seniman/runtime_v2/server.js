@@ -30,16 +30,6 @@ export function updateBuildDev() {
     _reloadWorker();
 }
 
-const parseCookie = str =>
-    str
-        .split(';')
-        .map(v => v.split('='))
-        .reduce((acc, v) => {
-            acc[decodeURIComponent(v[0].trim())] = decodeURIComponent(v[1].trim());
-            return acc;
-        }, {});
-
-
 let windowWsMap = new Map();
 
 function wsHandler(ws, req) {
@@ -48,16 +38,14 @@ function wsHandler(ws, req) {
     let currentPath = splitUrl[1];
     let readOffset = parseInt(splitUrl[2]);
 
-    let cookieHeaderString = req.headers.cookie;
-    let clientIdentifier = cookieHeaderString ? (parseCookie(cookieHeaderString)['__CD'] || '') : '';
-
+    let cookieHeaderString = req.headers.cookie || '';
     let windowPort1;
 
     if (windowId) {
 
         if (windowPortMap.has(windowId)) {
             windowPort1 = windowPortMap.get(windowId);
-            _reconnectWindowInWorker(windowId, readOffset, clientIdentifier);
+            _reconnectWindowInWorker(windowId, readOffset, cookieHeaderString);
         } else {
             ws.close(3001);
             return;
@@ -66,7 +54,7 @@ function wsHandler(ws, req) {
         windowId = nanoid();
 
         console.log('creating window', windowId);
-        windowPort1 = _createWindowInWorker(windowId, currentPath, clientIdentifier);
+        windowPort1 = _createWindowInWorker(windowId, currentPath, cookieHeaderString);
         windowPortMap.set(windowId, windowPort1);
     }
 
@@ -126,16 +114,16 @@ function _createWorkerThread() {
     });
 }
 
-function _createWindowInWorker(windowId, initialPath, clientIdentifier) {
+function _createWindowInWorker(windowId, initialPath, cookieString) {
     let { port1, port2 } = new MessageChannel();
 
-    _worker.postMessage({ type: 'new_window', windowId, initialPath, clientIdentifier, port2 }, [port2]);
+    _worker.postMessage({ type: 'new_window', windowId, initialPath, cookieString, port2 }, [port2]);
 
     return port1;
 }
 
-function _reconnectWindowInWorker(windowId, clientIdentifier, readOffset) {
-    _worker.postMessage({ type: 'reconnect_window', windowId, clientIdentifier, readOffset });
+function _reconnectWindowInWorker(windowId, cookieString, readOffset) {
+    _worker.postMessage({ type: 'reconnect_window', windowId, cookieString, readOffset });
 }
 
 function _disconnectWindowInWorker(windowId) {
