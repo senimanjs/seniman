@@ -454,7 +454,15 @@ export function processFile(fileName, fileString) {
                     } else {
                         let child = children[0];
 
-                        props['children'] = processJSX(child, null, null);
+                        let childProcessed;
+
+                        if (child.type == 'JSXExpressionContainer') {
+                            childProcessed = process(child.expression);
+                        } else {
+                            childProcessed = processJSX(child, null, null);
+                        }
+
+                        props['children'] = childProcessed;
                     }
                 }
 

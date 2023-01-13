@@ -94,7 +94,7 @@ export class Window {
             clientData,
             path,
             navigate: (path) => {
-                console.log('navigate', path);
+                //console.log('navigate', path);
                 //this.ws.send(JSON.stringify({ command: 'NAV', path: path }))
 
                 let buf = this._allocCommandBuffer(1 + 2 + path.length);
@@ -105,7 +105,7 @@ export class Window {
                 setPath(path);
             },
             navigateFromBack_internal: (path) => {
-                console.log('navigateFromBack_internal', path);
+                //console.log('navigateFromBack_internal', path);
                 setPath(path);
             },
 
@@ -666,10 +666,20 @@ export class Window {
 
             createEffect(() => {
                 for (let i = 0; i < listLength; i++) {
-                    let val = list[i];
+                    let value = list[i];
 
-                    if (val instanceof Function) {
-                        valueList[i] = val();
+                    if (value instanceof Function) {
+                        value = value();
+
+                        if (typeof value == 'number') {
+                            value = value.toString();
+                        } else if (!value) {
+                            value = '';
+                        } else if (Array.isArray(value) && value.length == 0) {
+                            value = '';
+                        }
+
+                        valueList[i] = value;
                     }
                 }
 
@@ -677,18 +687,9 @@ export class Window {
             });
 
         } else {
-            // once we got rid of all the callables, stream down the list 
-            // after some value cleanups
-            this._streamAttachListCommand(blockId, anchorIndex, list.map(value => {
-                if (!value) {
-                    value = '';
-                } else if (Array.isArray(value)) {
-                    if (value.length == 0) {
-                        value = '';
-                    }
-                }
-                return value;
-            }));
+
+            // once we got rid of all the callables, stream down the list
+            this._streamAttachListCommand(blockId, anchorIndex, list);
         }
     }
 

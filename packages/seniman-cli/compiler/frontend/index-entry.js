@@ -952,9 +952,9 @@
         opts = opts || {}
         cb = cb || function () { }
 
-        script.type = opts.type || 'text/javascript';
+        //script.type = opts.type || 'text/javascript';
         script.charset = opts.charset || 'utf8';
-        script.async = 'async' in opts ? !!opts.async : true;
+        //script.async = 'async' in opts ? !!opts.async : true;
         script.src = src
 
         stdOnEnd(script, cb);

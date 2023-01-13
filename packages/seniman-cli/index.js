@@ -14,7 +14,7 @@ program
     .action(async () => {
         // TODO: is there a cleaner way to make sure the CLI uses the application's local seniman installation?
         let senimanModule = await import(process.cwd() + '/node_modules/seniman/index.js');
-        develop(senimanModule);
+        develop(senimanModule, parseInt(process.env.PORT) || 3002);
     });
 
 program
