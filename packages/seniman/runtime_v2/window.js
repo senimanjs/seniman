@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import fs from 'node:fs';
 
 //import blocks from './components/blocks.js';
 import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
@@ -53,6 +54,50 @@ let CMD_RUN_CLIENT_FUNCTION = 11;
 let PAGE_SIZE = 8192; //32678;
 
 let pingBuffer = Buffer.from([0]);
+
+let cachedBuild = null;
+
+const loadBuild = async (buildPath) => {
+
+    // make sure we load a single build
+    if (cachedBuild) {
+        return cachedBuild;
+    }
+
+    // TODO: make sure we only have one build loading at a time -- implement a lock
+
+    let platformComponent = await import(buildPath + '/_platform.js');
+
+    // TODO: set rootComponent path from config value instead of hardcoding
+    let RootComponent = (await import(buildPath + '/RootComponent.js')).default;
+
+    let build = {
+        HeadTag: platformComponent.HeadTag,
+        BodyTag: platformComponent.BodyTag,
+        RootComponent: RootComponent,
+
+        compressionCommandBuffer: await (fs.promises.readFile(buildPath + '/compression-command.bin')),
+        globalCss: (await (fs.promises.readFile(buildPath + '/global.css'))).toString()
+    };
+
+    try {
+        build.syntaxErrors = JSON.parse(await fs.promises.readFile(buildPath + '/SyntaxErrors.json'));
+    } catch (e) {
+        console.log('No syntax errors.');
+        //build.rootComponent = (await import(buildPath + '/RootComponent.js')).default;
+    }
+
+    cachedBuild = build;
+
+    return build;
+}
+
+export const initWindow = async (windowId, initialPath, cookieString, buildPath, port2) => {
+
+    let build = await loadBuild(buildPath);
+
+    return new Window(windowId, initialPath, cookieString, build, port2);
+}
 
 export class Window {
 
