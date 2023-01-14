@@ -2,9 +2,6 @@ import parser from "@babel/parser";
 import generator from "@babel/generator";
 import traverse from "@babel/traverse";
 
-import fs from 'fs';
-import path from 'path';
-
 import { createDeclareBlockExpression, createDeclareClientFunctionExpression } from "./declare.js";
 
 let generate = generator.default;
@@ -45,6 +42,7 @@ const validHtmlElementNames = new Set([
     'p',
     'a',
     'hr',
+    'br',
     'button',
     'select',
     'option',
@@ -802,6 +800,13 @@ export function processFile(fileName, fileString) {
         } else if (node.type == 'ClassProperty') {
             node.value = process(node.value);
             return node;
+
+        } else if (node.type == 'ConditionalExpression') {
+            node.test = process(node.test);
+            node.consequent = process(node.consequent);
+            node.alternate = process(node.alternate);
+            return node;
+
         } else {
             //console.log('unknown node', node.type);
             return node;

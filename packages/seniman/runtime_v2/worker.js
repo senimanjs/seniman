@@ -4,6 +4,31 @@ import fs from 'node:fs';
 
 console.log('Starting worker');
 
+parentPort.on('message', async (msg) => {
+    if (msg.type == 'new_window') {
+        console.log('new window');
+        let { windowId, initialPath, cookieString, port2 } = msg;
+
+        let window = new Window(windowId, initialPath, cookieString, build, port2);
+        windowMap.set(windowId, window);
+
+        window.onDestroy(() => {
+            windowMap.delete(windowId);
+
+            parentPort.postMessage({ type: 'window_destroyed', windowId });
+        });
+    } else if (msg.type == 'reconnect_window') {
+        let { windowId, cookieString, readOffset } = msg;
+        windowMap.get(windowId).reconnect(cookieString, readOffset);
+    } else if (msg.type == 'disconnect_window') {
+        let { windowId } = msg;
+
+        if (windowMap.has(windowId)) {
+            windowMap.get(windowId).disconnect();
+        }
+    }
+});
+
 let windowMap = new Map();
 let buildPath = workerData.buildPath;
 
@@ -32,30 +57,3 @@ try {
 
 console.log('import time', performance.now() - importStartTime);
 
-parentPort.on('message', async (msg) => {
-
-    if (msg.type == 'new_window') {
-        console.log('new window');
-        let { windowId, initialPath, cookieString, port2 } = msg;
-
-        let window = new Window(windowId, initialPath, cookieString, build, port2);
-        windowMap.set(windowId, window);
-
-        window.onDestroy(() => {
-            windowMap.delete(windowId);
-
-            parentPort.postMessage({ type: 'window_destroyed', windowId });
-        });
-
-    } else if (msg.type == 'reconnect_window') {
-        let { windowId, cookieString, readOffset } = msg;
-        windowMap.get(windowId).reconnect(cookieString, readOffset);
-
-    } else if (msg.type == 'disconnect_window') {
-        let { windowId } = msg;
-
-        if (windowMap.has(windowId)) {
-            windowMap.get(windowId).disconnect();
-        }
-    }
-});

@@ -163,7 +163,9 @@
     let templateDefinitionMap = new Map();
     let clientFunctionsMap = new Map();
 
-    let selfClosingTagSet = new Set(['hr', 'img', 'input']);
+    // TODO: have this somehow be given by the server -- 
+    // the complete list is longer than this and we want this file to be as small as possible
+    let selfClosingTagSet = new Set(['br', 'hr', 'img', 'input']);
     let typeIdMapping = [];
     let staticAttributeMap = [];
     let stylePropertyKeyMap = [];
@@ -483,13 +485,10 @@
                 let tagNameId = firstByte & 63; // get first 6 bits of the byte
                 let nextSibling = (firstByte & 128) > 0; // 8th-bit
 
-                //offset++;
-
                 // handle if text
                 if (tagNameId == 32) {
                     let textLength = getUint16();
                     templateString += getString(textLength);
-                    //offset += 2 + textLength;
                 } else {
                     let attrId;
                     let tagName = typeIdMapping[tagNameId];
@@ -506,21 +505,15 @@
                         let attrValueString = '';
 
                         if (attrName == 'style') {
-                            //offset++;
-
                             let propKeyId;
 
                             while ((propKeyId = getUint8())) {
                                 let propValueId = getUint8();
                                 attrValueString += `${stylePropertyKeyMap[propKeyId]}:${stylePropertyValueMap[propValueId]};`;
-                                //offset += 2;
                             }
-
-                            //offset++;
                         } else {
                             let attrValueLength = getUint16();
                             attrValueString = getString(attrValueLength);
-                            //offset += 1 + 2 + attrValueLength;
                         }
 
                         templateString += ` ${attrName}="${attrValueString}"`;
@@ -528,13 +521,13 @@
 
                     templateString += '>';
 
-                    let hasChildren = (firstByte & 64) > 0; // 7th-bit
-
-                    if (hasChildren) {
-                        dig(false);
-                    }
-
                     if (!isSelfClosing) {
+                        let hasChildren = (firstByte & 64) > 0; // 7th-bit
+
+                        if (hasChildren) {
+                            dig(false);
+                        }
+
                         templateString += `</${tagName}>`;
                     }
                 }
