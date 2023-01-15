@@ -43,6 +43,8 @@ const validHtmlElementNames = new Set([
     'a',
     'hr',
     'br',
+    'ul',
+    'li',
     'button',
     'select',
     'option',
@@ -807,6 +809,16 @@ export function processFile(fileName, fileString) {
             node.alternate = process(node.alternate);
             return node;
 
+        }
+
+        else if (node.type == 'ArrayExpression') {
+
+            node.elements.forEach((element, index) => {
+                node.elements[index] = process(element);
+            });
+
+            return node;
+
         } else {
             //console.log('unknown node', node.type);
             return node;
@@ -1279,6 +1291,7 @@ function createBlockEventHandlerEntryExpression(targetId, type, fnExpression) {
 
     //console.log('createBlockEventHandlerEntryExpression', targetId, type);
 
+    /*
     // if classList, then wrap the class object expression in a function.
     if (type == 5) {
         fnExpression = {
@@ -1287,6 +1300,7 @@ function createBlockEventHandlerEntryExpression(targetId, type, fnExpression) {
             "body": fnExpression
         }
     }
+    */
 
     return {
         "type": "ObjectExpression",
