@@ -27,6 +27,7 @@ const eventTypeIdMap = {
     'onChange': 4,
     'onScroll': 5,
     'onKeyDown': 6,
+    'onKeyUp': 7
 };
 
 const eventNames = Object.keys(eventTypeIdMap);
@@ -898,13 +899,14 @@ function handleCreateBlockEventsExpression(contextBlock, targetId, node, process
 }
 
 function _buildStyleConditionKeyExpression(cond) {
-    //console.log('cond.type', cond.type);
-    let condType = cond.type;
+    return { type: "StringLiteral", value: cond.key };
+
+    /*
+    // Disable this for now, since it is making debug harder while the framework isn't too mature yet.
 
     if (condType == 'style' || condType == 'attribute') {
         let set = condType == 'style' ? compressionRegistry.stylePropertyKeys : compressionRegistry.elementAttributeNames;
 
-        //console.log()
         if (set.has(cond.key)) {
             let keysList = Array.from(set);
             return { type: 'NumericLiteral', value: keysList.indexOf(cond.key) + 1 };
@@ -915,6 +917,7 @@ function _buildStyleConditionKeyExpression(cond) {
     } else {
         return { type: "StringLiteral", value: cond.key };
     }
+    */
 }
 
 function _buildStyleConditionValueExpression(cond) {

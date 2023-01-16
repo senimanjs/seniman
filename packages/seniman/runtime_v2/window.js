@@ -972,7 +972,9 @@ export class Window {
                         propValue = propValue.toString();
                     }
 
-                    elRef._staticHelper(UPDATE_MODE_STYLEPROP, propName, propValue || '');
+                    let propKey = this.reverseIndexMap.stylePropertyKeys[propName] + 1;
+
+                    elRef._staticHelper(UPDATE_MODE_STYLEPROP, propKey, propValue || '');
                 },
 
                 setMultiStyleProperties: (styleProps) => {
@@ -1008,7 +1010,7 @@ export class Window {
                         const [key, value] = pair;
 
                         if (this.reverseIndexMap.stylePropertyKeys[key]) {
-                            let keyIndex = this.reverseIndexMap.stylePropertyKeys[key];
+                            let keyIndex = this.reverseIndexMap.stylePropertyKeys[key] + 1;
                             // set 16-th bit to 1 to denote that this is static map compression index
                             // (stylePropertyKeyMap on the client)
                             buf2.writeUint16BE(keyIndex |= (1 << 15), offset);
@@ -1021,7 +1023,7 @@ export class Window {
                         }
 
                         if (this.reverseIndexMap.stylePropertyValues[value]) {
-                            let valueIndex = this.reverseIndexMap.stylePropertyValues[value];
+                            let valueIndex = this.reverseIndexMap.stylePropertyValues[value] + 1;
                             buf2.writeUint16BE(valueIndex |= (1 << 15), offset);
                             offset += 2;
                         } else {
@@ -1062,16 +1064,18 @@ export class Window {
 
                 setAttribute: (propName, propValue) => {
 
-                    if (!propValue) {
-                        elRef.removeAttribute(propName);
-                        return;
-                    }
-
                     if (typeof propValue != 'string') {
-                        propValue = propValue.toString();
+                        if (!propValue) {
+                            elRef.removeAttribute(propName);
+                            return;
+                        } else {
+                            propValue = propValue.toString();
+                        }
                     }
 
-                    elRef._staticHelper(UPDATE_MODE_SET_ATTR, propName, propValue);
+                    let attrKey = this.reverseIndexMap.elementAttributeNames[propName] + 1;
+
+                    elRef._staticHelper(UPDATE_MODE_SET_ATTR, attrKey, propValue);
                 },
                 toggleClass: (className, value) => {
                     elRef._staticHelperPropKeyOnly(value ? UPDATE_MODE_SET_CLASS : UPDATE_MODE_REMOVE_CLASS, className);

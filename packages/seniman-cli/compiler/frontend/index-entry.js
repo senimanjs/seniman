@@ -228,7 +228,7 @@
         this.serverFunctions[0]();
     }
 
-    let EventMap = { 2: 'focus', 3: 'blur', 4: 'input', 5: 'scroll', 6: 'keydown' };
+    let EventMap = { 2: 'focus', 3: 'blur', 4: 'input', 5: 'scroll', 6: 'keydown', 7: 'keyup' };
 
     let _attachEventHandlerV2 = () => {
         let blockId = getUint16(); //buf.writeUint16LE(parentBlockId, 1);
@@ -468,7 +468,7 @@
 
                     // if highest order bit is 1 it's a compression map index, otherwise it's a string length
                     if (key_highestOrderBit) {
-                        key = stylePropertyKeyMap[keyBytes + 1]; // index is 1-based
+                        key = stylePropertyKeyMap[keyBytes];
                     } else {
                         key = getString(keyBytes);
                     }
@@ -476,7 +476,7 @@
                     let [value_highestOrderBit, valueBytes] = magicSplitUint16(getUint16());
 
                     if (value_highestOrderBit) {
-                        value = stylePropertyValueMap[valueBytes + 1]; // index is 1-based
+                        value = stylePropertyValueMap[valueBytes]; // index is 1-based
                     } else {
                         value = getString(valueBytes);
                     }
