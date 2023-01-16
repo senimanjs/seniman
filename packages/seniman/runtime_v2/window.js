@@ -5,7 +5,60 @@ import fs from 'node:fs';
 import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
 import { blockDefinitions, clientFunctionDefinitions, compileBlockDefinitionToInstallCommand } from './declare.js';
 
-export { createSignal, onCleanup };
+let cachedBuild = null;
+let buildLoadStartedPromise = null
+
+export const loadBuild = async (buildPath) => {
+
+    if (buildLoadStartedPromise) {
+
+        if (cachedBuild) {
+            return cachedBuild;
+        }
+
+        return buildLoadStartedPromise;
+    } else {
+
+        buildLoadStartedPromise = new Promise(async (resolve, reject) => {
+
+            // track function time
+            let startTime = performance.now();
+
+            let [platformComponent, RootComponent, compressionCommandBuffer, globalCssBuffer] = await Promise.all([
+                import(buildPath + '/_platform.js'),
+
+                // TODO: set rootComponent path from config value instead of hardcoding
+                import(buildPath + '/RootComponent.js'),
+                fs.promises.readFile(buildPath + '/compression-command.bin'),
+                fs.promises.readFile(buildPath + '/global.css')
+            ]);
+
+            let build = {
+                HeadTag: platformComponent.HeadTag,
+                BodyTag: platformComponent.BodyTag,
+                RootComponent: RootComponent.default,
+
+                compressionCommandBuffer: compressionCommandBuffer,
+                globalCss: globalCssBuffer.toString()
+            };
+
+            try {
+                build.syntaxErrors = JSON.parse(await fs.promises.readFile(buildPath + '/SyntaxErrors.json'));
+            } catch (e) {
+                console.log('No syntax errors.');
+                //build.rootComponent = (await import(buildPath + '/RootComponent.js')).default;
+            }
+
+            console.log('load time:', performance.now() - startTime);
+
+            console.log('build loaded.');
+            cachedBuild = build;
+            resolve(build);
+        });
+
+        return buildLoadStartedPromise;
+    }
+}
 
 export const WindowContext = createContext(null);
 export const WindowProvider = WindowContext.Provider;
@@ -54,43 +107,6 @@ let CMD_RUN_CLIENT_FUNCTION = 11;
 let PAGE_SIZE = 8192; //32678;
 
 let pingBuffer = Buffer.from([0]);
-
-let cachedBuild = null;
-
-const loadBuild = async (buildPath) => {
-
-    // make sure we load a single build
-    if (cachedBuild) {
-        return cachedBuild;
-    }
-
-    // TODO: make sure we only have one build loading at a time -- implement a lock
-
-    let platformComponent = await import(buildPath + '/_platform.js');
-
-    // TODO: set rootComponent path from config value instead of hardcoding
-    let RootComponent = (await import(buildPath + '/RootComponent.js')).default;
-
-    let build = {
-        HeadTag: platformComponent.HeadTag,
-        BodyTag: platformComponent.BodyTag,
-        RootComponent: RootComponent,
-
-        compressionCommandBuffer: await (fs.promises.readFile(buildPath + '/compression-command.bin')),
-        globalCss: (await (fs.promises.readFile(buildPath + '/global.css'))).toString()
-    };
-
-    try {
-        build.syntaxErrors = JSON.parse(await fs.promises.readFile(buildPath + '/SyntaxErrors.json'));
-    } catch (e) {
-        console.log('No syntax errors.');
-        //build.rootComponent = (await import(buildPath + '/RootComponent.js')).default;
-    }
-
-    cachedBuild = build;
-
-    return build;
-}
 
 export const initWindow = async (windowId, initialPath, cookieString, buildPath, port2) => {
 

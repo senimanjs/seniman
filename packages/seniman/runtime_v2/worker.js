@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { initWindow } from './window.js';
+import { initWindow, loadBuild } from './window.js';
 
 console.log('Starting worker');
 
@@ -30,3 +30,5 @@ parentPort.on('message', async (msg) => {
         }
     }
 });
+
+loadBuild(workerData.buildPath);
