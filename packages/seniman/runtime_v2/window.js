@@ -24,12 +24,13 @@ export const loadBuild = async (buildPath) => {
             // track function time
             let startTime = performance.now();
 
-            let [platformComponent, RootComponent, compressionCommandBuffer, globalCssBuffer] = await Promise.all([
+            let [platformComponent, RootComponent, compressionCommandBuffer, reverseIndexMap, globalCssBuffer] = await Promise.all([
                 import(buildPath + '/_platform.js'),
 
                 // TODO: set rootComponent path from config value instead of hardcoding
                 import(buildPath + '/RootComponent.js'),
                 fs.promises.readFile(buildPath + '/compression-command.bin'),
+                fs.promises.readFile(buildPath + '/reverse-index-map.json'),
                 fs.promises.readFile(buildPath + '/global.css')
             ]);
 
@@ -37,7 +38,7 @@ export const loadBuild = async (buildPath) => {
                 HeadTag: platformComponent.HeadTag,
                 BodyTag: platformComponent.BodyTag,
                 RootComponent: RootComponent.default,
-
+                reverseIndexMap: JSON.parse(reverseIndexMap),
                 compressionCommandBuffer: compressionCommandBuffer,
                 globalCss: globalCssBuffer.toString()
             };
@@ -50,7 +51,6 @@ export const loadBuild = async (buildPath) => {
             }
 
             console.log('load time:', performance.now() - startTime);
-
             console.log('build loaded.');
             cachedBuild = build;
             resolve(build);
@@ -151,6 +151,10 @@ export class Window {
         this.lastEventHandlerId = 0;
         this.eventHandlers = new Map();
 
+        this.reverseIndexMap = build.reverseIndexMap;
+
+        // console.log(this.reverseIndexMap.stylePropertyValues);
+
         this.windowContext = {
             clientData,
             path,
@@ -206,8 +210,6 @@ export class Window {
                         this._deallocateEventHandlers(eventHandlerIds);
                     });
                 }
-
-                //});
             },
             setClientData: (value) => {
                 let buf = this._allocCommandBuffer(1 + 2 + value.length + 4);
@@ -974,23 +976,68 @@ export class Window {
                 },
 
                 setMultiStyleProperties: (styleProps) => {
-                    const kebabCaseObj = {};
+                    const kebabPropertyPairs = [];
 
                     for (const key in styleProps) {
                         const kebabCaseKey = camelCaseToKebabCase(key);
-                        kebabCaseObj[kebabCaseKey] = styleProps[key];
+                        let value = styleProps[key];
+
+                        if (value === undefined) {
+                            continue;
+                        } else if (typeof styleProps[key] == 'number') {
+                            value = value.toString();
+                        }
+
+                        kebabPropertyPairs.push([kebabCaseKey, value]);
                     }
 
-                    let jsonString = JSON.stringify(kebabCaseObj);
+                    // TODO: reuse the scratch buffer
+                    let buf2 = Buffer.alloc(1024);
 
-                    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + jsonString.length);
+                    buf2.writeUint8(CMD_ELEMENT_UPDATE, 0);
+                    buf2.writeUint16BE(blockId, 1);
+                    buf2.writeUint8(targetId, 3);
+                    buf2.writeUint8(UPDATE_MODE_MULTI_STYLEPROP, 4);
 
-                    buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
-                    buf.writeUint16BE(blockId, 1);
-                    buf.writeUint8(targetId, 3);
-                    buf.writeUint8(UPDATE_MODE_MULTI_STYLEPROP, 4);
-                    buf.writeUInt16BE(jsonString.length, 5);
-                    buf.write(jsonString, 7, jsonString.length);
+                    let offset = 5;
+
+                    // first 16 bytes are either the length of the property key or the ID of the property key
+                    // in the static map if it exists there.
+                    for (let i = 0; i < kebabPropertyPairs.length; i++) {
+                        const pair = kebabPropertyPairs[i];
+                        const [key, value] = pair;
+
+                        if (this.reverseIndexMap.stylePropertyKeys[key]) {
+                            let keyIndex = this.reverseIndexMap.stylePropertyKeys[key];
+                            // set 16-th bit to 1 to denote that this is static map compression index
+                            // (stylePropertyKeyMap on the client)
+                            buf2.writeUint16BE(keyIndex |= (1 << 15), offset);
+                            offset += 2;
+                        } else {
+                            buf2.writeUint16BE(key.length, offset);
+                            offset += 2;
+                            buf2.write(key, offset, key.length);
+                            offset += key.length;
+                        }
+
+                        if (this.reverseIndexMap.stylePropertyValues[value]) {
+                            let valueIndex = this.reverseIndexMap.stylePropertyValues[value];
+                            buf2.writeUint16BE(valueIndex |= (1 << 15), offset);
+                            offset += 2;
+                        } else {
+                            buf2.writeUint16BE(value.length, offset);
+                            offset += 2;
+                            buf2.write(value, offset, value.length);
+                            offset += value.length;
+                        }
+                    }
+
+                    buf2.writeUint16BE(0, offset);
+                    offset += 2;
+
+                    let buf3 = this._allocCommandBuffer(offset);
+
+                    buf2.slice(0, offset).copy(buf3);
                 },
 
                 setChecked: (value) => {

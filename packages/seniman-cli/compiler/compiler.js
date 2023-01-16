@@ -98,7 +98,7 @@ export function getCompiledCompressionMap() {
         elementNames: {},
         elementAttributeNames: {},
         stylePropertyKeys: {},
-        //stylePropertyValues: {}
+        stylePropertyValues: {}
     }
 
     let i = 0;
@@ -144,14 +144,14 @@ export function getCompiledCompressionMap() {
     buf.writeUint8(0, ptr);
     ptr += 1;
 
-    //i = 0;
+    i = 0;
     compressionRegistry.stylePropertyValues.forEach((name) => {
         buf.writeUint8(name.length, ptr);
         buf.write(name, ptr + 1, name.length);
 
         ptr += (1 + name.length);
-        //reverseIndexMap.stylePropertyValues[name] = i;
-        //i++;
+        reverseIndexMap.stylePropertyValues[name] = i;
+        i++;
     });
 
     //console.log('LENS:', compressionRegistry.elementNames.size, compressionRegistry.elementAttributeNames.size, compressionRegistry.stylePropertyKeys.size, compressionRegistry.stylePropertyValues.size);

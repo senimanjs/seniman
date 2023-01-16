@@ -373,7 +373,6 @@
         _socketSend(buf);
     }
 
-
     let textDecoder = new TextDecoder();
     let processOffset = 0;
     let buffer;
@@ -389,6 +388,10 @@
     }
     let getString = (length) => {
         return textDecoder.decode(buffer.slice(processOffset, processOffset += length));
+    }
+
+    let magicSplitUint16 = (key) => {
+        return [key & (1 << 15), key & 0x7FFF];
     }
 
     let _elementUpdate = () => {
@@ -457,14 +460,28 @@
                 targetHandlerElement.checked = isActive;
                 break;
             case UPDATE_MODE_MULTI_STYLEPROP:
-                let jsonStringLength = getUint16();
-                let jsonString = getString(jsonStringLength);
-                let stylePropMap = JSON.parse(jsonString);
-
-                // clear the target element's styles, then apply the new ones
+                let keyLength;
                 targetHandlerElement.style.cssText = '';
-                for (let key in stylePropMap) {
-                    targetHandlerElement.style.setProperty(key, stylePropMap[key]);
+
+                while ((keyLength = getUint16()) > 0) {
+                    let [key_highestOrderBit, keyBytes] = magicSplitUint16(keyLength);
+
+                    // if highest order bit is 1 it's a compression map index, otherwise it's a string length
+                    if (key_highestOrderBit) {
+                        key = stylePropertyKeyMap[keyBytes + 1]; // index is 1-based
+                    } else {
+                        key = getString(keyBytes);
+                    }
+
+                    let [value_highestOrderBit, valueBytes] = magicSplitUint16(getUint16());
+
+                    if (value_highestOrderBit) {
+                        value = stylePropertyValueMap[valueBytes + 1]; // index is 1-based
+                    } else {
+                        value = getString(valueBytes);
+                    }
+
+                    targetHandlerElement.style.setProperty(key, value);
                 }
 
                 break;
@@ -680,8 +697,7 @@
                 break;
             }
 
-            let highestOrderBit = marker16bit & (1 << 15);
-            let value = marker16bit & 0x7FFF;
+            let [highestOrderBit, value] = magicSplitUint16(marker16bit);
 
             // if highest order bit is 1 is blockId, if 0, it's text
             if (highestOrderBit) {
