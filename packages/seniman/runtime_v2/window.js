@@ -104,7 +104,7 @@ let CMD_REMOVE_BLOCKS = 9;
 let CMD_INSTALL_CLIENT_FUNCTION = 10;
 let CMD_RUN_CLIENT_FUNCTION = 11;
 
-let PAGE_SIZE = 8192; //32678;
+let PAGE_SIZE = 8192 * 2;
 
 let pingBuffer = Buffer.from([0]);
 
