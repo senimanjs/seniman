@@ -6,7 +6,7 @@ import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo,
 import { blockDefinitions, clientFunctionDefinitions, compileBlockDefinitionToInstallCommand } from './declare.js';
 
 let cachedBuild = null;
-let buildLoadStartedPromise = null
+let buildLoadStartedPromise = null;
 
 export const loadBuild = async (buildPath) => {
 
@@ -24,20 +24,19 @@ export const loadBuild = async (buildPath) => {
             // track function time
             let startTime = performance.now();
 
-            let [platformComponent, RootComponent, compressionCommandBuffer, reverseIndexMap, globalCssBuffer] = await Promise.all([
+            let [PlatformModule, IndexModule, compressionCommandBuffer, reverseIndexMap, globalCssBuffer] = await Promise.all([
                 import(buildPath + '/_platform.js'),
 
                 // TODO: set rootComponent path from config value instead of hardcoding
-                import(buildPath + '/RootComponent.js'),
+                import(buildPath + '/index.js'),
                 fs.promises.readFile(buildPath + '/compression-command.bin'),
                 fs.promises.readFile(buildPath + '/reverse-index-map.json'),
                 fs.promises.readFile(buildPath + '/global.css')
             ]);
 
             let build = {
-                HeadTag: platformComponent.HeadTag,
-                BodyTag: platformComponent.BodyTag,
-                RootComponent: RootComponent.default,
+                PlatformModule,
+                IndexModule,
                 reverseIndexMap: JSON.parse(reverseIndexMap),
                 compressionCommandBuffer: compressionCommandBuffer,
                 globalCss: globalCssBuffer.toString()
@@ -247,8 +246,8 @@ export class Window {
         createRoot(dispose => {
             rootOwner = getOwner();
 
-            this._attach(1, 0, _createComponent(build.HeadTag, { cssText: build.globalCss, pageTitle, window: this.windowContext }));
-            this._attach(2, 0, _createComponent(build.BodyTag, { syntaxErrors: build.syntaxErrors, window: this.windowContext, RootComponent: build.RootComponent }));
+            this._attach(1, 0, _createComponent(build.IndexModule.Head, { cssText: build.globalCss, pageTitle, window: this.windowContext }));
+            this._attach(2, 0, _createComponent(build.PlatformModule.BodyTag, { syntaxErrors: build.syntaxErrors, window: this.windowContext, RootComponent: build.IndexModule.Root }));
 
             this.rootDisposer = dispose;
 

@@ -945,7 +945,6 @@
 
         // set the attributes for link element
         link.rel = 'stylesheet';
-        link.type = 'text/css';
         link.href = url;
 
         // Get HTML head element to append

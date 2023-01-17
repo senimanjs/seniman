@@ -55,7 +55,8 @@ const validHtmlElementNames = new Set([
     'textarea',
     'svg',
     'path',
-    'strong'
+    'strong',
+    'link'
 ]);
 
 const validElementAttributeNames = new Set([
@@ -78,7 +79,8 @@ const validElementAttributeNames = new Set([
     'height',
     'fill',
     'focusable',
-    'disabled'
+    'disabled',
+    'rel'
 ]);
 
 const compressionRegistry = {
