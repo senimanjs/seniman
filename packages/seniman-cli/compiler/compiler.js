@@ -1440,7 +1440,16 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
         };
 
         arguments_.push(props_);
+    } else {
+        // create empty object expression
+        let prop = {
+            "type": "ObjectExpression",
+            "properties": []
+        };
+
+        arguments_.push(prop);
     }
+
     return {
         "type": "CallExpression",
         "callee": {
