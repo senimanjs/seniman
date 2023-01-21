@@ -1,7 +1,9 @@
+import fs from 'node:fs';
+import process from 'node:process';
+
 import { nanoid } from 'nanoid';
 import express from 'express';
 import expressWs from 'express-ws';
-import fs from 'node:fs';
 import { Worker, SHARE_ENV, MessageChannel } from 'node:worker_threads';
 
 import path from 'path';
@@ -15,16 +17,27 @@ let wsSet = new Set();
 let _buildPath;
 let _worker;
 
+function getMemoryUsage() {
+    const used = process.memoryUsage();
+    return {
+        rss: (used.rss / 1024 / 1024).toFixed(2),
+        heapUsed: (used.heapUsed / 1024 / 1024).toFixed(2),
+        heapTotal: (used.heapTotal / 1024 / 1024).toFixed(2)
+    };
+}
+
 let clearSockets = () => {
     wsSet.forEach(ws => {
+        // 3001 WS exit code is reconnect (without page reload), 3002 is full page reload.
         ws.close(3001);
     });
 }
 
+//console.log("IN SERVER");
+
 export function updateBuildDev() {
     windowPortMap = new Map();
 
-    // 3001 WS exit code is reconnect (without page reload), 3002 is full page reload.
     clearSockets();
 
     _reloadWorker();
@@ -78,7 +91,7 @@ function wsHandler(ws, req) {
     wsSet.add(ws);
 
     ws.on('close', (code) => {
-        console.log('closed WS', code);
+        console.log('closed WS', code, getMemoryUsage());
 
         // sometimes the ws is closed by force with a newer ws
         if (windowWsMap.get(windowId) == ws) {
@@ -97,6 +110,12 @@ function wsHandler(ws, req) {
     });
 }
 
+/*
+setInterval(() => {
+    console.log(getMemoryUsage());
+}, 3000);
+*/
+
 function _createWorkerThread() {
 
     console.log('init worker');
@@ -106,7 +125,7 @@ function _createWorkerThread() {
         //console.log('msg', msg);
 
         if (msg.type == 'window_destroyed') {
-            console.log('window_destroyed', msg.windowId);
+            console.log('window_destroyed', msg.windowId, getMemoryUsage());
 
             // TODO: close port? (port.close())
             windowPortMap.delete(msg.windowId);

@@ -13,8 +13,8 @@ program
     .description('Run the development process -- run it in the application folder.')
     .action(async () => {
         // TODO: is there a cleaner way to make sure the CLI uses the application's local seniman installation?
-        let senimanModule = await import(process.cwd() + '/node_modules/seniman/index.js');
-        develop(senimanModule, parseInt(process.env.PORT) || 3002);
+        let senimanServerModule = await import(process.cwd() + '/node_modules/seniman/runtime_v2/server.js');
+        develop(senimanServerModule, parseInt(process.env.PORT) || 3002);
     });
 
 program
@@ -32,11 +32,11 @@ program
 
 
         // TODO: is there a cleaner way to make sure the CLI uses the application's local seniman installation?
-        let senimanModule = await import(process.cwd() + '/node_modules/seniman/index.js');
+        let senimanServerModule = await import(process.cwd() + '/node_modules/seniman/runtime_v2/server.js');
         let config = await getConfig();
         let port = parseInt(process.env.PORT) || 3002;
 
-        await senimanModule.createServer({ port: port, buildPath: config.targetDirectory });
+        await senimanServerModule.createServer({ port: port, buildPath: config.targetDirectory });
     });
 
 program

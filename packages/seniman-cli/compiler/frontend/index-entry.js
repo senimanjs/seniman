@@ -728,7 +728,7 @@
     let CMD_INSTALL_TEMPLATE = 1;
     let CMD_INIT_WINDOW = 2;
     let CMD_ATTACH_ANCHOR = 3;
-    let CMD_CLIENT_DATA_SET = 4;
+    let CMD_COOKIE_SET = 4;
     let CMD_ATTACH_EVENT_V2 = 5;
     let CMD_NAV = 6;
     let CMD_ELEMENT_UPDATE = 7;
@@ -750,15 +750,15 @@
             _window.history.pushState({}, '', path);
         },
         [CMD_ELEMENT_UPDATE]: _elementUpdate,
-        [CMD_CLIENT_DATA_SET]: () => {
-            let len = getUint16();
-            let clientDataString = getString(len);
+        [CMD_COOKIE_SET]: () => {
+            let key = getString(getUint8());
+            let value = getString(getUint16());
             let expiration = getUint32();
 
-            let key = '__CD';
+            // console.log('cookie set', key, value);
 
             _document.cookie = key + '=;Max-Age=0';
-            _document.cookie = key + "=" + clientDataString + ";Path=/;";
+            _document.cookie = key + "=" + value + ";Path=/;";
         },
         [CMD_REMOVE_BLOCKS]: () => {
             let blockId;

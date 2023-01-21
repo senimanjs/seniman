@@ -1,6 +1,5 @@
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
-
 //import blocks from './components/blocks.js';
 import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
 import { blockDefinitions, clientFunctionDefinitions, compileBlockDefinitionToInstallCommand } from './declare.js';
@@ -81,20 +80,48 @@ function camelCaseToKebabCase(str) {
     return result;
 }
 
-const parseCookie = str =>
-    str
-        .split(';')
-        .map(v => v.split('='))
-        .reduce((acc, v) => {
-            acc[decodeURIComponent(v[0].trim())] = decodeURIComponent(v[1].trim());
-            return acc;
-        }, {});
+const getCookieValue = (cookieString, key) => {
+    let keyStart = 0;
+    let valueStart = -1;
+    for (let i = 0; i < cookieString.length; i++) {
+        if (cookieString[i] === '=' && keyStart === i) {
+            return null;
+        }
+        if (cookieString[i] === '=' && keyStart !== i) {
+            if (cookieString.substring(keyStart, i).trim() === key) {
+                valueStart = i + 1;
+                break;
+            }
+            keyStart = -1;
+        }
+        if (cookieString[i] === ' ' || cookieString[i] === ';') {
+            if (keyStart !== -1) {
+                if (cookieString.substring(keyStart, i).trim() === key) {
+                    valueStart = i + 1;
+                    break;
+                }
+                keyStart = -1;
+            }
+        }
+        if (keyStart === -1 && cookieString[i] !== ' ' && cookieString[i] !== ';') {
+            keyStart = i;
+        }
+    }
+    if (valueStart === -1) {
+        return null;
+    }
+    let valueEnd = valueStart;
+    while (valueEnd < cookieString.length && cookieString[valueEnd] !== ';') {
+        valueEnd++;
+    }
+    return decodeURIComponent(cookieString.substring(valueStart, valueEnd));
+}
 
 //let CMD_PING = 0;
 //let CMD_INSTALL_TEMPLATE = 1;
 let CMD_INIT_WINDOW = 2;
 let CMD_ATTACH_ANCHOR = 3;
-let CMD_CLIENT_DATA_SET = 4;
+let CMD_COOKIE_SET = 4;
 let CMD_ATTACH_EVENT_V2 = 5;
 let CMD_NAV = 6;
 let CMD_ELEMENT_UPDATE = 7;
@@ -106,12 +133,28 @@ let CMD_RUN_CLIENT_FUNCTION = 11;
 let PAGE_SIZE = 8192 * 2;
 
 let pingBuffer = Buffer.from([0]);
+const multiStylePropScratchBuffer = new ArrayBuffer(32768);
 
 export const initWindow = async (windowId, initialPath, cookieString, buildPath, port2) => {
-
     let build = await loadBuild(buildPath);
 
     return new Window(windowId, initialPath, cookieString, build, port2);
+}
+
+function setCookieValue(cookieString, key, value) {
+    var keyValue = key + "=" + value + ";";
+    var newCookieString = keyValue;
+    var keyIndex = cookieString.indexOf(key + "=");
+    if (keyIndex !== -1) {
+        var endOfKey = cookieString.indexOf(";", keyIndex);
+        if (endOfKey === -1) {
+            endOfKey = cookieString.length;
+        }
+        newCookieString = cookieString.substring(0, keyIndex) + keyValue + cookieString.substring(endOfKey);
+    } else if (cookieString) {
+        newCookieString = keyValue + " " + cookieString;
+    }
+    return newCookieString;
 }
 
 export class Window {
@@ -136,11 +179,6 @@ export class Window {
         this.latestBlockId = 10;
 
         let [path, setPath] = createSignal(initialPath);
-
-        // TODO: make sure to not throw errors when the cookie string is malformed
-        let clientIdentifierString = cookieString ? (parseCookie(cookieString)['__CD'] || '') : '';
-
-        let [clientData, setClientData] = createSignal(clientIdentifierString);
         let [pageTitle, set_pageTitle] = createSignal('');
 
         this.deleteEnqueuedBlockIds = new Set();
@@ -152,15 +190,44 @@ export class Window {
 
         this.reverseIndexMap = build.reverseIndexMap;
 
-        // console.log(this.reverseIndexMap.stylePropertyValues);
+        let [cookieSignal, setCookie] = createSignal(cookieString);
 
         this.windowContext = {
-            clientData,
+            cookie: (cookieKey) => {
+                return createMemo(() => {
+                    let cookieString = cookieSignal();
+                    return cookieString ? getCookieValue(cookieString, cookieKey) : null;
+                });
+            },
+
+            setCookie: (cookieKey, cookieValue) => {
+                let cookieString = cookieSignal();
+                let newCookieString = setCookieValue(cookieString, cookieKey, cookieValue);
+
+                setCookie(newCookieString);
+
+                // TODO: send the cookie update to the browser
+                let buf = this._allocCommandBuffer(1 + 1 + cookieKey.length + 2 + cookieValue.length + 4);
+
+                let offset = 0;
+                buf.writeUint8(CMD_COOKIE_SET, offset);
+                offset++;
+
+                buf.writeUint8(cookieKey.length, offset);
+                offset++;
+                buf.write(cookieKey, offset);
+                offset += cookieKey.length;
+
+                buf.writeUint16BE(cookieValue.length, offset);
+                offset += 2;
+                buf.write(cookieValue, offset);
+                offset += cookieValue.length;
+
+                buf.writeUint32BE(0, offset);
+            },
+
             path,
             navigate: (path) => {
-                //console.log('navigate', path);
-                //this.ws.send(JSON.stringify({ command: 'NAV', path: path }))
-
                 let buf = this._allocCommandBuffer(1 + 2 + path.length);
                 buf.writeUint8(CMD_NAV, 0);
                 buf.writeUint16BE(path.length, 1);
@@ -168,8 +235,8 @@ export class Window {
 
                 setPath(path);
             },
+
             navigateFromBack_internal: (path) => {
-                //console.log('navigateFromBack_internal', path);
                 setPath(path);
             },
 
@@ -210,34 +277,10 @@ export class Window {
                     });
                 }
             },
-            setClientData: (value) => {
-                let buf = this._allocCommandBuffer(1 + 2 + value.length + 4);
 
-                let offset = 0;
-                buf.writeUint8(CMD_CLIENT_DATA_SET, offset);
-                offset++;
-
-                /*
-                buf.writeUint8(key.length, offset);
-                offset++;
-                buf.write(key, offset);
-                offset += key.length;
-                */
-
-                buf.writeUint16BE(value.length, offset);
-                offset += 2;
-                buf.write(value, offset);
-                offset += value.length;
-
-                buf.writeUint32BE(0, offset);
-
-                setClientData(value);
-            },
             pageTitle: pageTitle,
             setPageTitle: (title) => set_pageTitle(title)
         }
-
-        this.windowContext.runOnClient = this.windowContext.clientExec;
 
         this.rootDisposer = null;
 
@@ -259,17 +302,21 @@ export class Window {
             });
         });
 
+        this._runWindowLifecycleManagement();
+    }
+
+    _runWindowLifecycleManagement() {
         this.connected = true;
         this.lastPongTime = Date.now();
 
         this.pingInterval = setInterval(() => {
             let now = Date.now();
 
-            if ((now - this.lastPongTime) > 7000) {
+            if ((now - this.lastPongTime) >= 4000) {
                 this.connected = false;
             }
 
-            if ((now - this.lastPongTime) > 25000) {
+            if ((now - this.lastPongTime) >= 6000) {
                 this.destroy();
                 return;
             }
@@ -278,29 +325,19 @@ export class Window {
                 this.sendPing();
             }
 
+            this.flushBlockDeleteQueue();
         }, 2500);
     }
 
-    _startWindowDestroyCountdown() {
-
-        if (this.destroyTimeout) {
-            return;
-        }
-
-        console.log('_startWindowDestroyCountdown', this.id);
-        this.destroyTimeout = setTimeout(() => {
-            this.destroy();
-        }, 20000);
-    }
-
-
     sendPing() {
-
         this.port.postMessage({
             arrayBuffer: pingBuffer,
             offset: 0,
             size: 1
         });
+    }
+
+    flushBlockDeleteQueue() {
 
         let deleteEnqueuedBlockCount = this.deleteEnqueuedBlockIds.size;
 
@@ -320,10 +357,6 @@ export class Window {
 
             this.deleteEnqueuedBlockIds.clear();
         }
-
-        //console.log('sending ping to', this.id);
-
-        //this.pongLateTimeout = setTimeout(() => this.onPongLateArrival(), 7000);
     }
 
     _registerReadOffset(readOffset) {
@@ -368,7 +401,7 @@ export class Window {
                 if (page.finalSize > 0) {
                     size = (page.global_headOffset + page.finalSize) - readOffset;
 
-                    console.log('restream final page ', this.global_writeOffset, readOffset, readOffset - page.global_headOffset + 1, size);
+                    //console.log('restream final page ', this.global_writeOffset, readOffset, readOffset - page.global_headOffset + 1, size);
 
                     msg = {
                         arrayBuffer: page.arrayBuffer,
@@ -378,7 +411,7 @@ export class Window {
                 } else {
                     size = this.global_writeOffset - readOffset; // 6 - 3
 
-                    console.log('restream nonfinal page ', this.global_writeOffset, readOffset, readOffset - page.global_headOffset + 1, size);
+                    //console.log('restream nonfinal page ', this.global_writeOffset, readOffset, readOffset - page.global_headOffset + 1, size);
 
                     msg = {
                         arrayBuffer: page.arrayBuffer,
@@ -401,17 +434,14 @@ export class Window {
     }
 
     reconnect(cookieString, readOffset) {
-        // TODO: do something with cookieString -- it's possibly have changed since last time
+        setCookie(cookieString);
 
         console.log('reconnected in window', this.id, readOffset);
 
         this.connected = true;
         this.lastPongTime = Date.now();
 
-        //this.sendPingTimeout = setTimeout(() => this.sendPing(), 5000);
-
         this._registerReadOffset(readOffset);
-        //this._streamInitWindow();
         this._restreamUnreadPages();
     }
 
@@ -489,10 +519,7 @@ export class Window {
         return page;
     }
 
-
     _flushMutationGroup() {
-
-        //.log('similar', getActiveWindow() == this);//
 
         let mg = this.mutationGroup;
 
@@ -992,8 +1019,7 @@ export class Window {
                         kebabPropertyPairs.push([kebabCaseKey, value]);
                     }
 
-                    // TODO: reuse the scratch buffer
-                    let buf2 = Buffer.alloc(1024);
+                    let buf2 = Buffer.from(multiStylePropScratchBuffer);
 
                     buf2.writeUint8(CMD_ELEMENT_UPDATE, 0);
                     buf2.writeUint16BE(blockId, 1);
