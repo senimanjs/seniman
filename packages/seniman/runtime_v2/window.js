@@ -1,62 +1,8 @@
 import { Buffer } from 'node:buffer';
-import fs from 'node:fs';
 //import blocks from './components/blocks.js';
 import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
 import { blockDefinitions, clientFunctionDefinitions, compileBlockDefinitionToInstallCommand } from './declare.js';
 
-let cachedBuild = null;
-let buildLoadStartedPromise = null;
-
-export const loadBuild = async (buildPath) => {
-
-    if (buildLoadStartedPromise) {
-
-        if (cachedBuild) {
-            return cachedBuild;
-        }
-
-        return buildLoadStartedPromise;
-    } else {
-
-        buildLoadStartedPromise = new Promise(async (resolve, reject) => {
-
-            // track function time
-            let startTime = performance.now();
-
-            let [PlatformModule, IndexModule, compressionCommandBuffer, reverseIndexMap, globalCssBuffer] = await Promise.all([
-                import(buildPath + '/_platform.js'),
-
-                // TODO: set rootComponent path from config value instead of hardcoding
-                import(buildPath + '/index.js'),
-                fs.promises.readFile(buildPath + '/compression-command.bin'),
-                fs.promises.readFile(buildPath + '/reverse-index-map.json'),
-                fs.promises.readFile(buildPath + '/global.css')
-            ]);
-
-            let build = {
-                PlatformModule,
-                IndexModule,
-                reverseIndexMap: JSON.parse(reverseIndexMap),
-                compressionCommandBuffer: compressionCommandBuffer,
-                globalCss: globalCssBuffer.toString()
-            };
-
-            try {
-                build.syntaxErrors = JSON.parse(await fs.promises.readFile(buildPath + '/SyntaxErrors.json'));
-            } catch (e) {
-                console.log('No syntax errors.');
-                //build.rootComponent = (await import(buildPath + '/RootComponent.js')).default;
-            }
-
-            console.log('load time:', performance.now() - startTime);
-            console.log('build loaded.');
-            cachedBuild = build;
-            resolve(build);
-        });
-
-        return buildLoadStartedPromise;
-    }
-}
 
 export const WindowContext = createContext(null);
 export const WindowProvider = WindowContext.Provider;
@@ -117,30 +63,6 @@ const getCookieValue = (cookieString, key) => {
     return decodeURIComponent(cookieString.substring(valueStart, valueEnd));
 }
 
-//let CMD_PING = 0;
-//let CMD_INSTALL_TEMPLATE = 1;
-let CMD_INIT_WINDOW = 2;
-let CMD_ATTACH_ANCHOR = 3;
-let CMD_COOKIE_SET = 4;
-let CMD_ATTACH_EVENT_V2 = 5;
-let CMD_NAV = 6;
-let CMD_ELEMENT_UPDATE = 7;
-let CMD_INIT_BLOCK = 8;
-let CMD_REMOVE_BLOCKS = 9;
-let CMD_INSTALL_CLIENT_FUNCTION = 10;
-let CMD_RUN_CLIENT_FUNCTION = 11;
-
-let PAGE_SIZE = 8192 * 2;
-
-let pingBuffer = Buffer.from([0]);
-const multiStylePropScratchBuffer = new ArrayBuffer(32768);
-
-export const initWindow = async (windowId, initialPath, cookieString, buildPath, port2) => {
-    let build = await loadBuild(buildPath);
-
-    return new Window(windowId, initialPath, cookieString, build, port2);
-}
-
 function setCookieValue(cookieString, key, value) {
     var keyValue = key + "=" + value + ";";
     var newCookieString = keyValue;
@@ -156,6 +78,24 @@ function setCookieValue(cookieString, key, value) {
     }
     return newCookieString;
 }
+
+//let CMD_PING = 0;
+//let CMD_INSTALL_TEMPLATE = 1;
+let CMD_INIT_WINDOW = 2;
+let CMD_ATTACH_ANCHOR = 3;
+let CMD_COOKIE_SET = 4;
+let CMD_ATTACH_EVENT_V2 = 5;
+let CMD_NAV = 6;
+let CMD_ELEMENT_UPDATE = 7;
+let CMD_INIT_BLOCK = 8;
+let CMD_REMOVE_BLOCKS = 9;
+let CMD_INSTALL_CLIENT_FUNCTION = 10;
+let CMD_RUN_CLIENT_FUNCTION = 11;
+
+let PAGE_SIZE = 4096 * 3;//8192 * 2;
+
+let pingBuffer = Buffer.from([0]);
+const multiStylePropScratchBuffer = new ArrayBuffer(32768);
 
 export class Window {
 
@@ -180,6 +120,7 @@ export class Window {
 
         let [path, setPath] = createSignal(initialPath);
         let [pageTitle, set_pageTitle] = createSignal('');
+        let [cookieSignal, setCookie] = createSignal(cookieString);
 
         this.deleteEnqueuedBlockIds = new Set();
         this.clientTemplateInstallationSet = new Set();
@@ -188,9 +129,9 @@ export class Window {
         this.lastEventHandlerId = 0;
         this.eventHandlers = new Map();
 
-        this.reverseIndexMap = build.reverseIndexMap;
+        this.lastPongTime = Date.now();
 
-        let [cookieSignal, setCookie] = createSignal(cookieString);
+        this.reverseIndexMap = build.reverseIndexMap;
 
         this.windowContext = {
             cookie: (cookieKey) => {
@@ -301,32 +242,6 @@ export class Window {
                 untrack(() => this.onMessage(command));
             });
         });
-
-        this._runWindowLifecycleManagement();
-    }
-
-    _runWindowLifecycleManagement() {
-        this.connected = true;
-        this.lastPongTime = Date.now();
-
-        this.pingInterval = setInterval(() => {
-            let now = Date.now();
-
-            if ((now - this.lastPongTime) >= 4000) {
-                this.connected = false;
-            }
-
-            if ((now - this.lastPongTime) >= 6000) {
-                this.destroy();
-                return;
-            }
-
-            if (this.connected) {
-                this.sendPing();
-            }
-
-            this.flushBlockDeleteQueue();
-        }, 2500);
     }
 
     sendPing() {
@@ -362,7 +277,7 @@ export class Window {
     _registerReadOffset(readOffset) {
 
         if (readOffset < this.global_readOffset) {
-            throw new Error();
+            throw new Error(`Invalid offset: ${readOffset} : ${this.global_readOffset}`);
         }
 
         this.global_readOffset = readOffset;
@@ -383,7 +298,6 @@ export class Window {
                 break;
             }
         }
-
     }
 
     _restreamUnreadPages() {
@@ -434,7 +348,7 @@ export class Window {
     }
 
     reconnect(cookieString, readOffset) {
-        setCookie(cookieString);
+        //setCookie(cookieString);
 
         console.log('reconnected in window', this.id, readOffset);
 
@@ -501,7 +415,6 @@ export class Window {
     destroy() {
         this.rootDisposer();
         this.destroyFnCallback();
-        clearInterval(this.pingInterval);
     }
 
     _allocPage(headOffset) {

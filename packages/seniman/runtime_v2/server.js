@@ -58,7 +58,7 @@ function wsHandler(ws, req) {
 
         if (windowPortMap.has(windowId)) {
             windowPort1 = windowPortMap.get(windowId);
-            _reconnectWindowInWorker(windowId, readOffset, cookieHeaderString);
+            _reconnectWindowInWorker(windowId, cookieHeaderString, readOffset);
         } else {
             ws.close(3001);
             return;
