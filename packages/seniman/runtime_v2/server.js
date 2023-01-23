@@ -51,6 +51,9 @@ function wsHandler(ws, req) {
     let currentPath = splitUrl[1];
     let readOffset = parseInt(splitUrl[2]);
 
+    // TODO: get ip address of request and pass it to the window manager
+    // let ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+
     let cookieHeaderString = req.headers.cookie || '';
     let windowPort1;
 

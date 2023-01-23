@@ -225,10 +225,8 @@ export class Window {
 
         this.rootDisposer = null;
 
-        let rootOwner;
-
         createRoot(dispose => {
-            rootOwner = getOwner();
+            this.rootOwner = getOwner();
 
             this._attach(1, 0, _createComponent(build.IndexModule.Head, { cssText: build.globalCss, pageTitle, window: this.windowContext }));
             this._attach(2, 0, _createComponent(build.PlatformModule.BodyTag, { syntaxErrors: build.syntaxErrors, window: this.windowContext, RootComponent: build.IndexModule.Root }));
@@ -236,12 +234,6 @@ export class Window {
             this.rootDisposer = dispose;
 
         }, null, this);
-
-        this.port.on('message', (command) => {
-            runWithOwner(rootOwner, () => {
-                untrack(() => this.onMessage(command));
-            });
-        });
     }
 
     sendPing() {
@@ -274,7 +266,7 @@ export class Window {
         }
     }
 
-    _registerReadOffset(readOffset) {
+    registerReadOffset(readOffset) {
 
         if (readOffset < this.global_readOffset) {
             throw new Error(`Invalid offset: ${readOffset} : ${this.global_readOffset}`);
@@ -355,40 +347,30 @@ export class Window {
         this.connected = true;
         this.lastPongTime = Date.now();
 
-        this._registerReadOffset(readOffset);
+        this.registerReadOffset(readOffset);
         this._restreamUnreadPages();
     }
 
     disconnect() {
-
         console.log('window disconnect', this.id);
-
         this.connected = false;
     }
 
-    onMessage(message) {
+    onMessage(command) {
+        runWithOwner(this.rootOwner, () => {
+            untrack(() => this._onMessage(command));
+        });
+    }
 
-        let PONG_COMMAND = 0;
+    _onMessage(buffer) {
+
         let EVENT_COMMAND = 1;
         let EVENT_DATA_COMMAND = 2;
         let EVENT_BACKNAV = 3;
 
-        let opcode = message[0];
+        let opcode = buffer.readUint8(0);
 
-        // if PONG
-        if (opcode == PONG_COMMAND) {
-            let buffer = Buffer.from(message);
-            let readOffset = buffer.readUInt32LE(1);
-
-            this._registerReadOffset(readOffset);
-
-            this.connected = true;
-            this.lastPongTime = Date.now();
-
-            //clearTimeout(this.pongLateTimeout);
-            //this.sendPingTimeout = setTimeout(() => this.sendPing(), 5000);
-        } else if (opcode == EVENT_COMMAND) {
-            let buffer = Buffer.from(message);
+        if (opcode == EVENT_COMMAND) {
             let handlerId = buffer.readUint16LE(1);
             let dataLength = buffer.readUint16LE(3);
             let data;
@@ -401,7 +383,6 @@ export class Window {
 
             this._executeClientEvent({ handlerId, data });
         } else if (opcode == EVENT_BACKNAV) {
-            let buffer = Buffer.from(message);
             let pathnameLength = buffer.readUint16LE(1);
             let path = buffer.subarray(3, 3 + pathnameLength).toString();
             this.windowContext.navigateFromBack_internal(path);
