@@ -1,0 +1,19 @@
+{
+  "name": "new-seniman-app",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "new-seniman-app": "./index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "fs-extra": "^11.1.0",
+    "inquirer": "^9.1.4"
+  }
+}

@@ -1,5 +1,69 @@
 import { encode } from 'base64-arraybuffer';
 
+
+export function createCompilerInternalImportsExpression() {
+
+    let importDeclaration = {
+        "type": "ImportDeclaration",
+        "specifiers": [
+            {
+                "type": "ImportSpecifier",
+                "local": {
+                    "type": "Identifier",
+                    "name": "_declareBlock"
+                },
+                "imported": {
+                    "type": "Identifier",
+                    "name": "_declareBlock"
+                }
+            },
+            {
+                "type": "ImportSpecifier",
+                "local": {
+                    "type": "Identifier",
+                    "name": "_declareClientFunction"
+                },
+                "imported": {
+                    "type": "Identifier",
+                    "name": "_declareClientFunction"
+                }
+            },
+
+            // create one for _createBlock
+            {
+                "type": "ImportSpecifier",
+                "local": {
+                    "type": "Identifier",
+                    "name": "_createBlock"
+                },
+                "imported": {
+                    "type": "Identifier",
+                    "name": "_createBlock"
+                }
+            },
+
+            // create one for _createComponent
+            {
+                "type": "ImportSpecifier",
+                "local": {
+                    "type": "Identifier",
+                    "name": "_createComponent"
+                },
+                "imported": {
+                    "type": "Identifier",
+                    "name": "_createComponent"
+                }
+            },
+        ],
+        "source": {
+            "type": "StringLiteral",
+            "value": "seniman"
+        }
+    };
+
+    return importDeclaration;
+}
+
 export function createDeclareBlockExpression(block, encodeCompressionMap) {
     return {
         "type": "CallExpression",

@@ -2,7 +2,7 @@ import parser from "@babel/parser";
 import generator from "@babel/generator";
 import traverse from "@babel/traverse";
 
-import { createDeclareBlockExpression, createDeclareClientFunctionExpression } from "./declare.js";
+import { createCompilerInternalImportsExpression, createDeclareBlockExpression, createDeclareClientFunctionExpression } from "./declare.js";
 
 let generate = generator.default;
 
@@ -631,6 +631,10 @@ export function processFile(fileName, fileString) {
             gatheredClientFunctions.forEach((clientFunction, index) => {
                 node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareClientFunctionExpression(clientFunction));
             });
+
+
+            node.body.splice(lastImportStatementIndex + 1, 0, createCompilerInternalImportsExpression());
+
 
             return node;
         } else if (node.type == 'IfStatement') {
