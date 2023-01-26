@@ -422,7 +422,7 @@
                 {
                     let mapIndex = getUint8();
                     let propName = (updateMode == UPDATE_MODE_STYLEPROP ? stylePropertyKeyMap : staticAttributeMap)[mapIndex];
-                    let propValueLength = getUint8();
+                    let propValueLength = getUint16();
                     let propValue = getString(propValueLength);
 
                     if (updateMode == UPDATE_MODE_STYLEPROP) {

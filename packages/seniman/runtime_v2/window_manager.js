@@ -6,6 +6,8 @@ import { Window } from './window.js';
 // get ram limit from env var
 let RSS_LOW_MEMORY_THRESHOLD = process.env.RSS_LOW_MEMORY_THRESHOLD ? parseInt(process.env.RSS_LOW_MEMORY_THRESHOLD) : 180;
 
+console.log('RSS_LOW_MEMORY_THRESHOLD', RSS_LOW_MEMORY_THRESHOLD + 'MB');
+
 class ExternalPromise {
     constructor() {
         this.promise = new Promise((resolve, reject) => {
@@ -156,6 +158,8 @@ class WindowManager {
                 }
 
                 window.sendPing();
+
+                // TODO: move this inside the window class
                 window.flushBlockDeleteQueue();
             }
         }, 2500);
@@ -173,10 +177,12 @@ class WindowManager {
         this._setupWs(ws, window);
 
         window.onDestroy(() => {
-            this.windowMap.delete(window.id);
+            console.log('destroyed', windowId);
+
+            this.windowMap.delete(windowId);
 
             if (this.windowDestroyCallback) {
-                this.windowDestroyCallback(window.id);
+                this.windowDestroyCallback(windowId);
             }
         });
     }

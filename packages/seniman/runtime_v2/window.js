@@ -385,7 +385,7 @@ export class Window {
 
         let page = {
             global_headOffset: headOffset,
-            arrayBuffer: new SharedArrayBuffer(PAGE_SIZE),
+            arrayBuffer: new ArrayBuffer(PAGE_SIZE),
             finalSize: 0
         };
 
@@ -489,19 +489,6 @@ export class Window {
 
         this.port.send(Buffer.from(initWindowBuffer, 0, 1 + 21 + build.compressionCommandBuffer.length));
     }
-
-    /*
-
-    _streamEventInitCommand(blockId, targetId, eventType, handlerId) {
-        let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2);
-
-        buf.writeUint8(CMD_ATTACH_EVENT, 0);
-        buf.writeUint16BE(blockId, 1);
-        buf.writeUint8(targetId, 3);
-        buf.writeUint8(eventType, 4);
-        buf.writeUint16BE(handlerId, 5);
-    }
-    */
 
     _streamEventInitCommandV2(blockId, targetId, eventType, clientFnId, serverBindIds) {
 
@@ -829,7 +816,7 @@ export class Window {
             // TODO: improve this abstraction
             let elRef = {
                 _staticHelper: (mode, propName, propValue) => {
-                    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1 + 1 + propValue.length);
+                    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1 + 2 + propValue.length);
 
                     buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
                     buf.writeUint16BE(blockId, 1);
@@ -844,8 +831,8 @@ export class Window {
                     let offset = 6 + propName.length;
                     */
 
-                    buf.writeUint8(propValue.length, offset);
-                    offset++;
+                    buf.writeUInt16BE(propValue.length, offset);
+                    offset += 2;
                     buf.write(propValue, offset, propValue.length);
                 },
 
