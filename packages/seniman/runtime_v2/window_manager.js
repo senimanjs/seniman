@@ -1,12 +1,23 @@
 import fs from 'node:fs';
 import process from 'node:process';
 import { FastRateLimit } from 'fast-ratelimit';
+import { nanoid } from 'nanoid';
+
 import { Window } from './window.js';
 
 // get ram limit from env var
 let RSS_LOW_MEMORY_THRESHOLD = process.env.RSS_LOW_MEMORY_THRESHOLD ? parseInt(process.env.RSS_LOW_MEMORY_THRESHOLD) : 180;
 
 console.log('RSS_LOW_MEMORY_THRESHOLD', RSS_LOW_MEMORY_THRESHOLD + 'MB');
+
+function getMemoryUsage() {
+    const used = process.memoryUsage();
+    return {
+        rss: (used.rss / 1024 / 1024).toFixed(2),
+        heapUsed: (used.heapUsed / 1024 / 1024).toFixed(2),
+        heapTotal: (used.heapTotal / 1024 / 1024).toFixed(2)
+    };
+}
 
 class ExternalPromise {
     constructor() {
@@ -30,6 +41,7 @@ class WindowManager {
     constructor() {
         this.windowMap = new Map();
 
+
         this._runWindowsLifecycleManagement();
 
         this.queue = [];
@@ -44,6 +56,8 @@ class WindowManager {
             threshold: 8,
             ttl: 2
         });
+
+
 
         this._processMessages();
     }
@@ -168,16 +182,14 @@ class WindowManager {
     async initWindow(windowId, initialPath, cookieString, ws) {
 
         // TODO: pass request's ip address here, and rate limit window creation based on ip address
-        let build = await loadBuild();
-
-        let window = new Window(windowId, initialPath, cookieString, build, ws);
+        let window = new Window(windowId, initialPath, cookieString, this.build, ws);
 
         this.windowMap.set(windowId, window);
 
         this._setupWs(ws, window);
 
         window.onDestroy(() => {
-            console.log('destroyed', windowId);
+            console.log('destroyed', windowId, getMemoryUsage());
 
             this.windowMap.delete(windowId);
 
@@ -185,6 +197,21 @@ class WindowManager {
                 this.windowDestroyCallback(windowId);
             }
         });
+    }
+
+    applyNewConnection(ws, windowId, readOffset, currentPath, cookieHeaderString) {
+
+        if (windowId) {
+            if (this.hasWindow(windowId)) {
+                this.reconnectWindow(windowId, currentPath, cookieHeaderString, ws, readOffset);
+            } else {
+                ws.close(3001);
+                return;
+            }
+        } else {
+            let newWindowId = nanoid();
+            this.initWindow(newWindowId, currentPath, cookieHeaderString, ws);
+        }
     }
 
     reconnectWindow(windowId, initialPath, cookieString, ws, readOffset) {
@@ -222,6 +249,28 @@ class WindowManager {
         for (let window of this.windowMap.values()) {
             window.destroy();
         }
+    }
+
+    async prepareBuild(options) {
+        let build = {};
+        let buildPath = process.cwd() + '/dist';
+
+        build.Head = options.Head;
+        build.Body = options.Body;
+        build.Root = options.Root;
+
+        build.compressionCommandBuffer = await fs.promises.readFile(buildPath + '/compression-command.bin');
+        build.reverseIndexMap = JSON.parse(await fs.promises.readFile(buildPath + '/reverse-index-map.json'));
+        build.globalCss = (await fs.promises.readFile(buildPath + '/global.css')).toString();
+
+        try {
+            build.syntaxErrors = JSON.parse(await fs.promises.readFile(buildPath + '/SyntaxErrors.json'));
+        } catch (e) {
+            console.log('No syntax errors.');
+        }
+
+        this.build = build;
+
     }
 }
 

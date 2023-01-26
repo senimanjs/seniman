@@ -92,7 +92,7 @@ export function BodyTag(props) {
                     let stack = parse(err.stack);
                     return <ErrorViewer name={err.name} message={err.message} stack={stack} />;
                 } else {
-                    return <RootComponent />
+                    return <RootComponent />;
                 }
             }}
         </WindowProvider>

@@ -115,6 +115,8 @@ export class Window {
         this.global_writeOffset = 0;
         this.mutationGroup = null;
 
+        console.log('NEW WINDOW')
+
         this._streamInitWindow(build);
 
         this.latestBlockId = 10;
@@ -229,8 +231,8 @@ export class Window {
         createRoot(dispose => {
             this.rootOwner = getOwner();
 
-            this._attach(1, 0, _createComponent(build.IndexModule.Head, { cssText: build.globalCss, pageTitle, window: this.windowContext }));
-            this._attach(2, 0, _createComponent(build.PlatformModule.BodyTag, { syntaxErrors: build.syntaxErrors, window: this.windowContext, RootComponent: build.IndexModule.Root }));
+            this._attach(1, 0, _createComponent(build.Head, { cssText: build.globalCss, pageTitle, window: this.windowContext }));
+            this._attach(2, 0, _createComponent(build.Body, { syntaxErrors: build.syntaxErrors, window: this.windowContext, RootComponent: build.Root }));
 
             this.rootDisposer = dispose;
 
