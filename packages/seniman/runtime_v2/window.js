@@ -136,7 +136,7 @@ export class Window {
 
         this.reverseIndexMap = build.reverseIndexMap;
 
-        this.windowContext = {
+        let windowContext = {
             cookie: (cookieKey) => {
                 return createMemo(() => {
                     let cookieString = cookieSignal();
@@ -171,16 +171,13 @@ export class Window {
             },
 
             path,
+
             navigate: (path) => {
                 let buf = this._allocCommandBuffer(1 + 2 + path.length);
                 buf.writeUint8(CMD_NAV, 0);
                 buf.writeUint16BE(path.length, 1);
                 buf.write(path, 1 + 2);
 
-                setPath(path);
-            },
-
-            navigateFromBack_internal: (path) => {
                 setPath(path);
             },
 
@@ -231,8 +228,15 @@ export class Window {
         createRoot(dispose => {
             this.rootOwner = getOwner();
 
-            this._attach(1, 0, _createComponent(build.Head, { cssText: build.globalCss, pageTitle, window: this.windowContext }));
-            this._attach(2, 0, _createComponent(build.Body, { syntaxErrors: build.syntaxErrors, window: this.windowContext, RootComponent: build.Root }));
+            this._attach(1, 0, _createComponent(build.Head, { cssText: build.globalCss, pageTitle, window: windowContext }));
+            this._attach(2, 0, _createComponent(WindowProvider, {
+                get value() {
+                    return windowContext;
+                },
+                get children() {
+                    return _createComponent(build.Body, { syntaxErrors: build.syntaxErrors })
+                }
+            }));
 
             this.rootDisposer = dispose;
 
@@ -368,7 +372,10 @@ export class Window {
         } else if (opcode == EVENT_BACKNAV) {
             let pathnameLength = buffer.readUint16LE(1);
             let path = buffer.subarray(3, 3 + pathnameLength).toString();
-            this.windowContext.navigateFromBack_internal(path);
+
+            // TODO: do we need to do something special other than just setting the path since this is a backnav?
+            // i.e. some level of sychronization of browser's history stack with the server's history stack?
+            setPath(path);
         }
     }
 

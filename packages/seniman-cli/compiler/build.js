@@ -12,13 +12,12 @@ const __dirname = path.dirname(fileURLToPath(new URL(import.meta.url)));
 
 export async function getConfig() {
     let cwd = process.cwd();
-    let configPath = cwd + '/config.js';
-    let config = (await import(configPath)).default;
 
+    // TODO: read this from an actual config file
     return {
-        appDirectory: cwd,
-        componentDirectory: cwd + '/' + config.componentFolder,
-        targetDirectory: cwd + '/' + config.targetFolder
+        cwd,
+        srcDirectory: cwd + '/src',
+        targetDirectory: cwd + '/dist'
     };
 }
 
@@ -60,9 +59,7 @@ export async function buildClientScaffolding(config) {
 }
 
 export async function compileFile(config, fileName) {
-    let full_path = fileName == '_platform.js' ?
-        path.join(__dirname, '/files/_platform.js') :
-        path.join(config.componentDirectory, fileName);
+    let full_path = path.join(config.srcDirectory, fileName);
 
     let fileString = await fs.promises.readFile(full_path);
     let code = processFile(fileName, fileString);
@@ -97,13 +94,15 @@ export async function recompile(config) {
     let fileName;
     let combinedFileNames = [...fileNames, ...new Set(Object.keys(trackedSyntaxErrors))];
 
+    console.log('comninedFileNames', combinedFileNames);
+
     let nonJsFileNames = combinedFileNames.filter(fileName => !fileName.endsWith('.js'));
     let jsFileNames = combinedFileNames.filter(fileName => fileName.endsWith('.js'));
 
     if (nonJsFileNames.length > 0) {
         for (fileName of nonJsFileNames) {
             // just copy over the file
-            let full_path = path.join(config.componentDirectory, fileName);
+            let full_path = path.join(config.srcDirectory, fileName);
 
             // make sure the directory exists
             let directoryPath = path.dirname(config.targetDirectory + '/' + fileName);
@@ -127,7 +126,7 @@ export async function recompile(config) {
 
         if (err.name == 'SyntaxError') {
             trackedSyntaxErrors[fileName] = {
-                file: 'file://' + config.componentDirectory + '/' + fileName,
+                file: 'file://' + config.srcDirectory + '/' + fileName,
                 name: err.name,
                 message: err.message,
                 lineNumber: err.loc.line,
@@ -165,10 +164,9 @@ export async function compileAll({ config, throwErrorOnSyntaxError }) {
         fs.mkdirSync(config.targetDirectory);
     }
 
-    let fileNames = (await readdirRecursive(config.componentDirectory))
-        .map(fileName => fileName.split(config.componentDirectory + '/')[1]);
+    let fileNames = (await readdirRecursive(config.srcDirectory))
+        .map(fileName => fileName.split(config.srcDirectory + '/')[1]);
 
-    addFilesToCompile(['_platform.js']);
     addFilesToCompile(fileNames);
 
     let { success } = await recompile(config);
@@ -185,11 +183,17 @@ export async function compileAll({ config, throwErrorOnSyntaxError }) {
 }
 
 export async function copyPublicFiles(config) {
-    return fsExtra.copy(`${config.appDirectory}/public`, `${config.targetDirectory}/public`);
+
+    if (!fs.existsSync(`${config.srcDirectory}/public`)) {
+        console.log('src/public directory does not exist. Skipped.');
+        return;
+    }
+
+    return fsExtra.copy(`${config.srcDirectory}/public`, `${config.targetDirectory}/public`);
 }
 
 export async function compileGlobalCSS(config) {
-    let originalCss = await fs.promises.readFile(`${config.appDirectory}/global.css`, 'utf-8');
+    let originalCss = await fs.promises.readFile(`${config.srcDirectory}/global.css`, 'utf-8');
     let output = new CleanCSS({}).minify(originalCss);
 
     await fs.promises.writeFile(`${config.targetDirectory}/global.css`, output.styles);

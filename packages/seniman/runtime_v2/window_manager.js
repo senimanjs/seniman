@@ -41,7 +41,6 @@ class WindowManager {
     constructor() {
         this.windowMap = new Map();
 
-
         this._runWindowsLifecycleManagement();
 
         this.queue = [];
@@ -56,8 +55,6 @@ class WindowManager {
             threshold: 8,
             ttl: 2
         });
-
-
 
         this._processMessages();
     }
@@ -257,7 +254,6 @@ class WindowManager {
 
         build.Head = options.Head;
         build.Body = options.Body;
-        build.Root = options.Root;
 
         build.compressionCommandBuffer = await fs.promises.readFile(buildPath + '/compression-command.bin');
         build.reverseIndexMap = JSON.parse(await fs.promises.readFile(buildPath + '/reverse-index-map.json'));
@@ -270,10 +266,8 @@ class WindowManager {
         }
 
         this.build = build;
-
     }
 }
-
 
 export const windowManager = new WindowManager();
 

@@ -2,7 +2,7 @@ import chokidar from 'chokidar';
 
 import { buildClientScaffolding, compileAll, recompile, compileGlobalCSS, copyPublicFiles, addFilesToCompile, getConfig } from '../compiler/build.js';
 
-export async function watch(senimanModule, port) {
+export async function watch() {
 
     let config = await getConfig();
 
@@ -14,10 +14,10 @@ export async function watch(senimanModule, port) {
     const sleep = (s) =>
         new Promise((p) => setTimeout(p, s));
 
-    const watcher = chokidar.watch(config.componentDirectory, { persistent: true })
+    const watcher = chokidar.watch(config.srcDirectory, { persistent: true })
         .on('change', async path => {
 
-            let fileName = path.split(config.componentDirectory + '/')[1];
+            let fileName = path.split(config.srcDirectory + '/')[1];
             console.log(`File ${fileName} has been changed`);
 
             // exit the current worker, and start compilation.
