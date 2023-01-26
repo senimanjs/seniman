@@ -125,6 +125,8 @@ export class Window {
         let [pageTitle, set_pageTitle] = createSignal('');
         let [cookieSignal, setCookie] = createSignal(cookieString);
 
+        this.setPath = setPath;
+
         this.deleteEnqueuedBlockIds = new Set();
         this.clientTemplateInstallationSet = new Set();
         this.clientFunctionInstallationSet = new Set();
@@ -375,7 +377,7 @@ export class Window {
 
             // TODO: do we need to do something special other than just setting the path since this is a backnav?
             // i.e. some level of sychronization of browser's history stack with the server's history stack?
-            setPath(path);
+            this.setPath(path);
         }
     }
 
