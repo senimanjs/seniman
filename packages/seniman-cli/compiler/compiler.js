@@ -56,7 +56,9 @@ const validHtmlElementNames = new Set([
     'svg',
     'path',
     'strong',
-    'link'
+    'link',
+    'code',
+    'pre'
 ]);
 
 const validElementAttributeNames = new Set([

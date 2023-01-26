@@ -46,6 +46,10 @@ class WindowManager {
         this._processMessages();
     }
 
+    hasWindow(windowId) {
+        return this.windowMap.has(windowId);
+    }
+
     async _processMessages() {
         let message, window;
         let PONG_COMMAND = 0;
@@ -157,35 +161,45 @@ class WindowManager {
         }, 2500);
     }
 
-    async initWindow(windowId, initialPath, cookieString, port2) {
+    async initWindow(windowId, initialPath, cookieString, ws) {
 
         // TODO: pass request's ip address here, and rate limit window creation based on ip address
         let build = await loadBuild();
-        let window = new Window(windowId, initialPath, cookieString, build, port2);
+
+        let window = new Window(windowId, initialPath, cookieString, build, ws);
 
         this.windowMap.set(windowId, window);
 
-        port2.on('message', async (message) => {
+        this._setupWs(ws, window);
+
+        window.onDestroy(() => {
+            this.windowMap.delete(window.id);
+
+            if (this.windowDestroyCallback) {
+                this.windowDestroyCallback(window.id);
+            }
+        });
+    }
+
+    reconnectWindow(windowId, initialPath, cookieString, ws, readOffset) {
+        let window = this.windowMap.get(windowId);
+        window.reconnect(cookieString, ws, readOffset);
+
+        this._setupWs(ws, window);
+    }
+
+    _setupWs(ws, window) {
+        ws.on('message', async (message) => {
             this._enqueueMessage(window, message);
         });
 
-        window.onDestroy(() => {
-            this.windowMap.delete(windowId);
-
-            if (this.windowDestroyCallback) {
-                this.windowDestroyCallback(windowId);
-            }
+        ws.on('close', () => {
+            this.disconnectWindow(window.id);
         });
     }
 
     onWindowDestroy(callback) {
         this.windowDestroyCallback = callback;
-    }
-
-    reconnectWindow(msg) {
-        let { windowId, cookieString, readOffset } = msg;
-
-        this.windowMap.get(windowId).reconnect(cookieString, readOffset);
     }
 
     disconnectWindow(windowId) {
@@ -196,6 +210,12 @@ class WindowManager {
 
     loadBuild(path) {
         loadBuild(path);
+    }
+
+    closeAllWindows() {
+        for (let window of this.windowMap.values()) {
+            window.destroy();
+        }
     }
 }
 

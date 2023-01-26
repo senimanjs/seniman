@@ -97,8 +97,25 @@ export async function recompile(config) {
     let fileName;
     let combinedFileNames = [...fileNames, ...new Set(Object.keys(trackedSyntaxErrors))];
 
+    let nonJsFileNames = combinedFileNames.filter(fileName => !fileName.endsWith('.js'));
+    let jsFileNames = combinedFileNames.filter(fileName => fileName.endsWith('.js'));
+
+    if (nonJsFileNames.length > 0) {
+        for (fileName of nonJsFileNames) {
+            // just copy over the file
+            let full_path = path.join(config.componentDirectory, fileName);
+
+            // make sure the directory exists
+            let directoryPath = path.dirname(config.targetDirectory + '/' + fileName);
+            await fs.promises.mkdir(directoryPath, { recursive: true });
+            await fs.promises.copyFile(full_path, config.targetDirectory + '/' + fileName);
+
+            fileNames.delete(fileName);
+        }
+    }
+
     try {
-        for (fileName of combinedFileNames) {
+        for (fileName of jsFileNames) {
             await compileFile(config, fileName);
             delete trackedSyntaxErrors[fileName];
             fileNames.delete(fileName);
@@ -157,7 +174,7 @@ export async function compileAll({ config, throwErrorOnSyntaxError }) {
     let { success } = await recompile(config);
 
     if (success) {
-        console.log('compiling', fileNames, 'finished');
+        console.log('processing', fileNames, 'finished');
     } else {
         console.error(trackedSyntaxErrors);
 

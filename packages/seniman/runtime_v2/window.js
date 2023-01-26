@@ -108,6 +108,7 @@ export class Window {
         this.id = id;
         this.port = port;
         this.destroyFnCallback = null;
+        this.connected = true;
 
         this.pages = [];
         this.global_readOffset = 0;
@@ -237,11 +238,7 @@ export class Window {
     }
 
     sendPing() {
-        this.port.postMessage({
-            arrayBuffer: pingBuffer,
-            offset: 0,
-            size: 1
-        });
+        this.port.send(pingBuffer);
     }
 
     flushBlockDeleteQueue() {
@@ -296,37 +293,20 @@ export class Window {
         // if there are new commands generated during disconnection,
         // let's restream them
         if (this.global_writeOffset > this.global_readOffset) {
-
             let readOffset = this.global_readOffset;
 
             for (let i = 0; i < this.pages.length; i++) {
                 let page = this.pages[i];
-                let msg;
                 let size;
+                let offset = readOffset - page.global_headOffset;
 
                 if (page.finalSize > 0) {
                     size = (page.global_headOffset + page.finalSize) - readOffset;
-
-                    //console.log('restream final page ', this.global_writeOffset, readOffset, readOffset - page.global_headOffset + 1, size);
-
-                    msg = {
-                        arrayBuffer: page.arrayBuffer,
-                        offset: readOffset - page.global_headOffset,
-                        size: size
-                    };
                 } else {
                     size = this.global_writeOffset - readOffset; // 6 - 3
-
-                    //console.log('restream nonfinal page ', this.global_writeOffset, readOffset, readOffset - page.global_headOffset + 1, size);
-
-                    msg = {
-                        arrayBuffer: page.arrayBuffer,
-                        offset: readOffset - page.global_headOffset,// + 1, // 6 - 3 + 1
-                        size: size // 6 -3 
-                    };
                 }
 
-                this.port.postMessage(msg);
+                this.port.send(Buffer.from(page.arrayBuffer, offset, size));
 
                 readOffset += size;
             }
@@ -339,11 +319,12 @@ export class Window {
         }
     }
 
-    reconnect(cookieString, readOffset) {
+    reconnect(cookieString, port, readOffset) {
         //setCookie(cookieString);
 
         console.log('reconnected in window', this.id, readOffset);
 
+        this.port = port;
         this.connected = true;
         this.lastPongTime = Date.now();
 
@@ -417,7 +398,7 @@ export class Window {
 
         let mg = this.mutationGroup;
 
-        if (mg && ((this.global_writeOffset - mg.pageStartOffset) > 0)) {
+        if (this.connected && mg && ((this.global_writeOffset - mg.pageStartOffset) > 0)) {
 
             let msg = {
                 arrayBuffer: mg.page.arrayBuffer,
@@ -425,7 +406,7 @@ export class Window {
                 size: this.global_writeOffset - mg.pageStartOffset
             };
 
-            this.port.postMessage(msg);
+            this.port.send(Buffer.from(msg.arrayBuffer, msg.offset, msg.size));
         }
 
         this.mutationGroup = null;
@@ -506,13 +487,7 @@ export class Window {
         // compression map
         build.compressionCommandBuffer.copy(initWindowBuffer, 22);
 
-        let msg = {
-            arrayBuffer: initWindowBuffer,
-            offset: 0,
-            size: 1 + 21 + build.compressionCommandBuffer.length
-        };
-
-        this.port.postMessage(msg);
+        this.port.send(Buffer.from(initWindowBuffer, 0, 1 + 21 + build.compressionCommandBuffer.length));
     }
 
     /*
@@ -982,17 +957,17 @@ export class Window {
                 },
 
                 setAttribute: (propName, propValue) => {
+                    let attrKey = this.reverseIndexMap.elementAttributeNames[propName] + 1;
 
                     if (typeof propValue != 'string') {
                         if (!propValue) {
-                            elRef.removeAttribute(propName);
+                            elRef.removeAttribute(attrKey);
                             return;
                         } else {
                             propValue = propValue.toString();
                         }
                     }
 
-                    let attrKey = this.reverseIndexMap.elementAttributeNames[propName] + 1;
 
                     elRef._staticHelper(UPDATE_MODE_SET_ATTR, attrKey, propValue);
                 },

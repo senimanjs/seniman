@@ -23,7 +23,6 @@
     let getBlock = (id) => _blocksMap.get(id);
 
     {
-
         let lastMessageTime = 0;
         let requestReopen = false;
 
@@ -122,7 +121,7 @@
             if (pingWaitCounter == 20) {
                 stopConnection();
             }
-        }, 1000);
+        }, 500);
 
         // pingchecker
         let intv = setIntervalFn();
@@ -423,7 +422,6 @@
                 {
                     let mapIndex = getUint8();
                     let propName = (updateMode == UPDATE_MODE_STYLEPROP ? stylePropertyKeyMap : staticAttributeMap)[mapIndex];
-                    //let propName = getString(6, propNameLength);
                     let propValueLength = getUint8();
                     let propValue = getString(propValueLength);
 

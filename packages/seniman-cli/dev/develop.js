@@ -2,17 +2,14 @@ import chokidar from 'chokidar';
 
 import { buildClientScaffolding, compileAll, recompile, compileGlobalCSS, copyPublicFiles, addFilesToCompile, getConfig } from '../compiler/build.js';
 
-export async function develop(senimanModule, port) {
+export async function watch(senimanModule, port) {
 
-    let { createServer, updateBuildDev } = senimanModule;
     let config = await getConfig();
 
     await compileAll({ config, throwErrorOnSyntaxError: false });
     await buildClientScaffolding(config);
     await copyPublicFiles(config);
     await compileGlobalCSS(config);
-
-    await createServer({ port: port, buildPath: config.targetDirectory });
 
     const sleep = (s) =>
         new Promise((p) => setTimeout(p, s));
@@ -32,6 +29,5 @@ export async function develop(senimanModule, port) {
 
             await sleep(10);
             await recompile(config);
-            updateBuildDev();
         });
 }
