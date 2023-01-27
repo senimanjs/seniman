@@ -14,3 +14,16 @@ a {
 * {
   box-sizing: border-box;
 }
+
+body {
+  height: 100vh;
+  background: #444;
+  color: #fff;
+}
+
+.todo-item {
+  padding: 5px;
+  border: 1px solid #ccc;
+  width: 300px;
+  margin-bottom: 10px;
+}

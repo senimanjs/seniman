@@ -17,7 +17,7 @@ inquirer.prompt([
   console.log('Creating application', appName);
   const __dirname = path.dirname(fileURLToPath(new URL(import.meta.url)));
 
-  await fsExtra.copy(__dirname + '/app-template/express', process.cwd() + '/' + appName);
+  await fsExtra.copy(__dirname + '/app-template/express-todo', process.cwd() + '/' + appName);
 
   let packageJsonStringTemplate = await fs.promises.readFile(process.cwd() + '/' + appName + '/package.json', 'utf-8');
   let packageJsonString = packageJsonStringTemplate.replace('$APP_NAME', appName);

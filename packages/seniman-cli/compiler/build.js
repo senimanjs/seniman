@@ -94,8 +94,6 @@ export async function recompile(config) {
     let fileName;
     let combinedFileNames = [...fileNames, ...new Set(Object.keys(trackedSyntaxErrors))];
 
-    console.log('comninedFileNames', combinedFileNames);
-
     let nonJsFileNames = combinedFileNames.filter(fileName => !fileName.endsWith('.js'));
     let jsFileNames = combinedFileNames.filter(fileName => fileName.endsWith('.js'));
 

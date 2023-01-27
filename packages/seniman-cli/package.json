@@ -1,6 +1,6 @@
 {
   "name": "seniman-cli",
-  "version": "0.0.42",
+  "version": "0.0.44",
   "description": "",
   "type": "module",
   "bin": {
@@ -29,9 +29,6 @@
     "nanoid": "^4.0.0",
     "stacktrace-parser": "^0.1.10",
     "uglify-js": "^3.17.4"
-  },
-  "peerDependencies": {
-    "seniman": "^0.0.7"
   },
   "bugs": {
     "url": "https://github.com/senimanjs/seniman/issues"
