@@ -4,6 +4,9 @@ import { ErrorHandler } from './errors.js';
 import produce from 'immer';
 
 let app = express();
+wrapExpress(app, { Head, Body });
+
+app.listen(process.env.PORT || 3002);
 
 function Head(props) {
   return <>
@@ -32,10 +35,6 @@ function Body(props) {
     { text: "Build a Todo App" },
     { text: "???" },
   ]);
-
-  onCleanup(() => {
-    clearInterval(interval);
-  });
 
   let newTaskDraft = '';
 
@@ -69,6 +68,10 @@ function Body(props) {
     setRealtimeCount(realtimeCount => realtimeCount + 1);
   }, 1000);
 
+  onCleanup(() => {
+    clearInterval(interval);
+  });
+
   return <ErrorHandler syntaxErrors={props.syntaxErrors}>
     <div style={{ padding: "20px" }}>
       <div style={{ fontSize: "24px", marginBottom: "10px" }}>{fullName}'s Todo List</div>
@@ -88,7 +91,3 @@ function Body(props) {
     </div>
   </ErrorHandler>;
 }
-
-await wrapExpress(app, { Head, Body });
-
-app.listen(process.env.PORT || 3002);
