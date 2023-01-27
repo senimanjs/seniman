@@ -31,6 +31,7 @@ const eventTypeIdMap = {
 };
 
 const eventNames = Object.keys(eventTypeIdMap);
+const eventNamesSet = new Set(eventNames);
 
 const styleAttributeNames = ['classList', 'style', 'class'];
 
@@ -61,33 +62,10 @@ const validHtmlElementNames = new Set([
     'pre'
 ]);
 
-const validElementAttributeNames = new Set([
-    'style',
-    'class',
-    'href',
-    'type',
-    'src',
-    'value',
-    'autocapitalize',
-    'onclick',
-    'id',
-    'name',
-    'content',
-    'placeholder',
-    'checked',
-    'd',
-    'viewBox',
-    'width',
-    'height',
-    'fill',
-    'focusable',
-    'disabled',
-    'rel'
-]);
 
 const compressionRegistry = {
     elementNames: new Set(),
-    elementAttributeNames: validElementAttributeNames, // new Set()
+    elementAttributeNames: new Set(['class', 'style']),
     stylePropertyKeys: new Set(),
     stylePropertyValues: new Set()
 }
@@ -974,8 +952,7 @@ function _buildElRefCallExpression(cond, _arguments) {
         'style': 'setStyleProperty',
         'multiStyleProp': 'setMultiStyleProperties',
         'classList': 'toggleClass',
-        'class': 'setClassName',
-        'checked': 'setChecked'
+        'class': 'setClassName'
     }[cond.type];
 
     return {
@@ -1032,7 +1009,7 @@ function createMultiConditionStyleEffectBodyBlockStatement(styleConditions) {
         let _arguments;
         let conditionType = cond.type;
 
-        if (conditionType == 'class' || conditionType == 'checked' || conditionType == 'multiStyleProp') {
+        if (conditionType == 'class' || conditionType == 'multiStyleProp') {
             _arguments = [buildValueAssignmentExpression(index)];
         } else {
             // TODO: handle style creations that are not in the static compression map
@@ -1081,8 +1058,8 @@ function createSingleConditionStyleEffectBodyBlockStatement(styleCondition) {
     let _arguments;
     let conditionType = styleCondition.type;
 
-    // if a single parameter function call (e.g. toggleClass, setMultiStyleProps, setChecked)
-    if (conditionType == 'class' || conditionType == 'checked' || conditionType == 'multiStyleProp') {
+    // if a single parameter function call (e.g. toggleClass, setMultiStyleProps)
+    if (conditionType == 'class' || conditionType == 'multiStyleProp') {
         _arguments = [_buildStyleConditionValueExpression(styleCondition)];
     } else {
 
@@ -1112,6 +1089,10 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
     for (let i = 0; i < attributes.length; i++) {
         let attr = attributes[i];
         let attrName = attr.name.name;
+
+        if (eventNamesSet.has(attrName)) {
+            continue;
+        }
 
         if (attr.name.name == 'classList') {
             let value = attr.value.expression;
@@ -1179,21 +1160,15 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
             } else if (value.type == 'JSXExpressionContainer') {
                 styleConditions.push({ type: 'class', condition: value.expression });
             }
-        } else if (validElementAttributeNames.has(attrName)) {
+        } else {
             let value = attr.value;
+            compressionRegistry.elementAttributeNames.add(attrName);
 
             if (value.type == 'StringLiteral') {
                 element.attributes[attrName] = value.value;
             } else if (value.type == 'JSXExpressionContainer') {
-                // handle special-cased attributes
-                if (attrName == 'checked') {
-                    styleConditions.push({ type: 'checked', condition: value.expression });
-                } else {
-                    styleConditions.push({ type: 'attribute', key: attrName, condition: value.expression });
-                }
+                styleConditions.push({ type: 'attribute', key: attrName, condition: value.expression });
             }
-        } else {
-            //console.warn('Unsupported attribute', attrName);
         }
     }
 

@@ -399,21 +399,12 @@
         let updateMode = getUint8();
 
         let targetHandlerElement = _getBlockTargetElement(blockId, targetId);
-        /*
-        let UPDATE_MODE_STYLEPROP = 1;
-        let UPDATE_MODE_ATTR = 2;
-        let UPDATE_MODE_SET_CLASS = 3;
-        let UPDATE_MODE_REMOVE_CLASS = 4;
-        let UPDATE_MODE_REMOVE_ATTR = 5;
-        let UPDATE_MODE_SET_CHECKED = 6;
-        */
 
         let UPDATE_MODE_STYLEPROP = 1;
         let UPDATE_MODE_SET_ATTR = 2;
         let UPDATE_MODE_SET_CLASS = 3;
         let UPDATE_MODE_REMOVE_CLASS = 4;
         let UPDATE_MODE_REMOVE_ATTR = 5;
-        let UPDATE_MODE_SET_CHECKED = 6;
         let UPDATE_MODE_MULTI_STYLEPROP = 7;
 
         switch (updateMode) {
@@ -428,7 +419,9 @@
                     if (updateMode == UPDATE_MODE_STYLEPROP) {
                         targetHandlerElement.style.setProperty(propName, propValue);
                     } else {
-                        if (propName == 'value') {
+                        if (propName == 'checked') {
+                            targetHandlerElement.checked = true;
+                        } else if (propName == 'value') {
                             targetHandlerElement.value = propValue;
                         } else {
                             targetHandlerElement.setAttribute(propName, propValue);
@@ -449,14 +442,17 @@
                 {
                     let mapIndex = getUint8();
                     let propName = staticAttributeMap[mapIndex];
-                    targetHandlerElement.removeAttribute(propName);
+
+                    if (propName == 'checked') {
+                        targetHandlerElement.checked = false;
+                    } else if (propName == 'value') {
+                        targetHandlerElement.value = '';
+                    } else {
+                        targetHandlerElement.removeAttribute(propName);
+                    }
+
                     break;
                 }
-            case UPDATE_MODE_SET_CHECKED:
-                // TODO: probably handle this through the regular SET_ATTR / REMOVE_ATTR code path
-                let isActive = getUint8() == 1;
-                targetHandlerElement.checked = isActive;
-                break;
             case UPDATE_MODE_MULTI_STYLEPROP:
                 let keyLength;
                 targetHandlerElement.style.cssText = '';
