@@ -4,11 +4,12 @@ import { createSignal, createMemo, onCleanup, createEffect, createContext, useCo
 import { wrapExpress } from './runtime_v2/express.js';
 
 export {
-    createSignal,
-    createMemo,
-    createEffect,
-    onCleanup,
+    createSignal as useState,
+    createMemo as useMemo,
+    createEffect as useEffect,
     useWindow,
+
+    onCleanup,
     createContext,
     useContext,
     WindowProvider,

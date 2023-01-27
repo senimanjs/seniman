@@ -115,8 +115,6 @@ export class Window {
         this.global_writeOffset = 0;
         this.mutationGroup = null;
 
-        console.log('NEW WINDOW')
-
         this._streamInitWindow(build);
 
         this.latestBlockId = 10;

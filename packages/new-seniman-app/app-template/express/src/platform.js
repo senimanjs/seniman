@@ -1,4 +1,4 @@
-import { createSignal, onError } from 'seniman';
+import { useState, onError } from 'seniman';
 import fs from 'node:fs';
 import { parse } from 'stacktrace-parser';
 
@@ -62,7 +62,7 @@ function ReconnectionPrompt() {
 }
 
 export function ErrorHandler(props) {
-  let [runtimeError, set_runtimeError] = createSignal(null);
+  let [runtimeError, set_runtimeError] = useState(null);
 
   onError((err) => {
     console.error(err);

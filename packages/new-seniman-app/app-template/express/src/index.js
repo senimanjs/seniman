@@ -1,5 +1,5 @@
 import express from 'express';
-import { wrapExpress, onCleanup, useWindow, createEffect, createSignal, createMemo } from 'seniman';
+import { wrapExpress, onCleanup, useWindow, useEffect, useState, useMemo } from 'seniman';
 import { ErrorHandler } from './platform.js';
 
 let app = express();
@@ -19,8 +19,8 @@ function Body(props) {
 }
 
 function Root() {
-  let [realtimeCount, setRealtimeCount] = createSignal(0);
-  let [reasons, setReasons] = createSignal([
+  let [realtimeCount, setRealtimeCount] = useState(0);
+  let [reasons, setReasons] = useState([
     { text: "It's fast" },
     { text: "It's easy" },
     { text: "It's fun" },

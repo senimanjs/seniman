@@ -9,7 +9,7 @@
     "dev": "npx concurrently \"npx seniman watch\" \"npx nodemon --delay 5ms dist/index.js\""
   },
   "dependencies": {
-    "seniman": "^0.0.41",
+    "seniman": "^0.0.42",
     "stacktrace-parser": "^0.1.10",
     "express": "^4.18.2"
   }
