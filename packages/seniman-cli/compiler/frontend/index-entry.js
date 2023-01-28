@@ -22,12 +22,54 @@
 
     let getBlock = (id) => _blocksMap.get(id);
 
+    let throttleDebounce = (func, delay) => {
+        let lastCall = 0;
+        let timeoutId;
+        let latestArgs;
+
+        return (...args) => {
+            latestArgs = args;
+            clearTimeout(timeoutId);
+
+            const _now = now();
+            if (_now - lastCall >= delay) {
+                lastCall = _now;
+                func.apply(null, latestArgs);
+            } else {
+                // If not enough time has passed since the last call,
+                // set a new timeout to run the function at the next
+                // opportunity (i.e. after `delay` milliseconds)
+                timeoutId = setTimeout(() => {
+                    lastCall = now();
+                    func.apply(null, latestArgs);
+                }, delay - (_now - lastCall));
+            }
+        };
+    }
+
+    let viewportUpdateBuffer = createBuffer(5);
+    let getWindowSize = () => [_window.innerWidth, _window.innerHeight];
+
+    _addEventListener(window, 'resize', throttleDebounce(() => {
+        let [width, height] = getWindowSize();
+
+        writeUint8(viewportUpdateBuffer, 5, 0);
+        writeUint16LE(viewportUpdateBuffer, width, 1);
+        writeUint16LE(viewportUpdateBuffer, height, 3);
+
+        _socketSend(viewportUpdateBuffer);
+    }, 1000));
+
     {
         let lastMessageTime = 0;
         let requestReopen = false;
 
         let connectSocket = () => {
-            socket = new WebSocket(`ws${_location.protocol[4] == 's' ? 's' : ''}://${_location.host}?${windowId}:${_location.pathname}:${readOffset}`);
+            let [width, height] = getWindowSize();
+            let viewportSize = `${width}x${height}`;
+            let path = _location.pathname + _location.search;
+
+            socket = new WebSocket(`ws${_location.protocol[4] == 's' ? 's' : ''}://${_location.host}?${windowId}:${readOffset}:${viewportSize}:${path}`);
             socket.binaryType = "arraybuffer";
 
             socket.onopen = (e) => {
@@ -195,32 +237,8 @@
         return targetId == 255 ? block.rootEl : block.targetEls[targetId];
     }
 
-    /*
-    let throttleDebounce = (func, delay) => {
-        let lastCall = 0;
-        let timeoutId;
-        let latestArgs;
 
-        return (...args) => {
-            latestArgs = args;
-            clearTimeout(timeoutId);
 
-            const _now = now();
-            if (_now - lastCall >= delay) {
-                lastCall = _now;
-                func.apply(null, latestArgs);
-            } else {
-                // If not enough time has passed since the last call,
-                // set a new timeout to run the function at the next
-                // opportunity (i.e. after `delay` milliseconds)
-                timeoutId = setTimeout(() => {
-                    lastCall = now();
-                    func.apply(null, latestArgs);
-                }, delay - (_now - lastCall));
-            }
-        };
-    }
-    */
 
     function bareServerCallWithoutPreventDefault(e) {
         //e.preventDefault();

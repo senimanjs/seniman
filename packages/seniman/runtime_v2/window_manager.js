@@ -176,10 +176,29 @@ class WindowManager {
         }, 2500);
     }
 
-    async initWindow(windowId, initialPath, cookieString, ws) {
+    applyNewConnection(ws, pageParams) {
+
+        let { windowId } = pageParams;
+
+        if (windowId) {
+            if (this.hasWindow(windowId)) {
+                this.reconnectWindow(ws, pageParams);
+            } else {
+                ws.close(3001);
+                return;
+            }
+        } else {
+            let newWindowId = nanoid();
+            pageParams.windowId = newWindowId;
+            this.initWindow(ws, pageParams);
+        }
+    }
+
+    async initWindow(ws, pageParams) {
+        let { windowId } = pageParams;
 
         // TODO: pass request's ip address here, and rate limit window creation based on ip address
-        let window = new Window(windowId, initialPath, cookieString, this.build, ws);
+        let window = new Window(ws, pageParams, this.build);
 
         this.windowMap.set(windowId, window);
 
@@ -196,24 +215,11 @@ class WindowManager {
         });
     }
 
-    applyNewConnection(ws, windowId, readOffset, currentPath, cookieHeaderString) {
 
-        if (windowId) {
-            if (this.hasWindow(windowId)) {
-                this.reconnectWindow(windowId, currentPath, cookieHeaderString, ws, readOffset);
-            } else {
-                ws.close(3001);
-                return;
-            }
-        } else {
-            let newWindowId = nanoid();
-            this.initWindow(newWindowId, currentPath, cookieHeaderString, ws);
-        }
-    }
+    reconnectWindow(ws, pageParams) {
 
-    reconnectWindow(windowId, initialPath, cookieString, ws, readOffset) {
-        let window = this.windowMap.get(windowId);
-        window.reconnect(cookieString, ws, readOffset);
+        let window = this.windowMap.get(pageParams.windowId);
+        window.reconnect(ws, pageParams);
 
         this._setupWs(ws, window);
     }

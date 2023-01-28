@@ -46,7 +46,7 @@ export async function buildClientScaffolding(config) {
     };
 
     let minifiedCode = uglifyjs.minify(jsCodeString, options).code;
-    let htmlString = `<!doctype html><script>${minifiedCode}</script>`;
+    let htmlString = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1" /><script>${minifiedCode}</script>`;
     let htmlBuffer = Buffer.from(htmlString);
 
     let brotliBuffer = zlib.brotliCompressSync(htmlBuffer);

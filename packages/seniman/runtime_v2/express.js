@@ -6,14 +6,23 @@ function wsHandler(options, ws, req) {
 
   let splitUrl = req.url.split('?')[1].split(':');
   let windowId = splitUrl[0];
-  let currentPath = splitUrl[1];
-  let readOffset = parseInt(splitUrl[2]);
+  let readOffset = parseInt(splitUrl[1]);
+  let viewportSize = splitUrl[2].split('x').map((num) => parseInt(num));
+  let currentPath = splitUrl[3];
 
   // TODO: get ip address of request and pass it to the window manager
   // let ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-  let cookieHeaderString = req.headers.cookie || '';
+  let cookieString = req.headers.cookie || '';
 
-  windowManager.applyNewConnection(ws, windowId, readOffset, currentPath, cookieHeaderString);
+  let pageParams = {
+    windowId,
+    currentPath,
+    viewportSize,
+    readOffset,
+    cookieString
+  };
+
+  windowManager.applyNewConnection(ws, pageParams);
 }
 
 export async function wrapExpress(app, options) {

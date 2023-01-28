@@ -99,13 +99,19 @@ const multiStylePropScratchBuffer = new ArrayBuffer(32768);
 
 export class Window {
 
-    constructor(id, initialPath, cookieString, build, port) {
+    constructor(port, pageParams, build) {
+
+        let { windowId,
+            currentPath,
+            viewportSize,
+            readOffset,
+            cookieString } = pageParams;
 
         if (build.syntaxErrors) {
             console.error('Starting a window with syntax errors');
         }
 
-        this.id = id;
+        this.id = windowId;
         this.port = port;
         this.destroyFnCallback = null;
         this.connected = true;
@@ -119,10 +125,12 @@ export class Window {
 
         this.latestBlockId = 10;
 
-        let [path, setPath] = createSignal(initialPath);
+        let [path, setPath] = createSignal(currentPath);
         let [pageTitle, set_pageTitle] = createSignal('');
         let [cookieSignal, setCookie] = createSignal(cookieString);
+        let [viewportSizeSignal, setViewportSize] = createSignal({ width: viewportSize[0], height: viewportSize[1] });
 
+        this.setViewportSize = setViewportSize;
         this.setPath = setPath;
 
         this.deleteEnqueuedBlockIds = new Set();
@@ -137,6 +145,7 @@ export class Window {
         this.reverseIndexMap = build.reverseIndexMap;
 
         let windowContext = {
+            viewportSize: viewportSizeSignal,
             cookie: (cookieKey) => {
                 return createMemo(() => {
                     let cookieString = cookieSignal();
@@ -325,7 +334,14 @@ export class Window {
         }
     }
 
-    reconnect(cookieString, port, readOffset) {
+    reconnect(port, pageParams) {
+
+        let { windowId,
+            currentPath,
+            viewportSize,
+            readOffset,
+            cookieString } = pageParams;
+
         //setCookie(cookieString);
 
         console.log('reconnected in window', this.id, readOffset);
@@ -354,6 +370,7 @@ export class Window {
         let EVENT_COMMAND = 1;
         let EVENT_DATA_COMMAND = 2;
         let EVENT_BACKNAV = 3;
+        let EVENT_VIEWPORT_UPDATE = 5;
 
         let opcode = buffer.readUint8(0);
 
@@ -376,6 +393,12 @@ export class Window {
             // TODO: do we need to do something special other than just setting the path since this is a backnav?
             // i.e. some level of sychronization of browser's history stack with the server's history stack?
             this.setPath(path);
+        } else if (opcode == EVENT_VIEWPORT_UPDATE) {
+            let width = buffer.readUint16LE(1);
+            let height = buffer.readUint16LE(3);
+
+            console.log('initial viewport size', width, height);
+            this.setViewportSize({ width, height });
         }
     }
 
