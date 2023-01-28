@@ -12,7 +12,7 @@ inquirer.prompt([
     name: 'projectTemplate',
     message: "Which project template would you like to use?",
     default: "express-basic",
-    choices: ["express-basic", "express-todo"]
+    choices: ["express-basic", "express-sqlite", "express-todo"]
   },
   {
     name: 'projectName',

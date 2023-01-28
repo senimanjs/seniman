@@ -17,8 +17,6 @@ function Head(props) {
 
 function Body(props) {
   return <ErrorHandler syntaxErrors={props.syntaxErrors}>
-    <div>
-      Hello World
-    </div>
+    <div>Hello World</div>
   </ErrorHandler>;
 }

@@ -12,7 +12,6 @@ function Head(props) {
   return <>
     <title>{props.window.pageTitle}</title>
     <style>{props.cssText}</style>
-    <meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1.0,user-scalable=no' />
   </>;
 }
 
@@ -87,7 +86,7 @@ function Body(props) {
         <input type="text" onBlur={onBlurClientHandler} />
         <button onClick={() => addTask(newTaskDraft)}>+ Task</button>
       </div>
-      <div style={{ fontSize: "10px" }}> Elapsed Window Time: {realtimeCount}</div>
+      <div style={{ fontSize: "10px" }}>Elapsed Window Time: {realtimeCount}</div>
     </div>
   </ErrorHandler>;
 }
