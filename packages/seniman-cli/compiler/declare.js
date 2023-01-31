@@ -285,12 +285,14 @@ function getTemplateBuffer(block, encodeCompressionMap) {
 
             // if this is a text
             if (tagNameId == 32) {
-                buf.writeUint16BE(el.value.length, offset);
+                let textLength = Buffer.byteLength(el.value);
+
+                buf.writeUint16BE(textLength, offset);
                 offset += 2;
 
                 // write the string
-                buf.write(el.value, offset, el.value.length);
-                offset += el.value.length;
+                buf.write(el.value, offset, textLength);
+                offset += textLength;
 
             } else {
 

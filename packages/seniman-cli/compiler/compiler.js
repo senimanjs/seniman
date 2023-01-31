@@ -266,13 +266,19 @@ function nodeHasDynamicAttribute(node) {
 
         if (attrName == 'style') {
             if (value.type == 'JSXExpressionContainer') {
-                // Only support ObjectExpression for now
-                for (let j = 0; j < value.expression.properties.length; j++) {
-                    let prop = value.expression.properties[j];
+                let expressionType = value.expression.type;
 
-                    if (!isStaticExpression(prop.value)) {
-                        return true;
+                if (expressionType == 'ObjectExpression') {
+                    // Only support ObjectExpression for now
+                    for (let j = 0; j < value.expression.properties.length; j++) {
+                        let prop = value.expression.properties[j];
+
+                        if (!isStaticExpression(prop.value)) {
+                            return true;
+                        }
                     }
+                } else {
+                    return true;
                 }
 
             } else {
