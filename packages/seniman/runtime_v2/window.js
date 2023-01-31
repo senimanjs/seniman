@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer';
 //import blocks from './components/blocks.js';
 import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
 import { blockDefinitions, clientFunctionDefinitions, compileBlockDefinitionToInstallCommand } from './declare.js';
+import { build } from './build.js';
 
 
 export const WindowContext = createContext(null);
@@ -97,9 +98,13 @@ let PAGE_SIZE = 4096 * 3;//8192 * 2;
 let pingBuffer = Buffer.from([0]);
 const multiStylePropScratchBuffer = new ArrayBuffer(32768);
 
+// create a shared buffer for init window command to avoid creating a new buffer for every window
+let initWindowBuffer = Buffer.alloc(1 + 21 + build.compressionCommandBuffer.length);
+build.compressionCommandBuffer.copy(initWindowBuffer, 22);
+
 export class Window {
 
-    constructor(port, pageParams, build) {
+    constructor(port, pageParams, components) {
 
         let { windowId,
             currentPath,
@@ -121,7 +126,7 @@ export class Window {
         this.global_writeOffset = 0;
         this.mutationGroup = null;
 
-        this._streamInitWindow(build);
+        this._streamInitWindow();
 
         this.latestBlockId = 10;
 
@@ -141,8 +146,6 @@ export class Window {
         this.eventHandlers = new Map();
 
         this.lastPongTime = Date.now();
-
-        this.reverseIndexMap = build.reverseIndexMap;
 
         let windowContext = {
             viewportSize: viewportSizeSignal,
@@ -237,13 +240,13 @@ export class Window {
         createRoot(dispose => {
             this.rootOwner = getOwner();
 
-            this._attach(1, 0, _createComponent(build.Head, { cssText: build.globalCss, pageTitle, window: windowContext }));
+            this._attach(1, 0, _createComponent(components.Head, { cssText: build.globalCss, pageTitle, window: windowContext }));
             this._attach(2, 0, _createComponent(WindowProvider, {
                 get value() {
                     return windowContext;
                 },
                 get children() {
-                    return _createComponent(build.Body, { syntaxErrors: build.syntaxErrors })
+                    return _createComponent(components.Body, { syntaxErrors: build.syntaxErrors })
                 }
             }));
 
@@ -510,16 +513,11 @@ export class Window {
         eventHandler(command.data);
     }
 
-    _streamInitWindow(build) {
-        let initWindowBuffer = Buffer.alloc(1 + 21 + build.compressionCommandBuffer.length);
-
+    _streamInitWindow() {
         initWindowBuffer.writeUint8(CMD_INIT_WINDOW, 0);
         initWindowBuffer.write(this.id, 1, 21);
 
-        // compression map
-        build.compressionCommandBuffer.copy(initWindowBuffer, 22);
-
-        this.port.send(Buffer.from(initWindowBuffer, 0, 1 + 21 + build.compressionCommandBuffer.length));
+        this.port.send(initWindowBuffer);
     }
 
     _streamEventInitCommandV2(blockId, targetId, eventType, clientFnId, serverBindIds) {
@@ -886,7 +884,7 @@ export class Window {
                         propValue = propValue.toString();
                     }
 
-                    let propKey = this.reverseIndexMap.stylePropertyKeys[propName] + 1;
+                    let propKey = build.reverseIndexMap.stylePropertyKeys[propName] + 1;
 
                     elRef._staticHelper(UPDATE_MODE_STYLEPROP, propKey, propValue || '');
                 },
@@ -922,8 +920,8 @@ export class Window {
                         const pair = kebabPropertyPairs[i];
                         const [key, value] = pair;
 
-                        if (this.reverseIndexMap.stylePropertyKeys[key]) {
-                            let keyIndex = this.reverseIndexMap.stylePropertyKeys[key] + 1;
+                        if (build.reverseIndexMap.stylePropertyKeys[key]) {
+                            let keyIndex = build.reverseIndexMap.stylePropertyKeys[key] + 1;
                             // set 16-th bit to 1 to denote that this is static map compression index
                             // (stylePropertyKeyMap on the client)
                             buf2.writeUint16BE(keyIndex |= (1 << 15), offset);
@@ -935,8 +933,8 @@ export class Window {
                             offset += key.length;
                         }
 
-                        if (this.reverseIndexMap.stylePropertyValues[value]) {
-                            let valueIndex = this.reverseIndexMap.stylePropertyValues[value] + 1;
+                        if (build.reverseIndexMap.stylePropertyValues[value]) {
+                            let valueIndex = build.reverseIndexMap.stylePropertyValues[value] + 1;
                             buf2.writeUint16BE(valueIndex |= (1 << 15), offset);
                             offset += 2;
                         } else {
@@ -976,7 +974,7 @@ export class Window {
                 },
 
                 setAttribute: (propName, propValue) => {
-                    let attrKey = this.reverseIndexMap.elementAttributeNames[propName] + 1;
+                    let attrKey = build.reverseIndexMap.elementAttributeNames[propName] + 1;
 
                     if (typeof propValue != 'string') {
                         if (!propValue) {

@@ -30,16 +30,9 @@ function wsHandler(options, ws, req) {
 
 export function createServer(options) {
 
-  windowManager.prepareBuild(options);
+  windowManager.registerEntrypoint(options);
 
-  // read config
-  let buildPath = process.cwd() + '/dist';
-
-  let htmlBuffers = {
-    br: fs.readFileSync(buildPath + "/index.html.brotli"),
-    gzip: fs.readFileSync(buildPath + "/index.html.gz"),
-    uncompressed: fs.readFileSync(buildPath + "/index.html"),
-  };
+  let htmlBuffers = build.htmlBuffers;
 
   const server = httpCreateServer(function (req, res) {
 

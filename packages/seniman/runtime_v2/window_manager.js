@@ -4,6 +4,7 @@ import { FastRateLimit } from 'fast-ratelimit';
 import { nanoid } from 'nanoid';
 
 import { Window } from './window.js';
+import { build } from './build.js';
 
 // get ram limit from env var
 let RSS_LOW_MEMORY_THRESHOLD = process.env.RSS_LOW_MEMORY_THRESHOLD ? parseInt(process.env.RSS_LOW_MEMORY_THRESHOLD) : 180;
@@ -198,11 +199,11 @@ class WindowManager {
         }
     }
 
-    async initWindow(ws, pageParams) {
+    initWindow(ws, pageParams) {
         let { windowId } = pageParams;
 
         // TODO: pass request's ip address here, and rate limit window creation based on ip address
-        let window = new Window(ws, pageParams, this.build);
+        let window = new Window(ws, pageParams, { Head: this.Head, Body: this.Body });
 
         this.windowMap.set(windowId, window);
 
@@ -218,7 +219,6 @@ class WindowManager {
             }
         });
     }
-
 
     reconnectWindow(ws, pageParams) {
 
@@ -248,34 +248,15 @@ class WindowManager {
         }
     }
 
-    loadBuild(path) {
-        loadBuild(path);
-    }
-
     closeAllWindows() {
         for (let window of this.windowMap.values()) {
             window.destroy();
         }
     }
 
-    async prepareBuild(options) {
-        let build = {};
-        let buildPath = process.cwd() + '/dist';
-
-        build.Head = options.Head || EmptyHead;
-        build.Body = options.Body;
-
-        build.compressionCommandBuffer = await fs.promises.readFile(buildPath + '/compression-command.bin');
-        build.reverseIndexMap = JSON.parse(await fs.promises.readFile(buildPath + '/reverse-index-map.json'));
-        build.globalCss = (await fs.promises.readFile(buildPath + '/global.css')).toString();
-
-        try {
-            build.syntaxErrors = JSON.parse(await fs.promises.readFile(buildPath + '/SyntaxErrors.json'));
-        } catch (e) {
-            console.log('No syntax errors.');
-        }
-
-        this.build = build;
+    registerEntrypoint(options) {
+        this.Head = options.Head || EmptyHead;
+        this.Body = options.Body;
     }
 }
 
@@ -284,57 +265,3 @@ function EmptyHead() {
 }
 
 export const windowManager = new WindowManager();
-
-let cachedBuild = null;
-let buildLoadStartedPromise = null;
-
-export const loadBuild = async (buildPath) => {
-
-    if (buildLoadStartedPromise) {
-
-        if (cachedBuild) {
-            return cachedBuild;
-        }
-
-        return buildLoadStartedPromise;
-    } else {
-
-        buildLoadStartedPromise = new Promise(async (resolve, reject) => {
-
-            // track function time
-            let startTime = performance.now();
-
-            let [PlatformModule, IndexModule, compressionCommandBuffer, reverseIndexMap, globalCssBuffer] = await Promise.all([
-                import(buildPath + '/_platform.js'),
-
-                // TODO: set rootComponent path from config value instead of hardcoding
-                import(buildPath + '/index.js'),
-                fs.promises.readFile(buildPath + '/compression-command.bin'),
-                fs.promises.readFile(buildPath + '/reverse-index-map.json'),
-                fs.promises.readFile(buildPath + '/global.css')
-            ]);
-
-            let build = {
-                PlatformModule,
-                IndexModule,
-                reverseIndexMap: JSON.parse(reverseIndexMap),
-                compressionCommandBuffer: compressionCommandBuffer,
-                globalCss: globalCssBuffer.toString()
-            };
-
-            try {
-                build.syntaxErrors = JSON.parse(await fs.promises.readFile(buildPath + '/SyntaxErrors.json'));
-            } catch (e) {
-                console.log('No syntax errors.');
-                //build.rootComponent = (await import(buildPath + '/RootComponent.js')).default;
-            }
-
-            console.log('load time:', performance.now() - startTime);
-            console.log('build loaded.');
-            cachedBuild = build;
-            resolve(build);
-        });
-
-        return buildLoadStartedPromise;
-    }
-}

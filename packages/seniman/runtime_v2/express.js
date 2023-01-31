@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
+import { build } from './build.js';
 import { windowManager } from './window_manager.js';
 
 function wsHandler(options, ws, req) {
@@ -27,16 +28,9 @@ function wsHandler(options, ws, req) {
 
 export function wrapExpress(app, options) {
 
-  windowManager.prepareBuild(options);
+  windowManager.registerEntrypoint(options);
 
-  // read config
-  let buildPath = process.cwd() + '/dist';
-
-  let htmlBuffers = {
-    br: fs.readFileSync(buildPath + "/index.html.brotli"),
-    gzip: fs.readFileSync(buildPath + "/index.html.gz"),
-    uncompressed: fs.readFileSync(buildPath + "/index.html"),
-  };
+  let htmlBuffers = build.htmlBuffers;
 
   let prebuiltHeaders = {
     'Content-Type': 'text/html',
