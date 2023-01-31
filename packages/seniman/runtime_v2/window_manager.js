@@ -52,7 +52,11 @@ class WindowManager {
         // here and not good actors sending too many messages in some chatty part
         // of the app
         this.messageLimiter = new FastRateLimit({
+            /*
             threshold: 8,
+            ttl: 2
+            */
+            threshold: 16,
             ttl: 2
         });
 

@@ -237,22 +237,26 @@
         return targetId == 255 ? block.rootEl : block.targetEls[targetId];
     }
 
-
-
-
     function bareServerCallWithoutPreventDefault(e) {
-        //e.preventDefault();
         this.serverFunctions[0]();
     }
 
-    let EventMap = { 2: 'focus', 3: 'blur', 4: 'input', 5: 'scroll', 6: 'keydown', 7: 'keyup' };
+    let EventMap = {
+        2: 'focus',
+        3: 'blur',
+        4: 'input',
+        5: 'scroll',
+        6: 'keydown',
+        7: 'keyup',
+        8: 'mouseenter',
+        9: 'mouseleave'
+    };
 
     let _attachEventHandlerV2 = () => {
         let blockId = getUint16(); //buf.writeUint16LE(parentBlockId, 1);
         let targetId = getUint8();
         let eventType = getUint8(); // 1: click, 2: focus, 3: blur, 4: input, 5: scroll
         let targetHandlerElement = _getBlockTargetElement(blockId, targetId);
-
         /*
 
         window.runClientFunction($c(() => {
