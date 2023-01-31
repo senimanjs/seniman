@@ -191,6 +191,13 @@ export async function copyPublicFiles(config) {
 }
 
 export async function compileGlobalCSS(config) {
+
+    // check if file exists
+    if (!fs.existsSync(`${config.srcDirectory}/global.css`)) {
+        console.log('src/global.css does not exist. Skipped.');
+        return;
+    }
+
     let originalCss = await fs.promises.readFile(`${config.srcDirectory}/global.css`, 'utf-8');
     let output = new CleanCSS({}).minify(originalCss);
 

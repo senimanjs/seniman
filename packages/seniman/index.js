@@ -2,6 +2,7 @@ import { _createBlock, _createComponent, useWindow, WindowProvider } from './run
 import { _declareBlock, _declareClientFunction } from './runtime_v2/declare.js';
 import { createSignal, createMemo, onCleanup, createEffect, createContext, useContext, onError, untrack, getOwner, runWithOwner } from './runtime_v2/signals.js';
 import { wrapExpress } from './runtime_v2/express.js';
+import { createServer } from './runtime_v2/server.js';
 
 export {
     createSignal as useState,
@@ -23,6 +24,7 @@ export {
     _createBlock,
     _createComponent,
 
-    wrapExpress
+    wrapExpress,
+    createServer
 }
 

@@ -262,7 +262,7 @@ class WindowManager {
         let build = {};
         let buildPath = process.cwd() + '/dist';
 
-        build.Head = options.Head;
+        build.Head = options.Head || EmptyHead;
         build.Body = options.Body;
 
         build.compressionCommandBuffer = await fs.promises.readFile(buildPath + '/compression-command.bin');
@@ -277,6 +277,10 @@ class WindowManager {
 
         this.build = build;
     }
+}
+
+function EmptyHead() {
+    return null;
 }
 
 export const windowManager = new WindowManager();
