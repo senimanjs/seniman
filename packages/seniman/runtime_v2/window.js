@@ -138,7 +138,11 @@ export class Window {
         this.setViewportSize = setViewportSize;
         this.setPath = setPath;
 
-        this.deleteEnqueuedBlockIds = new Set();
+        // reuse the same buffer for all block delete commands
+        this.deleteBlockCommandBuffer = Buffer.alloc(1000 * 2);
+        this.deleteBlockCommandBuffer.writeUint8(CMD_REMOVE_BLOCKS, 0);
+        this.deleteBlockCount = 0;
+
         this.clientTemplateInstallationSet = new Set();
         this.clientFunctionInstallationSet = new Set();
 
@@ -259,25 +263,31 @@ export class Window {
         this.port.send(pingBuffer);
     }
 
+    _handleBlockCleanup(blockId) {
+
+        // if the buffer is full, send it
+        if (this.deleteBlockCount == 1000) {
+            this.flushBlockDeleteQueue();
+        }
+
+        this.deleteBlockCommandBuffer.writeUint16LE(blockId, this.deleteBlockCount * 2);
+        this.deleteBlockCount++;
+    }
+
     flushBlockDeleteQueue() {
 
-        let deleteEnqueuedBlockCount = this.deleteEnqueuedBlockIds.size;
-
-        if (deleteEnqueuedBlockCount) {
-            let buf = this._allocCommandBuffer(1 + 2 * deleteEnqueuedBlockCount + 2);
+        if (this.deleteBlockCount > 0) {
+            let buf = this._allocCommandBuffer(1 + 2 * this.deleteBlockCount + 2);
 
             buf.writeUint8(CMD_REMOVE_BLOCKS, 0);
 
-            let offset = 1;
+            // copy over the block ids
+            this.deleteBlockCommandBuffer.copy(buf, 1, 0, this.deleteBlockCount * 2);
 
-            this.deleteEnqueuedBlockIds.forEach(blockId => {
-                buf.writeUint16BE(blockId, offset);
-                offset += 2;
-            })
+            // write the end marker
+            buf.writeUint16BE(0, 1 + 2 * this.deleteBlockCount);
 
-            buf.writeUint16BE(0, offset);
-
-            this.deleteEnqueuedBlockIds.clear();
+            this.deleteBlockCount = 0;
         }
     }
 
@@ -297,10 +307,9 @@ export class Window {
                 break;
             }
 
+            // if the page is fully read, remove it
             if (readOffset >= (page.global_headOffset + page.finalSize)) {
                 this.pages.shift();
-
-                //console.log('freed pages', this.pages);
             } else {
                 break;
             }
@@ -468,6 +477,8 @@ export class Window {
         //console.log('currentPageOffset', currentPageOffset);
 
         //console.log('currentPageOffset', currentPageOffset, size, this.global_writeOffset, mg.page.global_headOffset);
+
+        // if we're about to overflow the current page, let's allocate a new one
         if ((currentPageOffset + size) >= PAGE_SIZE) {
             let page = mg.page;
             page.finalSize = currentPageOffset;
@@ -482,8 +493,6 @@ export class Window {
             };
 
             currentPageOffset = 0;
-
-            console.log('realloc page');
         }
 
         this.global_writeOffset += size;
@@ -788,7 +797,7 @@ export class Window {
         });
 
         onCleanup(() => {
-            this.deleteEnqueuedBlockIds.add(newBlockId);
+            this._handleBlockCleanup(newBlockId);
         });
 
         return {
@@ -951,16 +960,6 @@ export class Window {
                     let buf3 = this._allocCommandBuffer(offset);
 
                     buf2.slice(0, offset).copy(buf3);
-                },
-
-                setChecked: (value) => {
-                    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1);
-
-                    buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
-                    buf.writeUint16BE(blockId, 1);
-                    buf.writeUint8(targetId, 3);
-                    buf.writeUint8(UPDATE_MODE_SET_CHECKED, 4);
-                    buf.writeUint8(value ? 1 : 0, 5);
                 },
 
                 removeAttribute: (propName) => {
