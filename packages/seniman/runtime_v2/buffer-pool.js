@@ -1,20 +1,22 @@
 
 export const PAGE_SIZE = 4096 * 3;//8192 * 2;
 
-const returnBufferQueue = [];
+Buffer.poolSize = PAGE_SIZE * 2;
+
+const reuseBufferQueue = [];
 
 export const bufferPool = {
 
   alloc: () => {
 
-    if (returnBufferQueue.length > 0) {
-      return returnBufferQueue.shift();
+    if (reuseBufferQueue.length > 0) {
+      return reuseBufferQueue.shift();
     } else {
-      return new ArrayBuffer(PAGE_SIZE);
+      return Buffer.allocUnsafe(PAGE_SIZE);
     }
   },
 
   returnBuffer: (buffer) => {
-    returnBufferQueue.push(buffer);
+    reuseBufferQueue.push(buffer);
   }
 }

@@ -312,7 +312,7 @@ export class Window {
                 let page = this.pages.shift();
 
                 // return the page to the pool for later reuse
-                bufferPool.returnBuffer(page.arrayBuffer);
+                bufferPool.returnBuffer(page.buffer);
             } else {
                 break;
             }
@@ -336,7 +336,7 @@ export class Window {
                     size = this.global_writeOffset - readOffset; // 6 - 3
                 }
 
-                this.port.send(Buffer.from(page.arrayBuffer, offset, size));
+                this.port.send(page.buffer.subarray(offset, offset + size));
 
                 readOffset += size;
             }
@@ -427,7 +427,7 @@ export class Window {
 
         // return active pages' buffers to the pool
         this.pages.forEach(page => {
-            bufferPool.returnBuffer(page.arrayBuffer);
+            bufferPool.returnBuffer(page.buffer);
         });
     }
 
@@ -437,7 +437,7 @@ export class Window {
 
         let page = {
             global_headOffset: headOffset,
-            arrayBuffer: bufferPool.alloc(),
+            buffer: bufferPool.alloc(),
             finalSize: 0
         };
 
@@ -452,13 +452,11 @@ export class Window {
 
         if (this.connected && mg && ((this.global_writeOffset - mg.pageStartOffset) > 0)) {
 
-            let msg = {
-                arrayBuffer: mg.page.arrayBuffer,
-                offset: mg.pageStartOffset - mg.page.global_headOffset,
-                size: this.global_writeOffset - mg.pageStartOffset
-            };
+            let buffer = mg.page.buffer;
+            let offset = mg.pageStartOffset - mg.page.global_headOffset;
+            let size = this.global_writeOffset - mg.pageStartOffset;
 
-            this.port.send(Buffer.from(msg.arrayBuffer, msg.offset, msg.size));
+            this.port.send(buffer.subarray(offset, offset + size));
         }
 
         this.mutationGroup = null;
@@ -504,7 +502,8 @@ export class Window {
         }
 
         this.global_writeOffset += size;
-        return Buffer.from(mg.page.arrayBuffer, currentPageOffset, size);
+
+        return mg.page.buffer.subarray(currentPageOffset, currentPageOffset + size);
     }
 
     _allocateEventHandler(handlerFunction) {
