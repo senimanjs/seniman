@@ -268,7 +268,7 @@ export class Window {
             this.flushBlockDeleteQueue();
         }
 
-        this.deleteBlockCommandBuffer.writeUint16LE(blockId, this.deleteBlockCount * 2);
+        this.deleteBlockCommandBuffer.writeUint16BE(blockId, this.deleteBlockCount * 2);
         this.deleteBlockCount++;
     }
 
