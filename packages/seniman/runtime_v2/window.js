@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer';
 import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
 import { blockDefinitions, clientFunctionDefinitions, compileBlockDefinitionToInstallCommand } from './declare.js';
 import { build } from './build.js';
-
+import { bufferPool, PAGE_SIZE } from './buffer-pool.js';
 
 export const WindowContext = createContext(null);
 export const WindowProvider = WindowContext.Provider;
@@ -92,8 +92,6 @@ let CMD_INIT_BLOCK = 8;
 let CMD_REMOVE_BLOCKS = 9;
 let CMD_INSTALL_CLIENT_FUNCTION = 10;
 let CMD_RUN_CLIENT_FUNCTION = 11;
-
-let PAGE_SIZE = 4096 * 3;//8192 * 2;
 
 let pingBuffer = Buffer.from([0]);
 const multiStylePropScratchBuffer = new ArrayBuffer(32768);
@@ -303,13 +301,18 @@ export class Window {
         while (true) {
             let page = this.pages[0];
 
+            // if page finalSize is 0, it means the page is still being actively written to
+            // and not ready to be freed yet
             if (page.finalSize == 0) {
                 break;
             }
 
             // if the page is fully read, remove it
             if (readOffset >= (page.global_headOffset + page.finalSize)) {
-                this.pages.shift();
+                let page = this.pages.shift();
+
+                // return the page to the pool for later reuse
+                bufferPool.returnBuffer(page.arrayBuffer);
             } else {
                 break;
             }
@@ -421,6 +424,11 @@ export class Window {
     destroy() {
         this.rootDisposer();
         this.destroyFnCallback();
+
+        // return active pages' buffers to the pool
+        this.pages.forEach(page => {
+            bufferPool.returnBuffer(page.arrayBuffer);
+        });
     }
 
     _allocPage(headOffset) {
@@ -429,7 +437,7 @@ export class Window {
 
         let page = {
             global_headOffset: headOffset,
-            arrayBuffer: new ArrayBuffer(PAGE_SIZE),
+            arrayBuffer: bufferPool.alloc(),
             finalSize: 0
         };
 
