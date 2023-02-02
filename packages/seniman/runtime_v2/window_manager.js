@@ -7,7 +7,8 @@ import { Window } from './window.js';
 import { build } from './build.js';
 
 // get ram limit from env var
-let RSS_LOW_MEMORY_THRESHOLD = process.env.RSS_LOW_MEMORY_THRESHOLD ? parseInt(process.env.RSS_LOW_MEMORY_THRESHOLD) : 180;
+const RSS_LOW_MEMORY_THRESHOLD = process.env.RSS_LOW_MEMORY_THRESHOLD ? parseInt(process.env.RSS_LOW_MEMORY_THRESHOLD) : 0;
+const RSS_LOW_MEMORY_THRESHOLD_ENABLED = RSS_LOW_MEMORY_THRESHOLD > 0;
 
 console.log('RSS_LOW_MEMORY_THRESHOLD', RSS_LOW_MEMORY_THRESHOLD + 'MB');
 
@@ -61,42 +62,44 @@ class WindowManager {
             ttl: 2
         });
 
-        this._processMessages();
+        this.loopAwaiting = true;
+        this.loopWaitPromise = new ExternalPromise();
+        this.pendingWindowList = [];
+
+        this._runLoop();
     }
 
     hasWindow(windowId) {
         return this.windowMap.has(windowId);
     }
 
-    async _processMessages() {
-        let message, window;
-        let PONG_COMMAND = 0;
+    async _runLoop() {
+        await this.loopWaitPromise;
 
-        while ([window, message] = await this._dequeueMessage()) {
-            let buffer = Buffer.from(message);
+        while (true) {
+            let allocWindow = this._getNextWindowAllocation();
 
-            if (buffer.readUint8(0) == PONG_COMMAND) {
-                window.lastPongTime = Date.now();
-                window.connected = true;
-
-                let readOffset = buffer.readUInt32LE(1);
-                window.registerReadOffset(readOffset);
+            if (allocWindow) {
+                // TODO: pass amount of allowed work to do in this window
+                allocWindow.scheduleWork();
             } else {
-                window.onMessage(buffer);
+                this.loopAwaiting = true;
+                this.loopWaitPromise = new ExternalPromise();
+                await this.loopWaitPromise;
             }
         }
     }
 
-    _dequeueMessage() {
+    _getNextWindowAllocation() {
 
-        return new Promise(async (resolve) => {
+        let nextWindow = this.pendingWindowList.shift();
 
-            if (this.queue.length == 0) {
-                await this.emptyQueuePromise;
-            }
+        if (!nextWindow) {
+            return null;
+        }
 
-            resolve(this.queue.shift());
-        });
+        nextWindow.isPending = false;
+        return nextWindow;
     }
 
     _enqueueMessage(window, message) {
@@ -106,7 +109,6 @@ class WindowManager {
         // 3 possible outputs:
         // LOW, HIGH, EXCEEDS_LIMIT
 
-        let wasEmptyQueue = this.queue.length == 0;
         let isUnderLimit = this.messageLimiter.consumeSync(window.id);
 
         // if EXCEEDS_LIMIT, we'll drop the message rather than enqueue it
@@ -135,12 +137,18 @@ class WindowManager {
 
         */
 
-        this.queue.push([window, message]);
+        window.enqueueMessage(message);
 
-        if (wasEmptyQueue) {
-            this.emptyQueuePromise.resolve();
-            this.emptyQueuePromise = new ExternalPromise();
+        if (!window.isPending) {
+            this.pendingWindowList.push(window);
+            window.isPending = true;
         }
+
+        if (this.loopAwaiting) {
+            this.loopAwaiting = false;
+            this.loopWaitPromise.resolve();
+        }
+
     }
 
     _runWindowsLifecycleManagement() {
@@ -151,7 +159,7 @@ class WindowManager {
             // get RSS memory usage
             let rss = process.memoryUsage().rss / 1024 / 1024;
 
-            let isLowMemory = rss > RSS_LOW_MEMORY_THRESHOLD;
+            let isLowMemory = RSS_LOW_MEMORY_THRESHOLD_ENABLED && rss > RSS_LOW_MEMORY_THRESHOLD;
 
             if (isLowMemory) {
                 console.log('Low memory detected, RSS:', rss);

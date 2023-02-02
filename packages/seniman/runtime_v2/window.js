@@ -138,7 +138,6 @@ export class Window {
 
         // reuse the same buffer for all block delete commands
         this.deleteBlockCommandBuffer = Buffer.alloc(1000 * 2);
-        this.deleteBlockCommandBuffer.writeUint8(CMD_REMOVE_BLOCKS, 0);
         this.deleteBlockCount = 0;
 
         this.clientTemplateInstallationSet = new Set();
@@ -147,6 +146,8 @@ export class Window {
         this.lastEventHandlerId = 0;
         this.eventHandlers = new Map();
 
+        this.isPending = false;
+        this.inputMessageQueue = [];
         this.lastPongTime = Date.now();
 
         let windowContext = {
@@ -374,7 +375,33 @@ export class Window {
         this.connected = false;
     }
 
-    onMessage(command) {
+    scheduleWork() {
+        const PONG_COMMAND = 0;
+
+        while (this.inputMessageQueue.length) {
+            let message = this.inputMessageQueue.shift();
+            let buffer = Buffer.from(message);
+
+            if (buffer.readUint8(0) == PONG_COMMAND) {
+                this.lastPongTime = Date.now();
+                this.connected = true;
+
+                let readOffset = buffer.readUInt32LE(1);
+                this.registerReadOffset(readOffset);
+            } else {
+                this.submitInput(buffer);
+            }
+        }
+
+        // TODO: return a boolean indicating whether all messages were processed?
+        // to make sure scheduleWork is called again for the window eventually
+    }
+
+    enqueueMessage(message) {
+        this.inputMessageQueue.push(message);
+    }
+
+    submitInput(command) {
         runWithOwner(this.rootOwner, () => {
             untrack(() => this._onMessage(command));
         });
@@ -882,16 +909,6 @@ export class Window {
                     buf.write(propValue, offset, propValue.length);
                 },
 
-                _staticHelperPropKeyOnly: (updateMode, propKey) => {
-                    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1);
-
-                    buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
-                    buf.writeUint16BE(blockId, 1);
-                    buf.writeUint8(targetId, 3);
-                    buf.writeUint8(updateMode, 4);
-                    buf.writeUint8(propKey, 5);
-                },
-
                 setStyleProperty: (propName, propValue) => {
                     // if propValue is a number, we need to convert it to a string
                     // TODO: insert some intelligence around adding 'px' to the end of the string like React does?
@@ -991,14 +1008,10 @@ export class Window {
                         }
                     }
 
-
                     elRef._staticHelper(UPDATE_MODE_SET_ATTR, attrKey, propValue);
                 },
-                toggleClass: (className, value) => {
-                    elRef._staticHelperPropKeyOnly(value ? UPDATE_MODE_SET_CLASS : UPDATE_MODE_REMOVE_CLASS, className);
-                },
                 setClassName: (className) => {
-                    elRef.toggleClass(className, true);
+                    elRef.setAttribute('class', className);
                 }
             };
 

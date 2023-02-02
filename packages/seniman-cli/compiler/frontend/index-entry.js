@@ -424,8 +424,8 @@
 
         let UPDATE_MODE_STYLEPROP = 1;
         let UPDATE_MODE_SET_ATTR = 2;
-        let UPDATE_MODE_SET_CLASS = 3;
-        let UPDATE_MODE_REMOVE_CLASS = 4;
+        //let UPDATE_MODE_SET_CLASS = 3;
+        //let UPDATE_MODE_REMOVE_CLASS = 4;
         let UPDATE_MODE_REMOVE_ATTR = 5;
         let UPDATE_MODE_MULTI_STYLEPROP = 7;
 
@@ -451,15 +451,24 @@
                     }
                     break;
                 }
+
+            /*
             case UPDATE_MODE_SET_CLASS:
             case UPDATE_MODE_REMOVE_CLASS:
                 {
                     let nameLength = getUint8();
-                    let name = getString(nameLength);
+                    let name = nameLength ? getString(nameLength) : '';
 
-                    targetHandlerElement.classList.toggle(name, updateMode == 3); // if updateMode == 4, then class is removed
+                    if (nameLength) {
+                        let name = getString(nameLength);
+                        targetHandlerElement.setAttribute('class', name);//, updateMode == 3); // if updateMode == 4, then class is removed
+                    }
+                    
+
+                    //targetHandlerElement.setAttribute('class', name);
                     break;
                 }
+            */
             case UPDATE_MODE_REMOVE_ATTR:
                 {
                     let mapIndex = getUint8();

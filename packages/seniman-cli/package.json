@@ -1,6 +1,6 @@
 {
   "name": "seniman-cli",
-  "version": "0.0.50",
+  "version": "0.0.54",
   "description": "",
   "type": "module",
   "bin": {
