@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { createServer as httpCreateServer } from 'http';
 import { WebSocketServer } from 'ws';
-
+import { build } from './build.js';
 import { windowManager } from './window_manager.js';
 
 
