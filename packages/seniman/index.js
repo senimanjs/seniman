@@ -3,13 +3,14 @@ import { _declareBlock, _declareClientFunction } from './runtime_v2/declare.js';
 import { createSignal, createMemo, onCleanup, createEffect, createContext, useContext, onError, untrack, getOwner, runWithOwner } from './runtime_v2/signals.js';
 import { wrapExpress } from './runtime_v2/express.js';
 import { createServer } from './runtime_v2/server.js';
+import { For } from './runtime_v2/control.js';
 
 export {
     createSignal as useState,
     createMemo as useMemo,
     createEffect as useEffect,
     useWindow,
-
+    For,
     onCleanup,
     createContext,
     useContext,
