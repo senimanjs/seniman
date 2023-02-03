@@ -11,7 +11,7 @@
   "dependencies": {
     "express": "^4.18.2",
     "immer": "^9.0.18",
-    "seniman": "^0.0.42",
+    "seniman": "^0.0.55",
     "sqlite-async": "^1.2.0",
     "stacktrace-parser": "^0.1.10"
   }
