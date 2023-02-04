@@ -433,6 +433,7 @@
             case UPDATE_MODE_STYLEPROP:
             case UPDATE_MODE_SET_ATTR:
                 {
+                    //console.log(updateMode, updateMode == UPDATE_MODE_STYLEPROP ? 'STYLEPROP' : 'SET_ATTR');
                     let mapIndex = getUint8();
                     let propName = (updateMode == UPDATE_MODE_STYLEPROP ? stylePropertyKeyMap : staticAttributeMap)[mapIndex];
                     let propValueLength = getUint16();
@@ -488,6 +489,7 @@
                 let keyLength;
                 targetHandlerElement.style.cssText = '';
 
+                //console.log('UPDATE_MODE_MULTI_STYLEPROP', updateMode == UPDATE_MODE_STYLEPROP ? 'STYLEPROP' : 'SET_ATTR');
                 while ((keyLength = getUint16()) > 0) {
                     let [key_highestOrderBit, keyBytes] = magicSplitUint16(keyLength);
 
@@ -513,7 +515,7 @@
         }
     }
 
-    let _compileTemplate = () => {
+    let _compileTemplate = ([tagNames, attrNames, styleKeys, styleValues]) => {
 
         let totalElementCount = getUint16();
         let totalProcessed = 0;
@@ -528,12 +530,12 @@
                 let nextSibling = (firstByte & 128) > 0; // 8th-bit
 
                 // handle if text
-                if (tagNameId == 32) {
+                if (tagNameId == 0) {
                     let textLength = getUint16();
                     templateString += getString(textLength);
                 } else {
                     let attrId;
-                    let tagName = typeIdMapping[tagNameId];
+                    let tagName = tagNames[tagNameId - 1];
                     let isSelfClosing = selfClosingTagSet.has(tagName);
 
                     templateString += `<${tagName}`;
@@ -543,15 +545,18 @@
                     }
 
                     while (attrId = getUint8()) {
-                        let attrName = staticAttributeMap[attrId];
+                        let attrName = attrNames[attrId - 1];
                         let attrValueString = '';
 
                         if (attrName == 'style') {
                             let propKeyId;
 
                             while ((propKeyId = getUint8())) {
+                                let propKey = styleKeys[propKeyId - 1];
                                 let propValueId = getUint8();
-                                attrValueString += `${stylePropertyKeyMap[propKeyId]}:${stylePropertyValueMap[propValueId]};`;
+                                let propValue = styleValues[propValueId - 1];
+
+                                attrValueString += `${propKey}:${propValue};`;
                             }
                         } else {
                             let attrValueLength = getUint16();
@@ -594,7 +599,22 @@
 
     let _installTemplate2 = () => {
         let templateId = getUint16();
-        let [templateString, isSvg] = _compileTemplate();
+
+        // tagNames, attrNames, styleKeys, styleValues
+        let templateTokenLists = [[], [], [], []];
+
+        let id;
+
+        // gather token values from the token IDs in the template
+        templateTokenLists.forEach((list, listIdx) => {
+            let tokenList = tokenLists[listIdx];
+
+            while (id = getUint16()) {
+                list.push(tokenList[id - 1]);
+            }
+        });
+
+        let [templateString, isSvg] = _compileTemplate(templateTokenLists);
 
         //console.log('templateString', templateId, templateString);
         const t = _document.createElement("template");
@@ -622,6 +642,8 @@
             let relRefId = getUint8();
 
             let FIRST_CHILD = 1;
+
+            // root has no number associated in the variable name (let _) vs (let _1)
             let refElName = relRefId < 255 ? relRefId : '';
             let referenceType = rel == FIRST_CHILD ? 'firstChild' : 'nextSibling';
 
@@ -761,6 +783,7 @@
     let CMD_REMOVE_BLOCKS = 9;
     let CMD_INSTALL_CLIENT_FUNCTION = 10;
     let CMD_RUN_CLIENT_FUNCTION = 11;
+    let CMD_MODIFY_TOKENMAP = 12;
 
     let _processMap = {
         [CMD_INIT_BLOCK]: _initBlock,
@@ -827,9 +850,20 @@
             }
 
             clientFunctionsMap.get(clientFunctionId).apply(thisContext, argsList);
+        },
+        [CMD_MODIFY_TOKENMAP]: () => {
+            tokenLists.forEach(list => {
+                let length;
+                while (length = getUint8()) {
+                    list.push(getString(length));
+                }
+            });
         }
     }
 
+
+    // tagNames, attrNames, styleKeys, styleValues
+    let tokenLists = [[], [], [], []];
     let pongBuffer = createBuffer(5);
 
     let onPingArrival = () => {
@@ -980,14 +1014,13 @@
 
     // logic taken from npm package load-script
     window.loadScript = (src, cb, opts) => {
-        var script = _document.createElement('script')
-
-        opts = opts || {}
-        cb = cb || function () { }
+        var script = _document.createElement('script');
+        opts = opts || {};
+        cb = cb || function () { };
 
         //script.type = opts.type || 'text/javascript';
-        script.charset = opts.charset || 'utf8';
-        //script.async = 'async' in opts ? !!opts.async : true;
+        //script.charset = opts.charset || 'utf8';
+        script.async = true;//'async' in opts ? !!opts.async : true;
         script.src = src
 
         stdOnEnd(script, cb);

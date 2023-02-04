@@ -6,20 +6,6 @@ import { createCompilerInternalImportsExpression, createDeclareBlockExpression, 
 
 let generate = generator.default;
 
-let lastBlockId = 3000;
-
-function createNewBlockId() {
-    lastBlockId++;
-    return lastBlockId;
-}
-
-let lastClientFunctionId = 1000;
-
-function createNewClientFunctionId() {
-    lastClientFunctionId++;
-    return lastClientFunctionId;
-}
-
 const eventTypeIdMap = {
     'onClick': 1,
     'onFocus': 2,
@@ -34,36 +20,7 @@ const eventTypeIdMap = {
 
 const eventNames = Object.keys(eventTypeIdMap);
 const eventNamesSet = new Set(eventNames);
-
 const styleAttributeNames = ['classList', 'style', 'class'];
-
-const validHtmlElementNames = new Set([
-    'div',
-    'span',
-    'input',
-    'label',
-    'img',
-    'p',
-    'a',
-    'hr',
-    'br',
-    'ul',
-    'li',
-    'button',
-    'select',
-    'option',
-    'meta',
-    'style',
-    'title',
-    'textarea',
-    'svg',
-    'path',
-    'strong',
-    'link',
-    'code',
-    'pre'
-]);
-
 
 const compressionRegistry = {
     elementNames: new Set(),
@@ -139,13 +96,8 @@ export function getCompiledCompressionMap() {
         i++;
     });
 
-    //console.log('LENS:', compressionRegistry.elementNames.size, compressionRegistry.elementAttributeNames.size, compressionRegistry.stylePropertyKeys.size, compressionRegistry.stylePropertyValues.size);
-
     buf.writeUint8(0, ptr);
     ptr += 1;
-
-
-    //buf.writeUint16LE(ptr - 3, 1);
 
     return {
         compressionMapInstallBuffer: buf.subarray(0, ptr),
@@ -256,6 +208,15 @@ function isStaticExpression(expression) {
     return expression.type == 'StringLiteral' || expression.type == 'NumericLiteral';
 }
 
+// ported from https://github.com/ryansolid/dom-expressions/blob/df1dd518216a9d11318d54d53144763ee1a97706/packages/babel-plugin-jsx-dom-expressions/src/shared/utils.js#L69
+function isComponentTag(tagName) {
+    return (
+        (tagName[0] && tagName[0].toLowerCase() !== tagName[0]) ||
+        tagName.includes(".") ||
+        /[^a-zA-Z]/.test(tagName[0])
+    );
+}
+
 function nodeHasDynamicAttribute(node) {
     let attributes = node.openingElement.attributes;
 
@@ -317,6 +278,9 @@ export function processFile(fileName, fileString) {
     let gatheredUIBlocks = [];
     let gatheredClientFunctions = [];
 
+    let moduleLevelLastBlockId = 0;
+    let moduleLevelLastClientFunctionId = 0;
+
     function processJSX(node, parentElement, contextBlock) {
 
         if (node.type == 'JSXFragment') {
@@ -329,10 +293,8 @@ export function processFile(fileName, fileString) {
             };
 
         } else if (node.type == 'JSXElement') {
-
             let isHTMLElement = node.openingElement.name.type == 'JSXIdentifier' &&
-                validHtmlElementNames.has(node.openingElement.name.name);
-
+                isComponentTag(node.openingElement.name.name) == false;
             let isNewBlockEnclosingElement = parentElement == null;
 
             // is dom element
@@ -358,8 +320,9 @@ export function processFile(fileName, fileString) {
                 let targetId;
 
                 if (isNewBlockEnclosingElement) {
+                    moduleLevelLastBlockId++;
                     contextBlock = {
-                        id: createNewBlockId(),
+                        id: moduleLevelLastBlockId,//createNewBlockId(),
                         rootElement: element,
                         anchors: [],
                         targetElementCount: 0,
@@ -482,9 +445,9 @@ export function processFile(fileName, fileString) {
             let isNewBlockEnclosingElement = parentElement == null;
 
             if (isNewBlockEnclosingElement) {
-
+                moduleLevelLastBlockId++;
                 let contextBlock = {
-                    id: createNewBlockId(),
+                    id: moduleLevelLastBlockId,
                     rootElement: { type: '$text', value: trimmedValue },
                     anchors: [],
                     targetElementCount: 0,
@@ -672,7 +635,8 @@ export function processFile(fileName, fileString) {
             if (node.callee.type == 'Identifier' && node.callee.name == '$c') {
 
                 // assign a unique ID to this client function
-                let clientFunctionId = createNewClientFunctionId();
+                moduleLevelLastClientFunctionId++;
+                let clientFunctionId = moduleLevelLastClientFunctionId; //createNewClientFunctionId();
 
                 // node.arguments[0] is the function called within $c((arg1, arg2) => {...})
                 let cParsed = parse$CDefinition(node.arguments[0]);
@@ -699,7 +663,7 @@ export function processFile(fileName, fileString) {
                         },
                         value: {
                             type: 'NumericLiteral',
-                            value: clientFunctionId
+                            value: '_c$' + clientFunctionId.toString()
                         }
                     }
                 ];
@@ -1252,7 +1216,7 @@ function createCallBlockExpression(block) {
 
     let arguments_ = [{
         "type": "Identifier",
-        "name": block.id.toString()
+        "name": "_b$" + block.id.toString()
     }];
 
     arguments_.push(block.anchors.length > 0 ? {

@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
 import { build } from './build.js';
 import { windowManager } from './window_manager.js';

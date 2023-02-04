@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 //import blocks from './components/blocks.js';
 import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
-import { blockDefinitions, clientFunctionDefinitions, compileBlockDefinitionToInstallCommand } from './declare.js';
+import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
 import { build } from './build.js';
 import { bufferPool, PAGE_SIZE } from './buffer-pool.js';
 
@@ -146,6 +146,14 @@ export class Window {
         this.lastEventHandlerId = 0;
         this.eventHandlers = new Map();
 
+        this.tokenMap = {
+            tagNames: new Map(),
+            attrNames: new Map(),
+            //attrValues: new Map(),
+            styleKeys: new Map(),
+            styleValues: new Map()
+        };
+
         this.isPending = false;
         this.inputMessageQueue = [];
         this.lastPongTime = Date.now();
@@ -254,7 +262,6 @@ export class Window {
             }));
 
             this.rootDisposer = dispose;
-
         }, null, this);
     }
 
@@ -584,11 +591,8 @@ export class Window {
 
     _streamTemplateInstallCommand(templateId) {
         if (!this.clientTemplateInstallationSet.has(templateId)) {
-            let templateBuf = compileBlockDefinitionToInstallCommand(templateId);
-            let commandBuf = this._allocCommandBuffer(templateBuf.length);
 
-            templateBuf.copy(commandBuf);
-
+            streamBlockTemplateInstall(this, templateId);
             this.clientTemplateInstallationSet.add(templateId);
         }
     }
