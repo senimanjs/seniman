@@ -94,11 +94,10 @@ let CMD_INSTALL_CLIENT_FUNCTION = 10;
 let CMD_RUN_CLIENT_FUNCTION = 11;
 
 let pingBuffer = Buffer.from([0]);
-const multiStylePropScratchBuffer = new ArrayBuffer(32768);
+const multiStylePropScratchBuffer = Buffer.alloc(32768);
 
 // create a shared buffer for init window command to avoid creating a new buffer for every window
-let initWindowBuffer = Buffer.alloc(1 + 21 + build.compressionCommandBuffer.length);
-build.compressionCommandBuffer.copy(initWindowBuffer, 22);
+let initWindowBuffer = Buffer.alloc(1 + 21);
 
 export class Window {
 
@@ -920,7 +919,7 @@ export class Window {
                         propValue = propValue.toString();
                     }
 
-                    let propKey = build.reverseIndexMap.stylePropertyKeys[propName] + 1;
+                    let propKey = this._registerStyleKey(propName);
 
                     elRef._staticHelper(UPDATE_MODE_STYLEPROP, propKey, propValue || '');
                 },
@@ -941,7 +940,7 @@ export class Window {
                         kebabPropertyPairs.push([kebabCaseKey, value]);
                     }
 
-                    let buf2 = Buffer.from(multiStylePropScratchBuffer);
+                    let buf2 = multiStylePropScratchBuffer;
 
                     buf2.writeUint8(CMD_ELEMENT_UPDATE, 0);
                     buf2.writeUint16BE(blockId, 1);
@@ -956,8 +955,10 @@ export class Window {
                         const pair = kebabPropertyPairs[i];
                         const [key, value] = pair;
 
-                        if (build.reverseIndexMap.stylePropertyKeys[key]) {
-                            let keyIndex = build.reverseIndexMap.stylePropertyKeys[key] + 1;
+                        // TODO: add more logic to dynamically determine if we should add the current token to the static map
+                        if (this.tokenMap.styleKeys.get(key)) {
+                            // let keyIndex = build.reverseIndexMap.stylePropertyKeys[key] + 1;
+                            let keyIndex = this.tokenMap.styleKeys.get(key);
                             // set 16-th bit to 1 to denote that this is static map compression index
                             // (stylePropertyKeyMap on the client)
                             buf2.writeUint16BE(keyIndex |= (1 << 15), offset);
@@ -969,8 +970,9 @@ export class Window {
                             offset += key.length;
                         }
 
-                        if (build.reverseIndexMap.stylePropertyValues[value]) {
-                            let valueIndex = build.reverseIndexMap.stylePropertyValues[value] + 1;
+                        if (this.tokenMap.styleValues.get(value)) {
+                            //let valueIndex = build.reverseIndexMap.stylePropertyValues[value] + 1;
+                            let valueIndex = this.tokenMap.styleValues.get(value);
                             buf2.writeUint16BE(valueIndex |= (1 << 15), offset);
                             offset += 2;
                         } else {
@@ -986,7 +988,7 @@ export class Window {
 
                     let buf3 = this._allocCommandBuffer(offset);
 
-                    buf2.slice(0, offset).copy(buf3);
+                    buf2.copy(buf3, 0, 0, offset);
                 },
 
                 removeAttribute: (propName) => {
@@ -1000,7 +1002,7 @@ export class Window {
                 },
 
                 setAttribute: (propName, propValue) => {
-                    let attrKey = build.reverseIndexMap.elementAttributeNames[propName] + 1;
+                    let attrKey = this._registerAttrKey(propName);
 
                     if (typeof propValue != 'string') {
                         if (!propValue) {
@@ -1024,6 +1026,45 @@ export class Window {
                 createEffect(() => elementEffect.effectFn(elRef));
             }
         });
+    }
+
+    _registerAttrKey(attrName) {
+
+        if (!this.tokenMap.attrNames.has(attrName)) {
+            let newId = this.tokenMap.attrNames.size + 1;
+            this.tokenMap.attrNames.set(attrName, newId);
+
+            this._streamModifyToken(2, attrName);
+        }
+
+        return this.tokenMap.attrNames.get(attrName);
+    }
+
+    _registerStyleKey(propName) {
+        if (!this.tokenMap.styleKeys.has(propName)) {
+            let newId = this.tokenMap.styleKeys.size + 1;
+            this.tokenMap.styleKeys.set(propName, newId);
+
+            this._streamModifyToken(3, propName);
+        }
+
+        return this.tokenMap.styleKeys.get(propName);
+    }
+
+    _streamModifyToken(tokenType, tokenName) {
+        let CMD_MODIFY_TOKENMAP_V2 = 13;
+
+        let tokenLength = Buffer.byteLength(tokenName);
+
+        let buf = this._allocCommandBuffer(1 + 1 + 1 + tokenLength + 1);
+
+        buf.writeUint8(CMD_MODIFY_TOKENMAP_V2, 0);
+
+        // 1 = tag name, 2 = attribute name, 3 = style property name, 4 = style property value
+        buf.writeUint8(tokenType, 1);
+        buf.writeUint8(tokenLength, 2);
+        buf.write(tokenName, 3, tokenLength);
+        buf.writeUint8(0, 3 + tokenLength);
     }
 }
 

@@ -433,9 +433,9 @@
             case UPDATE_MODE_STYLEPROP:
             case UPDATE_MODE_SET_ATTR:
                 {
-                    //console.log(updateMode, updateMode == UPDATE_MODE_STYLEPROP ? 'STYLEPROP' : 'SET_ATTR');
                     let mapIndex = getUint8();
-                    let propName = (updateMode == UPDATE_MODE_STYLEPROP ? stylePropertyKeyMap : staticAttributeMap)[mapIndex];
+                    let propName = (updateMode == UPDATE_MODE_STYLEPROP ? tokenLists[2] : tokenLists[1])[mapIndex - 1];
+
                     let propValueLength = getUint16();
                     let propValue = getString(propValueLength);
 
@@ -473,7 +473,7 @@
             case UPDATE_MODE_REMOVE_ATTR:
                 {
                     let mapIndex = getUint8();
-                    let propName = staticAttributeMap[mapIndex];
+                    let propName = tokenLists[1][mapIndex - 1];
 
                     if (propName == 'checked') {
                         targetHandlerElement.checked = false;
@@ -495,7 +495,8 @@
 
                     // if highest order bit is 1 it's a compression map index, otherwise it's a string length
                     if (key_highestOrderBit) {
-                        key = stylePropertyKeyMap[keyBytes];
+                        //key = stylePropertyKeyMap[keyBytes];
+                        key = tokenLists[2][keyBytes - 1];
                     } else {
                         key = getString(keyBytes);
                     }
@@ -503,7 +504,8 @@
                     let [value_highestOrderBit, valueBytes] = magicSplitUint16(getUint16());
 
                     if (value_highestOrderBit) {
-                        value = stylePropertyValueMap[valueBytes]; // index is 1-based
+                        //value = stylePropertyValueMap[valueBytes]; // index is 1-based
+                        value = tokenLists[3][valueBytes - 1];
                     } else {
                         value = getString(valueBytes);
                     }
@@ -784,6 +786,7 @@
     let CMD_INSTALL_CLIENT_FUNCTION = 10;
     let CMD_RUN_CLIENT_FUNCTION = 11;
     let CMD_MODIFY_TOKENMAP = 12;
+    let CMD_MODIFY_TOKENMAP_V2 = 13;
 
     let _processMap = {
         [CMD_INIT_BLOCK]: _initBlock,
@@ -858,6 +861,16 @@
                     list.push(getString(length));
                 }
             });
+        },
+        [CMD_MODIFY_TOKENMAP_V2]: () => {
+            let tokenType = getUint8();
+            let tokenList = tokenLists[tokenType - 1];
+            let tokenLength;
+
+            while (tokenLength = getUint8()) {
+                let tokenValue = getString(tokenLength);
+                tokenList.push(tokenValue);
+            }
         }
     }
 
@@ -894,6 +907,7 @@
             _blocksMap.set(1, initializeRootBlockWithElement(head));
             _blocksMap.set(2, initializeRootBlockWithElement(_document.body));
 
+            /*
             let length;
             let lists = [typeIdMapping, staticAttributeMap, stylePropertyKeyMap, stylePropertyValueMap];
 
@@ -905,6 +919,7 @@
                     list.push(getString(length));
                 }
             });
+            */
         } else {
             let totalLength = dv.byteLength;
 

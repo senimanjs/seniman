@@ -6,9 +6,6 @@ export let build = {};
 // TODO: read this from a config file
 let buildPath = process.cwd() + '/dist';
 
-build.compressionCommandBuffer = await fs.promises.readFile(buildPath + '/compression-command.bin');
-build.reverseIndexMap = JSON.parse(await fs.promises.readFile(buildPath + '/reverse-index-map.json'));
-
 build.htmlBuffers = {
   br: fs.readFileSync(buildPath + "/index.html.brotli"),
   gzip: fs.readFileSync(buildPath + "/index.html.gz"),

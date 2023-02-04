@@ -14,13 +14,21 @@ function createNewBlockId() {
 export function _declareBlock(def) {
     let blockId = createNewBlockId();
 
-    blockDefinitions.set(blockId, def);
+    blockDefinitions.set(blockId, {
+        id: blockId,
+        tokens: def.tokens,
+        templateBuffer: Buffer.from(def.templateBuffer, 'base64'),
+        elScriptBuffer: Buffer.from(def.elScriptBuffer, 'base64')
+    });
 
     return blockId;
 }
 
 let CMD_INSTALL_TEMPLATE = 1;
 let CMD_MODIFY_TOKENMAP = 12;
+
+let variableScratchBuffer = Buffer.alloc(2048);
+let installScratchBuffer = Buffer.alloc(4096 * 2);
 
 export function streamBlockTemplateInstall(window, templateId) {
 
@@ -32,7 +40,6 @@ export function streamBlockTemplateInstall(window, templateId) {
     let styleKeysTokenIds = tokenIdsMap.styleKeys[0];
     let styleValuesTokenIds = tokenIdsMap.styleValues[0];
 
-    let variableScratchBuffer = Buffer.alloc(2048);
     let tagNamesInstallList = tokenIdsMap.tagNames[1];
     let attrNamesInstallList = tokenIdsMap.attrNames[1];
     let styleKeysInstallList = tokenIdsMap.styleKeys[1];
@@ -70,11 +77,9 @@ export function streamBlockTemplateInstall(window, templateId) {
 
     //////////////////////////
 
-    let buf = Buffer.alloc(4096 * 2);
-
     let offset = 0;
-    buf.writeUint8(CMD_INSTALL_TEMPLATE, 0);
-    buf.writeUint16BE(templateId, 1);
+    installScratchBuffer.writeUint8(CMD_INSTALL_TEMPLATE, 0);
+    installScratchBuffer.writeUint16BE(templateId, 1);
     offset += 3;
 
     let lists2 = [
@@ -87,25 +92,22 @@ export function streamBlockTemplateInstall(window, templateId) {
 
     lists2.forEach((list) => {
         list.forEach((token) => {
-            buf.writeUint16BE(token, offset);
+            installScratchBuffer.writeUint16BE(token, offset);
             offset += 2;
         });
 
-        buf.writeUint16BE(0, offset);
+        installScratchBuffer.writeUint16BE(0, offset);
         offset += 2;
     });
 
-    let templateBuffer = Buffer.from(blockDef.templateBuffer, 'base64');
-    let elScriptBuffer = Buffer.from(blockDef.elScriptBuffer, 'base64');
+    blockDef.templateBuffer.copy(installScratchBuffer, offset);
+    offset += blockDef.templateBuffer.length;
 
-    templateBuffer.copy(buf, offset);
-    offset += templateBuffer.length;
+    blockDef.elScriptBuffer.copy(installScratchBuffer, offset);
+    offset += blockDef.elScriptBuffer.length;
 
-    elScriptBuffer.copy(buf, offset);
-    offset += elScriptBuffer.length;
-
-    let commandBuf = window._allocCommandBuffer(offset);
-    buf.copy(commandBuf, 0, 0, offset);
+    // copy the scratch buffer to a real command buffer
+    installScratchBuffer.copy(window._allocCommandBuffer(offset), 0, 0, offset);
 }
 
 function installTokenArray(tokenArray, tokenMap) {

@@ -65,7 +65,7 @@ export function createCompilerInternalImportsExpression() {
     return importDeclaration;
 }
 
-export function createDeclareBlockExpression(block, encodeCompressionMap) {
+export function createDeclareBlockExpression(block) {
 
     // assign the call expression to a variable
     let variables = {
@@ -76,7 +76,7 @@ export function createDeclareBlockExpression(block, encodeCompressionMap) {
         styleValues: []
     };
 
-    let templateBufferProp = getTemplateStringInit(block, variables, encodeCompressionMap);
+    let templateBufferProp = getTemplateStringInit(block, variables);
 
     let variableProp = {
         "type": "ObjectProperty",
@@ -294,10 +294,10 @@ export function createDeclareClientFunctionExpression(clientFunction) {
     };
 }
 
-function getTemplateStringInit(block, variables, encodeCompressionMap) {
+function getTemplateStringInit(block, variables) {
 
     //console.log('======================');
-    let buffer = getTemplateBuffer(block.rootElement, variables, encodeCompressionMap);
+    let buffer = getTemplateBuffer(block.rootElement, variables);
 
     //console.log('getTemplateString2 buffer len', buffer.length);
 
@@ -392,7 +392,7 @@ per-element encoding:
     if byte value is 0, this means the equivalent of a `break` -- we should loop to the next attribute.
 */
 
-function getTemplateBuffer(rootElement, variables, encodeCompressionMap) {
+function getTemplateBuffer(rootElement, variables) {
     let offset = 0;
     let buf = Buffer.alloc(2048);
     let totalElementCount = 0;
@@ -505,9 +505,6 @@ function getTemplateBuffer(rootElement, variables, encodeCompressionMap) {
 
                         for (let i = 0; i < el.style.length; i++) {
                             let [propName, propValue] = el.style[i];
-
-                            //variables.stylePropKeys.add(propName);
-                            //variables.stylePropValues.add(propValue);
 
                             let styleKeyId = getStyleKeyId(propName);
                             let styleValueId = getStyleValueId(propValue);

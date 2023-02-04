@@ -3,7 +3,7 @@ import zlib from 'node:zlib';
 
 import path from 'path';
 import fsExtra from 'fs-extra';
-import { getCompiledCompressionMap, processFile } from './compiler.js';
+import { processFile } from './compiler.js';
 import { fileURLToPath } from 'url';
 import uglifyjs from 'uglify-js';
 import CleanCSS from 'clean-css';
@@ -71,15 +71,6 @@ export async function compileFile(config, fileName) {
     await fs.promises.writeFile(fullPath, code);
 }
 
-export async function compileCompressionMap(config) {
-
-    let { compressionMapInstallBuffer, reverseIndexMapJsonString } = getCompiledCompressionMap();
-
-    await fs.promises.writeFile(config.targetDirectory + '/compression-command.bin', compressionMapInstallBuffer);
-
-    // also put in the reverse map
-    await fs.promises.writeFile(config.targetDirectory + '/reverse-index-map.json', reverseIndexMapJsonString);
-}
 
 let fileNames = new Set();
 let trackedSyntaxErrors = {};
@@ -137,8 +128,6 @@ export async function recompile(config) {
         } else {
             throw err;
         }
-    } finally {
-        await compileCompressionMap(config);
     }
 }
 

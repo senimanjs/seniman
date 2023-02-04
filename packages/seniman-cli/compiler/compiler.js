@@ -22,89 +22,6 @@ const eventNames = Object.keys(eventTypeIdMap);
 const eventNamesSet = new Set(eventNames);
 const styleAttributeNames = ['classList', 'style', 'class'];
 
-const compressionRegistry = {
-    elementNames: new Set(),
-    elementAttributeNames: new Set(['class', 'style']),
-    stylePropertyKeys: new Set(),
-    stylePropertyValues: new Set()
-}
-
-export function getCompiledCompressionMap() {
-
-    let buf = Buffer.alloc(32678); //1 + 2 + bufContentLength);
-    let ptr = 0;
-
-    // note: stylePropertyValues is currently not be needed since we don't compress
-    // the values, only the keys
-    let reverseIndexMap = {
-        elementNames: {},
-        elementAttributeNames: {},
-        stylePropertyKeys: {},
-        stylePropertyValues: {}
-    }
-
-    let i = 0;
-
-    compressionRegistry.elementNames.forEach((name) => {
-        buf.writeUint8(name.length, ptr);
-        buf.write(name, ptr + 1, name.length);
-
-        ptr += (1 + name.length);
-
-        reverseIndexMap.elementNames[name] = i;
-        i++;
-    });
-
-    buf.writeUint8(0, ptr);
-    ptr += 1;
-
-    i = 0;
-    compressionRegistry.elementAttributeNames.forEach((name) => {
-        buf.writeUint8(name.length, ptr);
-        buf.write(name, ptr + 1, name.length);
-
-        ptr += (1 + name.length);
-
-        reverseIndexMap.elementAttributeNames[name] = i;
-        i++;
-    });
-
-    buf.writeUint8(0, ptr);
-    ptr += 1;
-
-    i = 0;
-    compressionRegistry.stylePropertyKeys.forEach((name) => {
-        buf.writeUint8(name.length, ptr);
-        buf.write(name, ptr + 1, name.length);
-
-        ptr += (1 + name.length);
-
-        reverseIndexMap.stylePropertyKeys[name] = i;
-        i++;
-    });
-
-    buf.writeUint8(0, ptr);
-    ptr += 1;
-
-    i = 0;
-    compressionRegistry.stylePropertyValues.forEach((name) => {
-        buf.writeUint8(name.length, ptr);
-        buf.write(name, ptr + 1, name.length);
-
-        ptr += (1 + name.length);
-        reverseIndexMap.stylePropertyValues[name] = i;
-        i++;
-    });
-
-    buf.writeUint8(0, ptr);
-    ptr += 1;
-
-    return {
-        compressionMapInstallBuffer: buf.subarray(0, ptr),
-        reverseIndexMapJsonString: JSON.stringify(reverseIndexMap, null, 4)
-    };
-}
-
 
 /*
 
@@ -123,51 +40,6 @@ export function getDecodeCompressionMap() {
     };
 }
 */
-
-function getEncodeCompressionMap() {
-    let typeIdMapping = {};
-    let staticAttributeMap = {};
-    let stylePropertyKeys = {};
-    let stylePropertyValues = {};
-
-    let i = 0;
-    compressionRegistry.elementNames.forEach((name) => {
-        //console.log('name', name, i);
-        i++;
-
-        typeIdMapping[name] = i;
-    });
-
-    i = 0;
-    compressionRegistry.elementAttributeNames.forEach((name) => {
-        //console.log('name', name, i);
-        i++;
-
-        staticAttributeMap[name] = i;
-    });
-
-    i = 0;
-    compressionRegistry.stylePropertyKeys.forEach((name) => {
-        //console.log('name', name, i);
-        i++;
-        stylePropertyKeys[name] = i;
-    });
-
-    i = 0;
-    compressionRegistry.stylePropertyValues.forEach((name) => {
-        //console.log('name', name, i);
-        i++;
-        stylePropertyValues[name] = i;
-    });
-
-    return {
-        typeIdMapping,
-        staticAttributeMap,
-        stylePropertyKeys,
-        stylePropertyValues
-    };
-}
-
 
 function getAttribute(node, name) {
     let index = node.openingElement.attributes.findIndex(attrNode => attrNode.name.name == name);
@@ -302,7 +174,7 @@ export function processFile(fileName, fileString) {
 
                 let elementName = node.openingElement.name.name;
 
-                compressionRegistry.elementNames.add(elementName);
+                //compressionRegistry.elementNames.add(elementName);
 
                 let attributeNames = getAttributeNames(node);
                 let hasAttributes = attributeNames.size > 0;
@@ -571,10 +443,10 @@ export function processFile(fileName, fileString) {
                 node.body[index] = process(bodyNode);
             });
 
-            let encodeCompressionMap = getEncodeCompressionMap();
+            //let encodeCompressionMap = getEncodeCompressionMap();
 
             gatheredUIBlocks.forEach((block, index) => {
-                node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareBlockExpression(block, encodeCompressionMap));
+                node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareBlockExpression(block));
             });
 
             gatheredClientFunctions.forEach((clientFunction, index) => {
@@ -1092,12 +964,12 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
                             key = prop.key.value;
                         }
 
-                        compressionRegistry.stylePropertyKeys.add(key);
+                        //compressionRegistry.stylePropertyKeys.add(key);
 
                         if (prop.value.type == 'StringLiteral' || prop.value.type == 'NumericLiteral') {
 
                             let valueString = prop.value.value.toString();
-                            compressionRegistry.stylePropertyValues.add(valueString);
+                            //compressionRegistry.stylePropertyValues.add(valueString);
 
                             element.style.push([key, valueString]);
 
@@ -1105,9 +977,7 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
                         } else {
                             styleConditions.push({ type: 'style', key, condition: prop.value });
                         }
-
                     });
-
 
                     element.attributes.style = staticStyleStringables.join(';');
                 } else {
@@ -1134,7 +1004,7 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
             }
         } else {
             let value = attr.value;
-            compressionRegistry.elementAttributeNames.add(attrName);
+            //compressionRegistry.elementAttributeNames.add(attrName);
 
             if (value.type == 'StringLiteral') {
                 element.attributes[attrName] = value.value;
