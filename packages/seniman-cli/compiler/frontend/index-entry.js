@@ -207,10 +207,6 @@
     // TODO: have this somehow be given by the server -- 
     // the complete list is longer than this and we want this file to be as small as possible
     let selfClosingTagSet = new Set(['br', 'hr', 'img', 'input']);
-    let typeIdMapping = [];
-    let staticAttributeMap = [];
-    let stylePropertyKeyMap = [];
-    let stylePropertyValueMap = [];
 
     let initializeRootBlockWithElement = (el) => {
         // TODO: how to initialize the root blocks?
@@ -434,7 +430,7 @@
             case UPDATE_MODE_SET_ATTR:
                 {
                     let mapIndex = getUint8();
-                    let propName = (updateMode == UPDATE_MODE_STYLEPROP ? tokenLists[2] : tokenLists[1])[mapIndex - 1];
+                    let propName = GlobalTokenList[mapIndex];
 
                     let propValueLength = getUint16();
                     let propValue = getString(propValueLength);
@@ -473,7 +469,7 @@
             case UPDATE_MODE_REMOVE_ATTR:
                 {
                     let mapIndex = getUint8();
-                    let propName = tokenLists[1][mapIndex - 1];
+                    let propName = GlobalTokenList[mapIndex];
 
                     if (propName == 'checked') {
                         targetHandlerElement.checked = false;
@@ -496,7 +492,7 @@
                     // if highest order bit is 1 it's a compression map index, otherwise it's a string length
                     if (key_highestOrderBit) {
                         //key = stylePropertyKeyMap[keyBytes];
-                        key = tokenLists[2][keyBytes - 1];
+                        key = GlobalTokenList[keyBytes];
                     } else {
                         key = getString(keyBytes);
                     }
@@ -505,7 +501,7 @@
 
                     if (value_highestOrderBit) {
                         //value = stylePropertyValueMap[valueBytes]; // index is 1-based
-                        value = tokenLists[3][valueBytes - 1];
+                        value = GlobalTokenList[valueBytes];
                     } else {
                         value = getString(valueBytes);
                     }
@@ -517,7 +513,7 @@
         }
     }
 
-    let _compileTemplate = ([tagNames, attrNames, styleKeys, styleValues]) => {
+    let _compileTemplate = (templateTokenList) => {
 
         let totalElementCount = getUint16();
         let totalProcessed = 0;
@@ -537,7 +533,7 @@
                     templateString += getString(textLength);
                 } else {
                     let attrId;
-                    let tagName = tagNames[tagNameId - 1];
+                    let tagName = templateTokenList[tagNameId - 1];
                     let isSelfClosing = selfClosingTagSet.has(tagName);
 
                     templateString += `<${tagName}`;
@@ -547,16 +543,16 @@
                     }
 
                     while (attrId = getUint8()) {
-                        let attrName = attrNames[attrId - 1];
+                        let attrName = templateTokenList[attrId - 1];
                         let attrValueString = '';
 
                         if (attrName == 'style') {
                             let propKeyId;
 
                             while ((propKeyId = getUint8())) {
-                                let propKey = styleKeys[propKeyId - 1];
+                                let propKey = templateTokenList[propKeyId - 1];
                                 let propValueId = getUint8();
-                                let propValue = styleValues[propValueId - 1];
+                                let propValue = templateTokenList[propValueId - 1];
 
                                 attrValueString += `${propKey}:${propValue};`;
                             }
@@ -602,21 +598,15 @@
     let _installTemplate2 = () => {
         let templateId = getUint16();
 
-        // tagNames, attrNames, styleKeys, styleValues
-        let templateTokenLists = [[], [], [], []];
+        let templateTokenList = [];
 
         let id;
 
-        // gather token values from the token IDs in the template
-        templateTokenLists.forEach((list, listIdx) => {
-            let tokenList = tokenLists[listIdx];
+        while (id = getUint16()) {
+            templateTokenList.push(GlobalTokenList[id]);
+        }
 
-            while (id = getUint16()) {
-                list.push(tokenList[id - 1]);
-            }
-        });
-
-        let [templateString, isSvg] = _compileTemplate(templateTokenLists);
+        let [templateString, isSvg] = _compileTemplate(templateTokenList);
 
         //console.log('templateString', templateId, templateString);
         const t = _document.createElement("template");
@@ -785,10 +775,19 @@
     let CMD_REMOVE_BLOCKS = 9;
     let CMD_INSTALL_CLIENT_FUNCTION = 10;
     let CMD_RUN_CLIENT_FUNCTION = 11;
-    let CMD_MODIFY_TOKENMAP = 12;
-    let CMD_MODIFY_TOKENMAP_V2 = 13;
+    let CMD_APPEND_TOKENLIST = 12;
+
+    // fill out the 0-index to make it easier for templating to do 1-indexing
+    let GlobalTokenList = [''];
 
     let _processMap = {
+        [CMD_INIT_WINDOW]: () => {
+            windowId = getString(21);
+
+            // head = 1, body = 2
+            _blocksMap.set(1, initializeRootBlockWithElement(head));
+            _blocksMap.set(2, initializeRootBlockWithElement(_document.body));
+        },
         [CMD_INIT_BLOCK]: _initBlock,
         [CMD_INSTALL_TEMPLATE]: _installTemplate2,
         [CMD_ATTACH_ANCHOR]: _attachAtAnchorV2,
@@ -854,29 +853,15 @@
 
             clientFunctionsMap.get(clientFunctionId).apply(thisContext, argsList);
         },
-        [CMD_MODIFY_TOKENMAP]: () => {
-            tokenLists.forEach(list => {
-                let length;
-                while (length = getUint8()) {
-                    list.push(getString(length));
-                }
-            });
-        },
-        [CMD_MODIFY_TOKENMAP_V2]: () => {
-            let tokenType = getUint8();
-            let tokenList = tokenLists[tokenType - 1];
-            let tokenLength;
+        [CMD_APPEND_TOKENLIST]: () => {
+            let length;
 
-            while (tokenLength = getUint8()) {
-                let tokenValue = getString(tokenLength);
-                tokenList.push(tokenValue);
+            while (length = getUint8()) {
+                GlobalTokenList.push(getString(length));
             }
         }
     }
 
-
-    // tagNames, attrNames, styleKeys, styleValues
-    let tokenLists = [[], [], [], []];
     let pongBuffer = createBuffer(5);
 
     let onPingArrival = () => {
@@ -898,28 +883,6 @@
 
         if (opcode == CMD_PING) {
             onPingArrival();
-        } else if (opcode == CMD_INIT_WINDOW) {
-            processOffset++;
-
-            windowId = getString(21);
-
-            // head = 1, body = 2
-            _blocksMap.set(1, initializeRootBlockWithElement(head));
-            _blocksMap.set(2, initializeRootBlockWithElement(_document.body));
-
-            /*
-            let length;
-            let lists = [typeIdMapping, staticAttributeMap, stylePropertyKeyMap, stylePropertyValueMap];
-
-            lists.forEach(list => {
-                // index-0 is reserved
-                list.push('');
-
-                while (length = getUint8()) {
-                    list.push(getString(length));
-                }
-            });
-            */
         } else {
             let totalLength = dv.byteLength;
 

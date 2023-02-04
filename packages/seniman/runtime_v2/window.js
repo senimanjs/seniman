@@ -96,9 +96,6 @@ let CMD_RUN_CLIENT_FUNCTION = 11;
 let pingBuffer = Buffer.from([0]);
 const multiStylePropScratchBuffer = Buffer.alloc(32768);
 
-// create a shared buffer for init window command to avoid creating a new buffer for every window
-let initWindowBuffer = Buffer.alloc(1 + 21);
-
 export class Window {
 
     constructor(port, pageParams, components) {
@@ -145,13 +142,9 @@ export class Window {
         this.lastEventHandlerId = 0;
         this.eventHandlers = new Map();
 
-        this.tokenMap = {
-            tagNames: new Map(),
-            attrNames: new Map(),
-            //attrValues: new Map(),
-            styleKeys: new Map(),
-            styleValues: new Map()
-        };
+        this.tokenList = new Map();
+        // fill out the 0 index to make it easier for templating system to do 1-indexing
+        this.tokenList.set('', 0);
 
         this.isPending = false;
         this.inputMessageQueue = [];
@@ -249,6 +242,7 @@ export class Window {
 
         createRoot(dispose => {
             this.rootOwner = getOwner();
+
 
             this._attach(1, 0, _createComponent(components.Head, { cssText: build.globalCss, pageTitle, window: windowContext }));
             this._attach(2, 0, _createComponent(WindowProvider, {
@@ -562,10 +556,9 @@ export class Window {
     }
 
     _streamInitWindow() {
-        initWindowBuffer.writeUint8(CMD_INIT_WINDOW, 0);
-        initWindowBuffer.write(this.id, 1, 21);
-
-        this.port.send(initWindowBuffer);
+        let buf = this._allocCommandBuffer(1 + 21)
+        buf.writeUint8(CMD_INIT_WINDOW, 0);
+        buf.write(this.id, 1, 21);
     }
 
     _streamEventInitCommandV2(blockId, targetId, eventType, clientFnId, serverBindIds) {
@@ -956,9 +949,9 @@ export class Window {
                         const [key, value] = pair;
 
                         // TODO: add more logic to dynamically determine if we should add the current token to the static map
-                        if (this.tokenMap.styleKeys.get(key)) {
+                        if (this.tokenList.get(key)) {
                             // let keyIndex = build.reverseIndexMap.stylePropertyKeys[key] + 1;
-                            let keyIndex = this.tokenMap.styleKeys.get(key);
+                            let keyIndex = this.tokenList.get(key);
                             // set 16-th bit to 1 to denote that this is static map compression index
                             // (stylePropertyKeyMap on the client)
                             buf2.writeUint16BE(keyIndex |= (1 << 15), offset);
@@ -970,9 +963,9 @@ export class Window {
                             offset += key.length;
                         }
 
-                        if (this.tokenMap.styleValues.get(value)) {
+                        if (this.tokenList.get(value)) {
                             //let valueIndex = build.reverseIndexMap.stylePropertyValues[value] + 1;
-                            let valueIndex = this.tokenMap.styleValues.get(value);
+                            let valueIndex = this.tokenList.get(value);
                             buf2.writeUint16BE(valueIndex |= (1 << 15), offset);
                             offset += 2;
                         } else {
@@ -1030,41 +1023,37 @@ export class Window {
 
     _registerAttrKey(attrName) {
 
-        if (!this.tokenMap.attrNames.has(attrName)) {
-            let newId = this.tokenMap.attrNames.size + 1;
-            this.tokenMap.attrNames.set(attrName, newId);
+        if (!this.tokenList.has(attrName)) {
+            let newId = this.tokenList.size;
+            this.tokenList.set(attrName, newId);
 
-            this._streamModifyToken(2, attrName);
+            this._streamModifyToken(attrName);
         }
 
-        return this.tokenMap.attrNames.get(attrName);
+        return this.tokenList.get(attrName);
     }
 
     _registerStyleKey(propName) {
-        if (!this.tokenMap.styleKeys.has(propName)) {
-            let newId = this.tokenMap.styleKeys.size + 1;
-            this.tokenMap.styleKeys.set(propName, newId);
+        if (!this.tokenList.has(propName)) {
+            let newId = this.tokenList.size;
+            this.tokenList.set(propName, newId);
 
-            this._streamModifyToken(3, propName);
+            this._streamModifyToken(propName);
         }
 
-        return this.tokenMap.styleKeys.get(propName);
+        return this.tokenList.get(propName);
     }
 
-    _streamModifyToken(tokenType, tokenName) {
-        let CMD_MODIFY_TOKENMAP_V2 = 13;
+    _streamModifyToken(tokenName) {
+        let CMD_MODIFY_TOKENMAP = 12;
 
         let tokenLength = Buffer.byteLength(tokenName);
+        let buf = this._allocCommandBuffer(1 + 1 + tokenLength + 1);
 
-        let buf = this._allocCommandBuffer(1 + 1 + 1 + tokenLength + 1);
-
-        buf.writeUint8(CMD_MODIFY_TOKENMAP_V2, 0);
-
-        // 1 = tag name, 2 = attribute name, 3 = style property name, 4 = style property value
-        buf.writeUint8(tokenType, 1);
-        buf.writeUint8(tokenLength, 2);
-        buf.write(tokenName, 3, tokenLength);
-        buf.writeUint8(0, 3 + tokenLength);
+        buf.writeUint8(CMD_MODIFY_TOKENMAP, 0);
+        buf.writeUint8(tokenLength, 1);
+        buf.write(tokenName, 2, tokenLength);
+        buf.writeUint8(0, 2 + tokenLength);
     }
 }
 

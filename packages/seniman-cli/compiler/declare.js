@@ -67,134 +67,24 @@ export function createCompilerInternalImportsExpression() {
 
 export function createDeclareBlockExpression(block) {
 
-    // assign the call expression to a variable
-    let variables = {
-        tagNames: [], //new Set([]),
-        attrNames: [],//new Set([]),
-        //attributeValues: new Set([]),
-        styleKeys: [],
-        styleValues: []
-    };
+    let variables2 = [];
+    let templateBufferProp = getTemplateStringInit(block, variables2);
 
-    let templateBufferProp = getTemplateStringInit(block, variables);
-
-    let variableProp = {
+    let variableProp2 = {
         "type": "ObjectProperty",
         "key": {
             "type": "Identifier",
             "name": "tokens"
         },
         "value": {
-            "type": "ObjectExpression",
-            "properties": [
-                {
-                    "type": "ObjectProperty",
-                    "key": {
-                        "type": "Identifier",
-                        "name": "tagNames"
-                    },
-                    "value": {
-                        "type": "ArrayExpression",
-                        "elements": Array.from(variables.tagNames).map((tagName) => {
-                            return {
-                                "type": "StringLiteral",
-                                "value": tagName
-                            };
-                        })
-                    },
-                    "computed": false,
-                    "shorthand": false,
-                    "method": false
-                },
-                {
-                    "type": "ObjectProperty",
-                    "key": {
-                        "type": "Identifier",
-                        "name": "attrNames"
-                    },
-                    "value": {
-                        "type": "ArrayExpression",
-                        "elements": Array.from(variables.attrNames).map((attributeName) => {
-                            return {
-                                "type": "StringLiteral",
-                                "value": attributeName
-                            };
-                        }
-                        )
-                    },
-                    "computed": false,
-                    "shorthand": false,
-                    "method": false
-                },
-                /*
-                {
-                    "type": "ObjectProperty",
-                    "key": {
-                        "type": "Identifier",
-                        "name": "attrValues"
-                    },
-                    "value": {
-                        "type": "ArrayExpression",
-                        "elements": Array.from(variables.attributeValues).map((attributeValue) => {
-                            return {
-                                "type": "StringLiteral",
-                                "value": attributeValue
-                            };
-                        }
-                        )
-                    },
-                    "computed": false,
-                    "shorthand": false,
-                    "method": false
-                },
-                */
-                {
-                    "type": "ObjectProperty",
-                    "key": {
-                        "type": "Identifier",
-                        "name": "styleKeys"
-                    },
-                    "value": {
-                        "type": "ArrayExpression",
-
-                        "elements": Array.from(variables.styleKeys).map((stylePropKey) => {
-                            return {
-                                "type": "StringLiteral",
-                                "value": stylePropKey
-                            };
-                        }
-                        )
-                    },
-                    "computed": false,
-                    "shorthand": false,
-                    "method": false
-                },
-                {
-                    "type": "ObjectProperty",
-                    "key": {
-                        "type": "Identifier",
-                        "name": "styleValues"
-                    },
-                    "value": {
-                        "type": "ArrayExpression",
-                        "elements": Array.from(variables.styleValues).map((stylePropValue) => {
-                            return {
-                                "type": "StringLiteral",
-                                "value": stylePropValue
-                            };
-                        }
-                        )
-                    },
-                    "computed": false,
-                    "shorthand": false,
-                    "method": false
-
-                }
-            ]
-        },
-        "computed": false,
-        "shorthand": false,
-        "method": false
+            "type": "ArrayExpression",
+            "elements": variables2.map((variable) => {
+                return {
+                    "type": "StringLiteral",
+                    "value": variable
+                };
+            })
+        }
     };
 
     return {
@@ -208,8 +98,6 @@ export function createDeclareBlockExpression(block) {
                     "name": "_b$" + block.id.toString()
                 },
                 "init": {
-
-
                     "type": "CallExpression",
                     "callee": {
                         "type": "Identifier",
@@ -218,7 +106,7 @@ export function createDeclareBlockExpression(block) {
                     "arguments": [
                         {
                             "type": "ObjectExpression",
-                            "properties": [templateBufferProp, getElscriptInit(block), variableProp]
+                            "properties": [templateBufferProp, getElscriptInit(block), variableProp2]
                         }
                     ]
                 }
@@ -294,10 +182,10 @@ export function createDeclareClientFunctionExpression(clientFunction) {
     };
 }
 
-function getTemplateStringInit(block, variables) {
+function getTemplateStringInit(block, variables2) {
 
     //console.log('======================');
-    let buffer = getTemplateBuffer(block.rootElement, variables);
+    let buffer = getTemplateBuffer(block.rootElement, variables2);
 
     //console.log('getTemplateString2 buffer len', buffer.length);
 
@@ -392,56 +280,22 @@ per-element encoding:
     if byte value is 0, this means the equivalent of a `break` -- we should loop to the next attribute.
 */
 
-function getTemplateBuffer(rootElement, variables) {
+function getTemplateBuffer(rootElement, variables2) {
     let offset = 0;
     let buf = Buffer.alloc(2048);
     let totalElementCount = 0;
 
-    function getTagNameId(tagName) {
+    function getVariableId(tagName) {
 
         if (tagName == '$text') {
             return 0;
         }
 
-        let indexOf = variables.tagNames.indexOf(tagName);
+        let indexOf = variables2.indexOf(tagName);
 
         if (indexOf == -1) {
-            indexOf = variables.tagNames.length;
-            variables.tagNames.push(tagName);
-        }
-
-        // we add +1 to the index because 0 is reserved for naked text
-        return indexOf + 1;
-    }
-
-    function getAttrNameId(attrName) {
-        let indexOf = variables.attrNames.indexOf(attrName);
-
-        if (indexOf == -1) {
-            indexOf = variables.attrNames.length;
-            variables.attrNames.push(attrName);
-        }
-
-        return indexOf + 1;
-    }
-
-    function getStyleKeyId(styleKey) {
-        let indexOf = variables.styleKeys.indexOf(styleKey);
-
-        if (indexOf == -1) {
-            indexOf = variables.styleKeys.length;
-            variables.styleKeys.push(styleKey);
-        }
-
-        return indexOf + 1;
-    }
-
-    function getStyleValueId(styleValue) {
-        let indexOf = variables.styleValues.indexOf(styleValue);
-
-        if (indexOf == -1) {
-            indexOf = variables.styleValues.length;
-            variables.styleValues.push(styleValue);
+            indexOf = variables2.length;
+            variables2.push(tagName);
         }
 
         return indexOf + 1;
@@ -454,7 +308,7 @@ function getTemplateBuffer(rootElement, variables) {
             totalElementCount++;
 
             let el = siblings[i];
-            let tagNameId = getTagNameId(el.type);
+            let tagNameId = getVariableId(el.type);
 
             //let tagNameId = el.type == '$text' ? 32 : encodeCompressionMap.typeIdMapping[el.type];
             let filteredChildren = (el.children || []).filter(childEl => childEl.type != '$anchor');
@@ -492,7 +346,7 @@ function getTemplateBuffer(rootElement, variables) {
                 //console.log('el.attributes', el.attributes);
 
                 for (let attrName in el.attributes) {
-                    let attrId = getAttrNameId(attrName);// encodeCompressionMap.staticAttributeMap[attrName];
+                    let attrId = getVariableId(attrName);// encodeCompressionMap.staticAttributeMap[attrName];
 
                     if (!attrId) {
                         throw new Error();
@@ -506,8 +360,8 @@ function getTemplateBuffer(rootElement, variables) {
                         for (let i = 0; i < el.style.length; i++) {
                             let [propName, propValue] = el.style[i];
 
-                            let styleKeyId = getStyleKeyId(propName);
-                            let styleValueId = getStyleValueId(propValue);
+                            let styleKeyId = getVariableId(propName);
+                            let styleValueId = getVariableId(propValue);
 
                             buf.writeUint8(styleKeyId, offset);
                             buf.writeUint8(styleValueId, offset + 1);

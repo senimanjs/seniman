@@ -33,32 +33,15 @@ let installScratchBuffer = Buffer.alloc(4096 * 2);
 export function streamBlockTemplateInstall(window, templateId) {
 
     let blockDef = blockDefinitions.get(templateId);
-    let tokenIdsMap = installTokens(blockDef.tokens, window.tokenMap);
 
-    let tagNamesTokenIds = tokenIdsMap.tagNames[0];
-    let attrNamesTokenIds = tokenIdsMap.attrNames[0];
-    let styleKeysTokenIds = tokenIdsMap.styleKeys[0];
-    let styleValuesTokenIds = tokenIdsMap.styleValues[0];
+    let [tokenIndexes, installList] = installTokens2(blockDef.tokens, window.tokenList);
 
-    let tagNamesInstallList = tokenIdsMap.tagNames[1];
-    let attrNamesInstallList = tokenIdsMap.attrNames[1];
-    let styleKeysInstallList = tokenIdsMap.styleKeys[1];
-    let styleValuesInstallList = tokenIdsMap.styleValues[1];
+    if (installList) {
+        variableScratchBuffer.writeUint8(CMD_MODIFY_TOKENMAP, 0);
 
-    variableScratchBuffer.writeUint8(CMD_MODIFY_TOKENMAP, 0);
+        let offset2 = 1;
 
-    let offset2 = 1;
-
-    let lists = [
-        tagNamesInstallList,
-        attrNamesInstallList,
-        //attrValuesInstallList,
-        styleKeysInstallList,
-        styleValuesInstallList
-    ];
-
-    lists.forEach((list) => {
-        list.forEach((token) => {
+        installList.forEach((token) => {
             let tokenLength = Buffer.byteLength(token);
 
             variableScratchBuffer.writeUint8(tokenLength, offset2);
@@ -70,10 +53,10 @@ export function streamBlockTemplateInstall(window, templateId) {
 
         variableScratchBuffer.writeUint8(0, offset2);
         offset2++;
-    });
 
-    // copy the scratch buffer to a real command buffer
-    variableScratchBuffer.copy(window._allocCommandBuffer(offset2), 0, 0, offset2);
+        // copy the scratch buffer to a real command buffer
+        variableScratchBuffer.copy(window._allocCommandBuffer(offset2), 0, 0, offset2);
+    }
 
     //////////////////////////
 
@@ -82,23 +65,13 @@ export function streamBlockTemplateInstall(window, templateId) {
     installScratchBuffer.writeUint16BE(templateId, 1);
     offset += 3;
 
-    let lists2 = [
-        tagNamesTokenIds,
-        attrNamesTokenIds,
-        //attrValuesTokenIds,
-        styleKeysTokenIds,
-        styleValuesTokenIds
-    ];
-
-    lists2.forEach((list) => {
-        list.forEach((token) => {
-            installScratchBuffer.writeUint16BE(token, offset);
-            offset += 2;
-        });
-
-        installScratchBuffer.writeUint16BE(0, offset);
+    tokenIndexes.forEach((tokenId) => {
+        installScratchBuffer.writeUint16BE(tokenId, offset);
         offset += 2;
     });
+
+    installScratchBuffer.writeUint16BE(0, offset);
+    offset += 2;
 
     blockDef.templateBuffer.copy(installScratchBuffer, offset);
     offset += blockDef.templateBuffer.length;
@@ -110,34 +83,25 @@ export function streamBlockTemplateInstall(window, templateId) {
     installScratchBuffer.copy(window._allocCommandBuffer(offset), 0, 0, offset);
 }
 
-function installTokenArray(tokenArray, tokenMap) {
-    let result = [];
-    let installationList = [];
+function installTokens2(blockTokens, tokenList) {
 
-    for (let token of tokenArray) {
-        if (tokenMap.has(token)) {
-            result.push(tokenMap.get(token));
+    let tokenIndexes = [];
+    let installationList;
+
+    for (let token of blockTokens) {
+        if (tokenList.has(token)) {
+            tokenIndexes.push(tokenList.get(token));
         } else {
-            let index = tokenMap.size + 1;
+            let index = tokenList.size;
 
-            tokenMap.set(token, index);
+            tokenList.set(token, index);
 
-            installationList.push(token);
-            result.push(index);
+            installationList ? installationList.push(token) : installationList = [token];
+            tokenIndexes.push(index);
         }
     }
 
-    return [result, installationList];
-}
-
-function installTokens(blockTokens, tokenMap) {
-    return {
-        tagNames: installTokenArray(blockTokens.tagNames, tokenMap.tagNames),
-        attrNames: installTokenArray(blockTokens.attrNames, tokenMap.attrNames),
-        //attrValues: installTokenArray(blockTokens.attrValues, tokenMap.attrValues),
-        styleKeys: installTokenArray(blockTokens.styleKeys, tokenMap.styleKeys),
-        styleValues: installTokenArray(blockTokens.styleValues, tokenMap.styleValues)
-    }
+    return [tokenIndexes, installationList];
 }
 
 export let clientFunctionDefinitions = new Map();
