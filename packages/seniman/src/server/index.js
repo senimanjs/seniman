@@ -1,6 +1,7 @@
+import { createServer as httpCreateServer } from 'http';
 import { WebSocketServer } from 'ws';
-import { build } from './build.js';
-import { windowManager } from './window_manager.js';
+import { build } from '../build.js';
+import { windowManager } from '../window_manager.js';
 
 function wsHandler(options, ws, req) {
 
@@ -25,19 +26,13 @@ function wsHandler(options, ws, req) {
   windowManager.applyNewConnection(ws, pageParams);
 }
 
-export function wrapExpress(app, options) {
+export function createServer(options) {
 
   windowManager.registerEntrypoint(options);
 
   let htmlBuffers = build.htmlBuffers;
 
-  let prebuiltHeaders = {
-    'Content-Type': 'text/html',
-    'Vary': 'Accept',
-    'Cache-Control': 'no-store'
-  };
-
-  app.get('*', async function (req, res) {
+  const server = httpCreateServer(function (req, res) {
 
     let acceptEncoding = req.headers['accept-encoding'] || '';
     let algo;
@@ -53,35 +48,31 @@ export function wrapExpress(app, options) {
       html = htmlBuffers.uncompressed;
     }
 
-    res.set(prebuiltHeaders);
-
-    if (algo) {
-      res.set('Content-Encoding', algo);
+    let headers = {
+      'Content-Type': 'text/html',
+      'Vary': 'Accept',
+      'Cache-Control': 'no-store',
+      'Content-Length': Buffer.byteLength(html)
     }
 
+    if (algo) {
+      headers['Content-Encoding'] = algo;
+    }
+    res.writeHead(200, headers);
     res.end(html);
   });
 
-  // capture the existing app.listen function, and wrap it in a new function
-  // that will also start the websocket server
-  let oldListen = app.listen;
+  const wss = new WebSocketServer({ noServer: true });
 
-  app.listen = function (port, host, backlog, callback) {
+  wss.on('connection', function connection(socket, req) {
+    wsHandler(options, socket, req);
+  });
 
-    const wsServer = new WebSocketServer({ noServer: true });
-
-    wsServer.on('connection', (socket, req) => {
-      wsHandler(options, socket, req);
+  server.on('upgrade', function upgrade(request, socket, head) {
+    wss.handleUpgrade(request, socket, head, ws => {
+      wss.emit('connection', ws, request);
     });
+  });
 
-    let server = oldListen.call(app, port, host, backlog, callback);
-
-    server.on('upgrade', (request, socket, head) => {
-      wsServer.handleUpgrade(request, socket, head, socket => {
-        wsServer.emit('connection', socket, request);
-      });
-    });
-
-    return server;
-  }
+  return server;
 }
