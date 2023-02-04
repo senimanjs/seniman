@@ -1,5 +1,4 @@
 import { Buffer } from 'node:buffer';
-//import blocks from './components/blocks.js';
 import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
 import { build } from './build.js';
@@ -242,7 +241,6 @@ export class Window {
 
         createRoot(dispose => {
             this.rootOwner = getOwner();
-
 
             this._attach(1, 0, _createComponent(components.Head, { cssText: build.globalCss, pageTitle, window: windowContext }));
             this._attach(2, 0, _createComponent(WindowProvider, {

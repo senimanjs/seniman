@@ -1,10 +1,8 @@
-import fs from 'node:fs';
 import process from 'node:process';
 import { FastRateLimit } from 'fast-ratelimit';
 import { nanoid } from 'nanoid';
 
 import { Window } from './window.js';
-import { build } from './build.js';
 
 // get ram limit from env var
 const RSS_LOW_MEMORY_THRESHOLD = process.env.RSS_LOW_MEMORY_THRESHOLD ? parseInt(process.env.RSS_LOW_MEMORY_THRESHOLD) : 0;
