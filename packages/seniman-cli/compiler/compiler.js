@@ -141,9 +141,7 @@ export function processFile(fileName, fileString) {
         attachComment: false,
         ranges: false,
         plugins: [
-            // enable jsx and flow syntax
             "jsx",
-            "flow",
         ],
     });
 
@@ -456,7 +454,6 @@ export function processFile(fileName, fileString) {
 
             node.body.splice(lastImportStatementIndex + 1, 0, createCompilerInternalImportsExpression());
 
-
             return node;
         } else if (node.type == 'IfStatement') {
             node.consequent = process(node.consequent);
@@ -639,7 +636,6 @@ export function processFile(fileName, fileString) {
             node.consequent = process(node.consequent);
             node.alternate = process(node.alternate);
             return node;
-
         }
 
         else if (node.type == 'ArrayExpression') {
