@@ -3,29 +3,6 @@ import { WebSocketServer } from 'ws';
 import { build } from '../build.js';
 import { windowManager } from '../window_manager.js';
 
-function wsHandler(options, ws, req) {
-
-  let splitUrl = req.url.split('?')[1].split(':');
-  let windowId = splitUrl[0];
-  let readOffset = parseInt(splitUrl[1]);
-  let viewportSize = splitUrl[2].split('x').map((num) => parseInt(num));
-  let currentPath = splitUrl[3];
-
-  // TODO: get ip address of request and pass it to the window manager
-  // let ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-  let cookieString = req.headers.cookie || '';
-
-  let pageParams = {
-    windowId,
-    currentPath,
-    viewportSize,
-    readOffset,
-    cookieString
-  };
-
-  windowManager.applyNewConnection(ws, pageParams);
-}
-
 export function createServer(options) {
 
   windowManager.registerEntrypoint(options);
@@ -64,13 +41,9 @@ export function createServer(options) {
 
   const wss = new WebSocketServer({ noServer: true });
 
-  wss.on('connection', function connection(socket, req) {
-    wsHandler(options, socket, req);
-  });
-
   server.on('upgrade', function upgrade(request, socket, head) {
     wss.handleUpgrade(request, socket, head, ws => {
-      wss.emit('connection', ws, request);
+      windowManager.applyNewConnection(ws, request);
     });
   });
 

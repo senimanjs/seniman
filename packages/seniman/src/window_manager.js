@@ -187,9 +187,27 @@ class WindowManager {
         }, 2500);
     }
 
-    applyNewConnection(ws, pageParams) {
+    applyNewConnection(ws, req) {
 
-        let { windowId } = pageParams;
+        let params = new URLSearchParams(req.url.split('?')[1]);
+
+        // then, get the values from the params object
+        let windowId = params.get('wi') || '';
+        let readOffset = parseInt(params.get('ro'));
+        let viewportSize = params.get('vs').split('x').map((num) => parseInt(num));
+        let currentPath = params.get('lo');
+
+        // TODO: get ip address of request and do rate limiting based on ip address
+        // let ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+        let cookieString = req.headers.cookie || '';
+
+        let pageParams = {
+            windowId,
+            currentPath,
+            viewportSize,
+            readOffset,
+            cookieString,
+        };
 
         if (windowId) {
             if (this.hasWindow(windowId)) {
