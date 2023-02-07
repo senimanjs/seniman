@@ -12,9 +12,9 @@ let runEffects = runQueue;
 
 let ERROR = null;
 
-let STALE = 1;
-let PENDING = 2;
-
+const FRESH = 0;
+const STALE = 1;
+const PENDING = 2;
 
 export function createRoot(fn, detachedOwner, window) {
     let listener = Listener, owner = Owner;
@@ -39,7 +39,7 @@ export function createRoot(fn, detachedOwner, window) {
     }
 }
 
-// Run function, and gather possible effects to later executewhen doing so.
+// Run function, and gather possible effects to later execute when doing so.
 function runUpdates(fn, init) {
     if (Updates) return fn();
     let wait = false;
@@ -47,8 +47,6 @@ function runUpdates(fn, init) {
     if (Effects) wait = true;
     else Effects = [];
     ExecCount++;
-
-    //console.log('gathering effects..\n--------\n');
 
     try {
         const res = fn();
@@ -62,8 +60,6 @@ function runUpdates(fn, init) {
 
 function completeUpdates(wait) {
     if (Updates) {
-        //if (Scheduler && Transition && Transition.running) scheduleQueue(Updates);
-        //else 
         runQueue(Updates);
         Updates = null;
     }
@@ -76,19 +72,14 @@ function completeUpdates(wait) {
     Effects = null;
 
     if (e.length) {
-
-        //console.log('effects to run', e.length);
-        //console.log('running effects');
         runUpdates(() => runEffects(e), false);
     }
-
 }
 
-let runningTransition = false;
-
 function runTop(node) {
-    if ((!runningTransition && node.state === 0)) return;
-    if ((!runningTransition && node.state === PENDING)) {
+    if (node.state === 0) return;
+
+    if (node.state === PENDING) {
         return lookUpstream(node);
     }
 
@@ -96,7 +87,7 @@ function runTop(node) {
 
     while ((node = node.owner) && (!node.updatedAt || node.updatedAt < ExecCount)) {
 
-        if ((!runningTransition && node.state)) {
+        if ((node.state)) {
             ancestors.push(node);
         }
     }
@@ -106,13 +97,9 @@ function runTop(node) {
 
         //console.log('node in RT', node)
 
-        if (
-            (!runningTransition && node.state === STALE)
-        ) {
+        if (node.state === STALE) {
             updateComputation(node);
-        } else if (
-            (!runningTransition && node.state === PENDING)
-        ) {
+        } else if (node.state === PENDING) {
             const updates = Updates;
             Updates = null;
             runUpdates(() => lookUpstream(node, ancestors[0]), false);
@@ -123,19 +110,17 @@ function runTop(node) {
 
 function runUserEffects(queue) {
 
-    //console.log('queue', queue);
-    //console.log('run user effects')
-    let i,
-        userLength = 0;
+    let i, userLength = 0;
+
     for (i = 0; i < queue.length; i++) {
         const e = queue[i];
         if (!e.user) runTop(e);
         else queue[userLength++] = e;
     }
 
-
-    //if (sharedConfig.context) setHydrateContext();
-    for (i = 0; i < userLength; i++) runTop(queue[i]);
+    for (i = 0; i < userLength; i++) {
+        runTop(queue[i]);
+    }
 }
 
 function cleanNode(node) {
@@ -170,7 +155,7 @@ function cleanNode(node) {
         node.cleanups = [];
     }
 
-    node.state = 0;
+    node.state = FRESH;
 }
 
 function castError(err) {
@@ -276,15 +261,13 @@ function writeSignal(node, value) {
     let current = node.value;
 
     if (current != value) {
-
-        //console.log('Updating signal', current, value);
         node.value = value;
         if (node.observers && node.observers.length) {
             runUpdates(() => {
 
                 for (let i = 0; i < node.observers.length; i += 1) {
                     const o = node.observers[i];
-                    if (!o.state) {
+                    if (o.state == FRESH) {
                         if (o.pure) {
                             Updates.push(o);
                         } else {
@@ -304,14 +287,8 @@ function writeSignal(node, value) {
 
 function readSignal() {
 
-    if ((this).sources &&
-        ((!runningTransition && (this).state) ||
-            (runningTransition && (this).tState))
-    ) {
-        if (
-            (!runningTransition && (this).state === STALE) ||
-            (runningTransition && (this).tState === STALE)
-        )
+    if (this.sources && this.state) {
+        if (this.state === STALE)
             updateComputation(this);
         else {
             const updates = Updates;
@@ -335,21 +312,15 @@ function readSignal() {
 }
 
 function lookUpstream(node, ignore) {
-    // const runningTransition = Transition && Transition.running;
-    if (runningTransition) node.tState = 0;
-    else node.state = 0;
+
+    node.state = FRESH;
+
     for (let i = 0; i < node.sources.length; i += 1) {
         const source = node.sources[i];
         if (source.sources) {
-            if (
-                (!runningTransition && source.state === STALE) ||
-                (runningTransition && source.tState === STALE)
-            ) {
+            if (source.state === STALE) {
                 if (source !== ignore) runTop(source);
-            } else if (
-                (!runningTransition && source.state === PENDING) ||
-                (runningTransition && source.tState === PENDING)
-            )
+            } else if (source.state === PENDING)
                 lookUpstream(source, ignore);
         }
     }
@@ -359,9 +330,9 @@ function markDownstream(node) {
     // const runningTransition = Transition && Transition.running;
     for (let i = 0; i < node.observers.length; i += 1) {
         const o = node.observers[i];
-        if ((!runningTransition && !o.state) || (runningTransition && !o.tState)) {
-            if (runningTransition) o.tState = PENDING;
-            else o.state = PENDING;
+        if (o.state == FRESH) {
+            o.state = PENDING;
+
             if (o.pure) Updates.push(o);
             else Effects.push(o);
             (o).observers && markDownstream(o);
@@ -374,7 +345,7 @@ export function createRenderEffect(
     value,
     options
 ) {
-    const c = createComputation(fn, value, false, STALE, "_SOLID_DEV_" ? options : undefined);
+    const c = createComputation(fn, value, false, STALE, options);
     //if (Scheduler && Transition && Transition.running) Updates!.push(c);
     updateComputation(c);
 }
@@ -389,7 +360,7 @@ export function untrack(fn) {
     }
 }
 
-export function createSignal(initialValue) {
+export function useState(initialValue) {
 
     let signalState = {
         value: initialValue,
@@ -441,7 +412,7 @@ function createComputation(fn, init, pure, state, options) {
     return c;
 }
 
-export function createEffect(fn, value) {
+export function useEffect(fn, value) {
 
     runEffects = runUserEffects;
 
@@ -451,7 +422,7 @@ export function createEffect(fn, value) {
     Effects ? Effects.push(c) : updateComputation(c);
 }
 
-export function createMemo(fn, value) {
+export function useMemo(fn, value) {
 
     const c = createComputation(fn, value, true, 0);
     c.observers = [];
@@ -476,35 +447,26 @@ export function useContext(context) {
 }
 
 export function children(fn) {
-    const children = createMemo(fn);
-    const memo = "_SOLID_DEV_"
-        ? createMemo(() => resolveChildren(children()), undefined, { name: "children" })
-        : createMemo(() => resolveChildren(children()));
-    memo.toArray = () => {
-        const c = memo();
-        return Array.isArray(c) ? c : c != null ? [c] : [];
-    };
+    const children = useMemo(fn);
+    const memo = useMemo(() => resolveChildren(children()));
+
     return memo;
 }
 
 export function onCleanup(fn) {
-
-    //console.log('Owner oncleanup', Owner.fn.toString());
-    //Owner.cleanups.push(fn);
-
-    if (Owner === null)
-        "_SOLID_DEV_" &&
-            console.warn("cleanups created outside a `createRoot` or `render` will never be run");
-    else if (Owner.cleanups === null) Owner.cleanups = [fn];
+    if (Owner === null) {
+        console.warn("cleanups created outside a `createRoot` or `render` will never be run");
+        return;
+    } else if (Owner.cleanups === null) Owner.cleanups = [fn];
     else Owner.cleanups.push(fn);
-    return fn;
 }
 
 export function onError(fn) {
     ERROR || (ERROR = Symbol("error"));
-    if (Owner === null)
-        "_SOLID_DEV_" &&
-            console.warn("error handlers created outside a `createRoot` or `render` will never be run");
+    if (Owner === null) {
+        return;
+    }
+
     else if (Owner.context === null) Owner.context = { [ERROR]: [fn] };
     else if (!Owner.context[ERROR]) Owner.context[ERROR] = [fn];
     else Owner.context[ERROR].push(fn);

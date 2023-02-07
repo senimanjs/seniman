@@ -1,12 +1,12 @@
 import { _createBlock, _createComponent, useWindow, WindowProvider } from './window.js';
 import { _declareBlock, _declareClientFunction } from './declare.js';
-import { createSignal, createMemo, onCleanup, createEffect, createContext, useContext, onError, untrack, getOwner, runWithOwner } from './signals.js';
+import { useState, useMemo, onCleanup, useEffect, createContext, useContext, onError, untrack, getOwner, runWithOwner } from './signals.js';
 import { For } from './control.js';
 
 export {
-    createSignal as useState,
-    createMemo as useMemo,
-    createEffect as useEffect,
+    useState,
+    useMemo,
+    useEffect,
     useWindow,
     For,
     onCleanup,

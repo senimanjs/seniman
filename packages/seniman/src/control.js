@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, createRoot, untrack, createMemo } from './signals.js';
+import { useState, onCleanup, createRoot, untrack, useMemo } from './signals.js';
 
 function dispose(d) {
   for (let i = 0; i < d.length; i++) d[i]();
@@ -128,7 +128,7 @@ function mapArray(list, mapFn, options) {
 
       disposers[j] = disposer;
       if (indexes) {
-        const [s, set] = createSignal(j);
+        const [s, set] = useState(j);
         indexes[j] = set;
         return mapFn(newItems[j], s);
       }
@@ -140,7 +140,7 @@ function mapArray(list, mapFn, options) {
 // this is a directly ported version of SolidJS's For implementation
 export function For(props) {
   const fallback = "fallback" in props && { fallback: () => props.fallback };
-  return createMemo(
+  return useMemo(
     mapArray(() => props.each, props.children, fallback ? fallback : undefined)
   );
 }

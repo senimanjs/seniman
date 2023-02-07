@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { createSignal, createEffect, onCleanup, createRoot, untrack, createMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
+import { useState, useEffect, onCleanup, createRoot, untrack, useMemo, getActiveWindow, runWithOwner, getOwner, onError, createContext, useContext } from './signals.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
 import { build } from './build.js';
 import { bufferPool, PAGE_SIZE } from './buffer-pool.js';
@@ -123,10 +123,10 @@ export class Window {
 
         this.latestBlockId = 10;
 
-        let [path, setPath] = createSignal(currentPath);
-        let [pageTitle, set_pageTitle] = createSignal('');
-        let [cookieSignal, setCookie] = createSignal(cookieString);
-        let [viewportSizeSignal, setViewportSize] = createSignal({ width: viewportSize[0], height: viewportSize[1] });
+        let [path, setPath] = useState(currentPath);
+        let [pageTitle, set_pageTitle] = useState('');
+        let [getCookie, setCookie] = useState(cookieString);
+        let [viewportSizeSignal, setViewportSize] = useState({ width: viewportSize[0], height: viewportSize[1] });
 
         this.setViewportSize = setViewportSize;
         this.setPath = setPath;
@@ -152,14 +152,14 @@ export class Window {
         let windowContext = {
             viewportSize: viewportSizeSignal,
             cookie: (cookieKey) => {
-                return createMemo(() => {
-                    let cookieString = cookieSignal();
+                return useMemo(() => {
+                    let cookieString = getCookie();
                     return cookieString ? getCookieValue(cookieString, cookieKey) : null;
                 });
             },
 
             setCookie: (cookieKey, cookieValue) => {
-                let cookieString = cookieSignal();
+                let cookieString = getCookie();
                 let newCookieString = setCookieValue(cookieString, cookieKey, cookieValue);
 
                 setCookie(newCookieString);
@@ -387,7 +387,7 @@ export class Window {
                 let readOffset = buffer.readUInt32LE(1);
                 this.registerReadOffset(readOffset);
             } else {
-                this.submitInput(buffer);
+                this.processInput(buffer);
             }
         }
 
@@ -399,7 +399,7 @@ export class Window {
         this.inputMessageQueue.push(message);
     }
 
-    submitInput(command) {
+    processInput(command) {
         runWithOwner(this.rootOwner, () => {
             untrack(() => this._onMessage(command));
         });
@@ -628,7 +628,7 @@ export class Window {
             //console.log('_attachBlock', nodeResult.id);
             this._streamAttachBlockCommand(blockId, anchorIndex, nodeResult.id);
         } else if (nodeResult instanceof Function) {
-            createEffect(() => {
+            useEffect(() => {
                 let fn = nodeResult;
                 this._attach(blockId, anchorIndex, fn());
             });
@@ -655,6 +655,7 @@ export class Window {
 
             if (val instanceof Function) {
                 includesCallables = true;
+                break;
             }
         }
 
@@ -675,7 +676,7 @@ export class Window {
                 }
             }
 
-            createEffect(() => {
+            useEffect(() => {
                 for (let i = 0; i < listLength; i++) {
                     let value = list[i];
 
@@ -844,6 +845,13 @@ export class Window {
             if (!eventHandler.fn) {
                 return;
             } else if (eventHandler.fn instanceof Function) {
+                // if the event handler is not yet a client function, 
+                // assign a built-in client function id of 1, 
+                // which is a function that calls the server function without any argument.
+                //
+                // TODO: this is perfect for event types like "click",
+                // but not for event types like "change" which requires an argument.
+                // assign a different built-in client function id for event types that naturally require an argument?
                 clientFnId = 1;
                 serverBindFns = [eventHandler.fn];
             } else if (eventHandler.fn.clientFnId) {
@@ -1012,9 +1020,9 @@ export class Window {
             };
 
             if (elementEffect.effectFn.length > 1) {
-                createEffect(previous => elementEffect.effectFn(elRef, previous), elementEffect.init);
+                useEffect(previous => elementEffect.effectFn(elRef, previous), elementEffect.init);
             } else {
-                createEffect(() => elementEffect.effectFn(elRef));
+                useEffect(() => elementEffect.effectFn(elRef));
             }
         });
     }
