@@ -23,3 +23,26 @@ export {
     _createBlock,
     _createComponent,
 };
+
+/*
+import { _createBlock, _createComponent, useWindow } from './v2/window.js';
+import { useState, useMemo, onCleanup, useEffect, untrack } from './v2/state.js';
+import { _declareBlock, _declareClientFunction } from './declare.js';
+
+//import { For } from './control.js';
+
+export {
+    useState,
+    useMemo,
+    useEffect,
+    useWindow,
+
+    onCleanup,
+    untrack,
+
+    _declareBlock,
+    _declareClientFunction,
+    _createBlock,
+    _createComponent,
+};
+*/
