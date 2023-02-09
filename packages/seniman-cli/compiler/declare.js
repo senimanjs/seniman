@@ -55,6 +55,20 @@ export function createCompilerInternalImportsExpression() {
                     "name": "_createComponent"
                 }
             },
+
+            // add a useMemo import, rename it to _useMemo$
+            {
+                "type": "ImportSpecifier",
+                "local": {
+                    "type": "Identifier",
+                    "name": "_useMemo$"
+                },
+                "imported": {
+                    "type": "Identifier",
+                    "name": "useMemo"
+                }
+            },
+
         ],
         "source": {
             "type": "StringLiteral",

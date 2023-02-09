@@ -363,7 +363,7 @@ export function processFile(fileName, fileString) {
                                                 "type": "CallExpression",
                                                 "callee": {
                                                     "type": "Identifier",
-                                                    "name": "useMemo"
+                                                    "name": "_useMemo$"
                                                 },
                                                 "arguments": [
                                                     {
@@ -768,12 +768,12 @@ function _buildStyleConditionValueExpression(cond) {
 
     // a == b ? ... : ... ;
     if (condition.type == 'ConditionalExpression' && condition.test.type == 'BinaryExpression') {
-        // useMemo(() => a == b)() ? ... : ...;
+        // _useMemo$(() => a == b)() ? ... : ...;
         condition.test = {
             type: 'CallExpression',
             callee: {
                 type: 'CallExpression',
-                callee: { type: 'Identifier', name: 'useMemo' },
+                callee: { type: 'Identifier', name: '_useMemo$' },
                 arguments: [{ type: 'ArrowFunctionExpression', params: [], body: condition.test }]
             },
             arguments: []
@@ -1219,7 +1219,7 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
                                         id: { type: "Identifier", name: "_c" },
                                         init: {
                                             type: 'CallExpression',
-                                            callee: { type: 'Identifier', name: 'useMemo' },
+                                            callee: { type: 'Identifier', name: '_useMemo$' },
                                             arguments: [{ type: 'ArrowFunctionExpression', params: [], body: process(propExpression) }]
                                         }
                                     }]

@@ -66,9 +66,7 @@
 
         let connectSocket = () => {
             let [width, height] = getWindowSize();
-            let params = `?wi=${windowId}&ro=${readOffset}&vs=${width}x${height}&lo=${encodeURIComponent(_location.pathname + _location.search)}`;
-
-            socket = new WebSocket(_window.origin.replace('http', 'ws') + params.toString());
+            socket = new WebSocket(`${_window.origin.replace('http', 'ws')}?wi=${windowId}&ro=${readOffset}&vs=${width}x${height}&lo=${encodeURIComponent(_location.pathname + _location.search)}`);
             socket.binaryType = "arraybuffer";
 
             socket.onopen = (e) => {

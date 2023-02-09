@@ -146,7 +146,6 @@ class WindowManager {
             this.loopAwaiting = false;
             this.loopWaitPromise.resolve();
         }
-
     }
 
     _runWindowsLifecycleManagement() {
