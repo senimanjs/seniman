@@ -1,16 +1,16 @@
 
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, getActiveWindow, setActiveWindow, executeNode } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, executeNode } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
 import { build } from '../build.js';
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
 import { windowManager } from './window_manager.js';
 
-//export const WindowContext = createContext(null);
-//export const WindowProvider = WindowContext.Provider;
+export const WindowContext = createContext(null);
+export const WindowProvider = WindowContext.Provider;
 
 export function useWindow() {
-  //return useContext(WindowContext);
+  return useContext(WindowContext);
 }
 
 const camelCaseToKebabCaseRegex = /([a-z0-9])([A-Z])/g;
@@ -109,7 +109,9 @@ function processInput(window, inputQueue) {
   while (inputQueue.length) {
     let msg = inputQueue.shift();
 
-    window._onMessage(msg);
+    untrack(() => {
+      window._onMessage(msg);
+    });
   }
 
   setActiveWindow(null);
@@ -201,29 +203,32 @@ export class Window {
       },
 
       setCookie: (cookieKey, cookieValue) => {
-        let cookieString = getCookie();
-        let newCookieString = setCookieValue(cookieString, cookieKey, cookieValue);
 
-        setCookie(newCookieString);
+        untrack(() => {
+          let cookieString = getCookie();
+          let newCookieString = setCookieValue(cookieString, cookieKey, cookieValue);
 
-        // TODO: send the cookie update to the browser
-        let buf = this._allocCommandBuffer(1 + 1 + cookieKey.length + 2 + cookieValue.length + 4);
+          setCookie(newCookieString);
 
-        let offset = 0;
-        buf.writeUint8(CMD_COOKIE_SET, offset);
-        offset++;
+          // TODO: send the cookie update to the browser
+          let buf = this._allocCommandBuffer(1 + 1 + cookieKey.length + 2 + cookieValue.length + 4);
 
-        buf.writeUint8(cookieKey.length, offset);
-        offset++;
-        buf.write(cookieKey, offset);
-        offset += cookieKey.length;
+          let offset = 0;
+          buf.writeUint8(CMD_COOKIE_SET, offset);
+          offset++;
 
-        buf.writeUint16BE(cookieValue.length, offset);
-        offset += 2;
-        buf.write(cookieValue, offset);
-        offset += cookieValue.length;
+          buf.writeUint8(cookieKey.length, offset);
+          offset++;
+          buf.write(cookieKey, offset);
+          offset += cookieKey.length;
 
-        buf.writeUint32BE(0, offset);
+          buf.writeUint16BE(cookieValue.length, offset);
+          offset += 2;
+          buf.write(cookieValue, offset);
+          offset += cookieValue.length;
+
+          buf.writeUint32BE(0, offset);
+        });
       },
 
       path,
@@ -238,6 +243,7 @@ export class Window {
       },
 
       clientExec: (clientFnSpec, args) => {
+
         let eventHandlerIds = [];
         let { clientFnId, serverBindFns } = clientFnSpec;
 
@@ -281,8 +287,8 @@ export class Window {
 
     this.rootDisposer = useDisposableEffect(() => {
 
-      /*
-      this._attach(1, 0, _createComponent(components.Head, { cssText: build.globalCss, pageTitle, window: windowContext }));
+      this._attach(1, 0, _createComponent(components.Head, { cssText: build.globalCss, pageTitle }));
+
       this._attach(2, 0, _createComponent(WindowProvider, {
         get value() {
           return windowContext;
@@ -291,9 +297,6 @@ export class Window {
           return _createComponent(components.Body, { syntaxErrors: build.syntaxErrors })
         }
       }));
-      */
-
-      this._attach(2, 0, _createComponent(components.Body, { syntaxErrors: build.syntaxErrors }));
 
     }, null, this);
   }
@@ -316,9 +319,11 @@ export class Window {
     // to make sure everyone's windows are sufficiently responsive
     //await this.worker.doWork();
 
-    console.log('scheduleWork')
+    //console.log('scheduleWork')
 
     processWorkQueue(this, this.workQueue);
+
+    this._flushMutationGroup();
 
     // for now, always assume we're done with work, and set this.hasPendingWork to false
     // later, we'll need to check if there's still work to do since we'll only be allowed to do a certain amount of work per frame
@@ -342,7 +347,7 @@ export class Window {
   }
 
   flushBlockDeleteQueue() {
-
+    //return;
     if (this.deleteBlockCount > 0) {
       let buf = this._allocCommandBuffer(1 + 2 * this.deleteBlockCount + 2);
 
@@ -557,7 +562,7 @@ export class Window {
         pageStartOffset: this.global_writeOffset,
       };
 
-      process.nextTick(() => this._flushMutationGroup());
+      //process.nextTick(() => this._flushMutationGroup());
     }
 
     let mg = this.mutationGroup;
@@ -688,9 +693,24 @@ export class Window {
       //console.log('_attachBlock', nodeResult.id);
       this._streamAttachBlockCommand(blockId, anchorIndex, nodeResult.id);
     } else if (nodeResult instanceof Function) {
+
+      //let outerName = getActiveNode().name;
+      //let outerNode = getActiveNode();
+
+
+      //console.log('BEFORE USEEFFECT');
       useEffect(() => {
-        let fn = nodeResult;
-        this._attach(blockId, anchorIndex, fn());
+
+        //console.log('USEEFFECT', blockId, anchorIndex);
+        let value = nodeResult();
+        /*
+        if (typeof value == 'string') {
+
+          console.log('at', value);
+          console.log('parent-children', outerNode == getActiveNode().parent);
+        }
+        */
+        this._attach(blockId, anchorIndex, value);
       });
     } else if (Array.isArray(nodeResult)) {
       this._attachList(blockId, anchorIndex, nodeResult);
@@ -767,7 +787,7 @@ export class Window {
 
   _streamTextInitCommand(blockId, anchorIndex, value) {
 
-
+    //console.log('attaching text to block', blockId, anchorIndex, value);
     // for both cases:
 
     // 2 bytes (16b LE)
@@ -871,7 +891,7 @@ export class Window {
 
     let newBlockId = this._createBlockId();
 
-    //console.log('_createBlock3', blockTemplateId, newBlockId);
+    //console.log('_createBlock3', newBlockId);
 
     this._streamTemplateInstallCommand(blockTemplateId);
     this._streamBlockInitCommand2(newBlockId, blockTemplateId);
@@ -884,7 +904,9 @@ export class Window {
       this._attach(newBlockId, anchorIndex, anchorNodeResult);
     });
 
+
     onCleanup(() => {
+      //console.log('cleanup block', newBlockId);
       this._handleBlockCleanup(newBlockId);
     });
 

@@ -26,8 +26,7 @@ export function createRoot(fn, detachedOwner, window) {
         window: window || owner.window
     };
 
-    let disposeFn = () => untrack(() => cleanNode(root));
-    let updateFn = () => fn(disposeFn);
+    let updateFn = () => fn(() => untrack(() => cleanNode(root)));
 
     Owner = root;
     Listener = null;
@@ -42,22 +41,11 @@ export function createRoot(fn, detachedOwner, window) {
 
 // Run function, and gather possible effects to later execute when doing so.
 function runUpdates(fn, init) {
-    if (Updates) {
-        return fn();
-    }
-
+    if (Updates) return fn();
     let wait = false;
-
-    if (!init) {
-        Updates = [];
-    }
-
-    if (Effects) {
-        wait = true;
-    } else {
-        Effects = [];
-    }
-
+    if (!init) Updates = [];
+    if (Effects) wait = true;
+    else Effects = [];
     ExecCount++;
 
     try {
@@ -89,10 +77,7 @@ function completeUpdates(wait) {
 }
 
 function runTop(node) {
-
-    if (node.state === FRESH) {
-        return;
-    }
+    if (node.state === 0) return;
 
     if (node.state === PENDING) {
         return lookUpstream(node);
@@ -160,17 +145,13 @@ function cleanNode(node) {
         }
     }
 
-    if (node.children) {
-        for (let i = 0; i < node.children.length; i++) {
-            cleanNode(node.children[i]);
-        }
-        node.children = [];
+    if (node.owned) {
+        for (let i = 0; i < node.owned.length; i++) cleanNode(node.owned[i]);
+        node.owned = [];
     }
 
     if (node.cleanups) {
-        for (let i = 0; i < node.cleanups.length; i++) {
-            node.cleanups[i]();
-        };
+        for (let i = 0; i < node.cleanups.length; i++) node.cleanups[i]();
         node.cleanups = [];
     }
 
@@ -232,17 +213,19 @@ function runQueue(queue) {
 }
 
 function updateComputation(node) {
+
+    //console.log('clean node in update computation');
     cleanNode(node);
 
     const owner = Owner,
         listener = Listener,
         time = ExecCount;
-
     Listener = Owner = node;
 
-    //console.log('run computation in update computation');
-    //console.log('before run computation', Owner);
 
+    //console.log('run computation in update computation');
+
+    //console.log('before run computation', Owner);
     runComputation(
         node,
         node.value,
@@ -259,10 +242,7 @@ function runComputation(node, value, time) {
     try {
         nextValue = node.fn(value);
     } catch (err) {
-        if (node.pure) {
-            node.state = STALE;
-        }
-
+        if (node.pure) (node.state = STALE);
         handleError(err);
     }
 
@@ -274,6 +254,7 @@ function runComputation(node, value, time) {
         }
         node.updatedAt = time;
     }
+
 }
 
 function writeSignal(node, value) {
@@ -284,8 +265,7 @@ function writeSignal(node, value) {
         if (node.observers && node.observers.length) {
             runUpdates(() => {
 
-                // mark direct observers as stale, and recursively mark their observers as pending
-                for (let i = 0; i < node.observers.length; i++) {
+                for (let i = 0; i < node.observers.length; i += 1) {
                     const o = node.observers[i];
                     if (o.state == FRESH) {
                         if (o.pure) {
@@ -293,9 +273,7 @@ function writeSignal(node, value) {
                         } else {
                             Effects.push(o);
                         }
-                        if (o.observers) {
-                            markObserversAsPending(o);
-                        }
+                        if ((o).observers) markDownstream(o);
                     }
 
                     o.state = STALE;
@@ -310,15 +288,13 @@ function writeSignal(node, value) {
 function readSignal() {
 
     if (this.sources && this.state) {
-        if (this.state === STALE) {
+        if (this.state === STALE)
             updateComputation(this);
-        } else if (this.state === PENDING) {
+        else {
             const updates = Updates;
             Updates = null;
             runUpdates(() => lookUpstream(this), false);
             Updates = updates;
-        } else {
-            throw new Error("invalid state");
         }
     }
 
@@ -350,22 +326,16 @@ function lookUpstream(node, ignore) {
     }
 }
 
-function markObserversAsPending(node) {
-
+function markDownstream(node) {
+    // const runningTransition = Transition && Transition.running;
     for (let i = 0; i < node.observers.length; i += 1) {
         const o = node.observers[i];
         if (o.state == FRESH) {
             o.state = PENDING;
 
-            if (o.pure) {
-                Updates.push(o);
-            } else {
-                Effects.push(o);
-            }
-
-            if (o.observers) {
-                markObserversAsPending(o);
-            }
+            if (o.pure) Updates.push(o);
+            else Effects.push(o);
+            (o).observers && markDownstream(o);
         }
     }
 }
@@ -404,6 +374,7 @@ export function useState(initialValue) {
             newValue = newValue(signalState.value);
         }
 
+        //rerunEffects(observers);
         writeSignal(signalState, newValue);
     }
 

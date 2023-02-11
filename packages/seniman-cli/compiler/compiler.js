@@ -341,7 +341,9 @@ export function processFile(fileName, fileString) {
             // if it isn't, then there's special handling to do
             if (node.expression.type != 'Identifier') {
 
-                if (node.expression.type == 'ConditionalExpression') {
+                // if the expression is a conditional expression, we'll need to wrap it in a useMemo
+                // NOTE: disable for now
+                if (false) {//node.expression.type == 'ConditionalExpression') {
                     let testExpression = node.expression.test;
 
                     anchorExpression = {
@@ -766,8 +768,10 @@ function _buildStyleConditionValueExpression(cond) {
 
     // TODO: handle style creations that are not in the static compression map
 
+
     // a == b ? ... : ... ;
-    if (condition.type == 'ConditionalExpression' && condition.test.type == 'BinaryExpression') {
+    // NOTE: disable useMemo optimization for now 
+    if (false) {//condition.type == 'ConditionalExpression' && condition.test.type == 'BinaryExpression') {
         // _useMemo$(() => a == b)() ? ... : ...;
         condition.test = {
             type: 'CallExpression',
@@ -1207,7 +1211,8 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
                     let body;
 
                     // handle binary expression specially -- memo-wrap them
-                    if (propExpression.type == 'BinaryExpression') {
+                    // NOTE: disable for now
+                    if (false) { //propExpression.type == 'BinaryExpression') {
                         body = [
                             {
                                 type: 'VariableDeclaration',

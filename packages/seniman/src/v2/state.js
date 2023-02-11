@@ -1,116 +1,141 @@
 let ActiveNode = null;
 let ActiveWindow = null;
+let UntrackActive = false;
 
 export function getActiveWindow() {
   return ActiveWindow;
 }
 
-const FRESH = 0;
-const STALE = 1;
-const PENDING = 2;
+export function getActiveNode() {
+  return ActiveNode;
+}
 
-export function useState(initialValue, window) {
+export function setActiveWindow(window) {
+  ActiveWindow = window;
+}
+
+export function setActiveNode(node) {
+  ActiveNode = node;
+}
+
+export function runInNode(node, fn) {
+  let oldNode = ActiveNode;
+  ActiveNode = node;
+  fn();
+  ActiveNode = oldNode;
+}
+
+export function useState(initialValue) {
 
   let state = {
     value: initialValue,
-    window: ActiveWindow,
-
-    //observers: [],
-    //observerSlots: []
-
     observerSet: new Set()
   };
 
-  //let activeNode = ActiveNode;
-
-  //let activeWorker = ActiveWorker;
-
   function getState() {
-
     registerDependency(state);
 
     return state.value;
   }
 
+  let _activeWindow = ActiveWindow;
+
   function setState(newValue) {
-
-    /*
-    activeWorker.submitWork(() => {
-      if (typeof value === 'function') {
-        state.value = newValue(state.value);
-      } else {
-        state.value = newValue;
-      }
-    });
-    */
-
     if (newValue instanceof Function) {
       newValue = newValue(state.value);
     }
 
-    // writeSignal(signalState, newValue);
-
-    writeState(state, newValue);
+    writeState(_activeWindow, state, newValue);
   }
 
   return [getState, setState];
 }
 
-function writeState(state, newValue) {
+const NODE_FRESH = 0;
+const NODE_QUEUED = 1;
+const NODE_DESTROYED = 2;
+
+function _refreshNode(window, node) {
+
+  if (node.updateState === NODE_QUEUED) {
+    console.log('node already queued');
+    return;
+  }
+
+  if (node.updateState === NODE_DESTROYED) {
+    console.log('node already destroyed');
+    //throw new Error('node already destroyed');
+    return;
+  }
+
+  if (node.updateState === NODE_FRESH) {
+    node.updateState = NODE_QUEUED;
+    window.submitWork(node);
+
+    _removeNodeFromSources(node);
+    // destroy the node's entire subtree
+    _removeNodeSubtree(node);
+  }
+}
+
+function _removeNodeFromSources(node) {
+
+  while (node.sourceSet.size) {
+    let sourceList = Array.from(node.sourceSet);
+
+    sourceList.forEach(source => {
+      node.sourceSet.delete(source);
+      source.observerSet.delete(node);
+    });
+  }
+}
+
+function _removeNodeSubtree(node) {
+
+  if (node.children) {
+    node.children.forEach(child => {
+
+      _removeNodeFromSources(child);
+
+      if (child.cleanups) {
+        child.cleanups.forEach(cleanup => {
+          cleanup();
+        });
+
+        child.cleanups = [];
+      }
+
+      // NOTE: maybe we don't need to do this
+      child.updateState = NODE_DESTROYED;
+
+      _removeNodeSubtree(child);
+    });
+  }
+}
+
+function writeState(window, state, newValue) {
 
   let current = state.value;
 
   if (current !== newValue) {
     state.value = newValue;
 
-    let window = state.window;
-    console.log('updating state observers', state.observerSet.size)
-
-
     state.observerSet.forEach(observer => {
-      //console.log('observer', observer.id);
-
-      // if the observer is already pending, we don't need to do anything
-      if (observer.updateState === PENDING) {
-
-        console.log('already pending observer');
-        return;
-      }
-
-      // if the observer is fresh, we need to mark it as stale
-      if (observer.updateState === FRESH) {
-        observer.updateState = STALE;
-      }
-
-      // if the observer is stale, we need to mark it as pending
-      if (observer.updateState === STALE) {
-        observer.updateState = PENDING;
-        window.submitWork(observer);
-      }
+      _refreshNode(window, observer);
     });
-
-    /*
-  // for every observer, we need to submit work to the state's window
-  for (let i = 0; i < state.observers.length; i++) {
-    let observer = state.observers[i];
-
-
-
-  }
-  */
-
-
-    console.log('======================================');
   }
 }
 
 function registerDependency(state) {
 
+  if (UntrackActive) {
+    return;
+  }
+
   //console.log('registering dep', ActiveNode.id);
   let newObserver = ActiveNode;
 
   state.observerSet.add(newObserver);
-
   newObserver.sourceSet.add(state);
 
   /*
@@ -130,35 +155,22 @@ function registerDependency(state) {
   */
 }
 
-// createId function that creates an id of integer between 100 and 1000
-function createId() {
-  return Math.floor(Math.random() * 1000) + 100;
-}
-
-function createEffect(fn, value, window) {
+function createEffect(fn, value) {
 
   const c = {
-
-    id: createId(),
     type: EFFECT,
     value: value,
     fn,
-    window: window,
 
-    updateState: FRESH,
+    updateState: NODE_FRESH,
     updatedAt: null,
 
     parent: ActiveNode,
     children: [],
-    //observers: [],
-
-    //sources: [],
-    //sourceObserverSlots: [],
 
     sourceSet: new Set(),
 
-    cleanups: [],
-
+    cleanups: null,
     context: null
   };
 
@@ -171,17 +183,27 @@ function createEffect(fn, value, window) {
 }
 
 export function useDisposableEffect(fn, value, window) {
-  let effect = createEffect(fn, value, window);
+  let effect = createEffect(fn, value);
 
-  (window || ActiveNode.window).submitWork(effect);
+  (window || ActiveWindow).submitWork(effect);
 
-  return () => untrack(() => cleanNode(effect));
+  return () => untrack(() => {
+    _removeNodeFromSources(effect);
+    // destroy the node's entire subtree
+    _removeNodeSubtree(effect);
+  });
 }
 
 
 export function untrack(fn) {
-  return fn();
+
+  UntrackActive = true;
+  let val = fn();
+  UntrackActive = false;
+
+  return val;
 }
+
 /*
 
 let [a, setA] = useState(0);
@@ -201,9 +223,9 @@ let memoB = useMemo(() => {
 */
 
 export function useEffect(fn, value) {
-  let effect = createEffect(fn, value, ActiveNode.window);
+  let effect = createEffect(fn, value);
 
-  ActiveNode.window.submitWork(effect);
+  ActiveWindow.submitWork(effect);
 }
 
 const MEMO = 5;
@@ -212,17 +234,15 @@ const EFFECT = 6;
 export function useMemo(fn) {
 
   let memo = {
-    id: createId(),
     type: MEMO,
     value: null,
     fn,
-    window: ActiveNode.window,
+    //window: ActiveNode.window,
 
     parent: ActiveNode,
 
-    updateState: FRESH,
+    updateState: NODE_FRESH,
     updatedAt: null,
-
 
     sourceSet: new Set(),
     observerSet: new Set()
@@ -237,7 +257,7 @@ export function useMemo(fn) {
     */
   };
 
-  ActiveNode.window.submitWork(memo);
+  ActiveWindow.submitWork(memo);
 
   function readMemo() {
     registerDependency(memo);
@@ -258,39 +278,43 @@ export function onCleanup(fn) {
   }
 }
 
-export function setActiveWindow(window) {
-  ActiveWindow = window;
-}
+export function useCallback(fn) {
 
-export function setActiveNode(node) {
-  ActiveNode = node;
+  let _activeNode = ActiveNode;
+  return () => {
+    ActiveNode = _activeNode;
+    return fn(...arguments);
+  }
 }
 
 export function executeNode(window, node) {
   try {
-    //console.log('executing node', node.id);
-
     setActiveNode(node);
+
+    if (node.updateState == NODE_DESTROYED) {
+      console.log('Destroyed node in executeNode');
+      return;
+    }
 
     if (node.type === MEMO) {
 
-      cleanNode(node);
-
       let prevValue = node.value;
-
       node.value = node.fn(prevValue);
 
       if (node.value !== prevValue) {
         node.observerSet.forEach(observer => {
-          window.submitWork(observer);
+          _refreshNode(window, observer);
         });
       }
 
+      node.updateState = NODE_FRESH;
+
     } else {
-      cleanNode(node);
+      //cleanNode(node);
 
       let nextValue = node.fn(node.value);
       node.value = nextValue;
+      node.updateState = NODE_FRESH;
     }
   } catch (e) {
     console.error(e);
@@ -298,6 +322,47 @@ export function executeNode(window, node) {
     ActiveNode = null;
   }
 }
+
+
+
+/*
+console.log('node.sources', node.sources.map(s => s.id), node.sourceObserverSlots);
+
+// each loop, take out the last source and its slot
+const sourceToDelete = node.sources.pop(),
+  deletedSourceIndex = node.sourceObserverSlots.pop(),
+  // prep the observers list
+  sourceToDeleteObservers = sourceToDelete.observers;
+
+console.log('deleting', sourceToDelete.id)
+console.log('sourceToDeleteObservers BEFORE', sourceToDeleteObservers.map(o => o.id));
+
+// if there are observers, we need to remove the node from the observers list
+// NOTE: but why do we need to check if there are observers? 
+// unless there are bugs in the code, there should always be at least one observer (the node itself)
+if (sourceToDeleteObservers && sourceToDeleteObservers.length) {
+
+  // pop the last observer and its slot
+  const poppedObserver = sourceToDeleteObservers.pop(),
+    poppedObserverSlot = sourceToDelete.observerSlots.pop();
+
+  // if the node we're removing is not the last one in the list,
+  if (deletedSourceIndex < sourceToDeleteObservers.length) {
+
+    // we need to swap the observer we just removed with the actual entry we want to remove
+
+    sourceToDelete.observerSlots[deletedSourceIndex] = poppedObserverSlot;
+    sourceToDeleteObservers[deletedSourceIndex] = poppedObserver;
+
+    console.log('deletedSourceIndex', deletedSourceIndex);
+    // need to update the slot of the observer we just swapped
+    poppedObserver.sourceObserverSlots[poppedObserverSlot] = deletedSourceIndex;
+  }
+}
+console.log('sourceToDeleteObservers AFTER', sourceToDeleteObservers.map(o => o.id));
+*/
+
+/*
 function cleanNode(node) {
 
   //console.log('cleaning up node ', node.id)
@@ -316,43 +381,6 @@ function cleanNode(node) {
         source.observerSet.delete(node);
       });
 
-
-      /*
-      console.log('node.sources', node.sources.map(s => s.id), node.sourceObserverSlots);
-
-      // each loop, take out the last source and its slot
-      const sourceToDelete = node.sources.pop(),
-        deletedSourceIndex = node.sourceObserverSlots.pop(),
-        // prep the observers list
-        sourceToDeleteObservers = sourceToDelete.observers;
-
-      console.log('deleting', sourceToDelete.id)
-      console.log('sourceToDeleteObservers BEFORE', sourceToDeleteObservers.map(o => o.id));
-
-      // if there are observers, we need to remove the node from the observers list
-      // NOTE: but why do we need to check if there are observers? 
-      // unless there are bugs in the code, there should always be at least one observer (the node itself)
-      if (sourceToDeleteObservers && sourceToDeleteObservers.length) {
-
-        // pop the last observer and its slot
-        const poppedObserver = sourceToDeleteObservers.pop(),
-          poppedObserverSlot = sourceToDelete.observerSlots.pop();
-
-        // if the node we're removing is not the last one in the list,
-        if (deletedSourceIndex < sourceToDeleteObservers.length) {
-
-          // we need to swap the observer we just removed with the actual entry we want to remove
-
-          sourceToDelete.observerSlots[deletedSourceIndex] = poppedObserverSlot;
-          sourceToDeleteObservers[deletedSourceIndex] = poppedObserver;
-
-          console.log('deletedSourceIndex', deletedSourceIndex);
-          // need to update the slot of the observer we just swapped
-          poppedObserver.sourceObserverSlots[poppedObserverSlot] = deletedSourceIndex;
-        }
-      }
-      console.log('sourceToDeleteObservers AFTER', sourceToDeleteObservers.map(o => o.id));
-      */
     }
   }
 
@@ -367,8 +395,68 @@ function cleanNode(node) {
     for (let i = 0; i < node.cleanups.length; i++) {
       node.cleanups[i]();
     }
+
     node.cleanups = [];
   }
 
   node.updateState = FRESH;
 }
+
+*/
+
+function lookup(owner, key) {
+  return owner
+    ? owner.context && owner.context[key] !== undefined
+      ? owner.context[key]
+      : lookup(owner.parent, key)
+    : undefined;
+}
+
+function createProvider(id, options) {
+
+  return function Provider(props) {
+
+    return () => {
+      untrack(() => {
+        ActiveNode.context = { [id]: props.value };
+      });
+
+      return props.children;
+    };
+  };
+}
+
+export function createContext(
+  defaultValue,
+  options
+) {
+  const id = Symbol("context");
+  return { id, Provider: createProvider(id, options), defaultValue };
+}
+
+export function useContext(context) {
+  let ctx;
+  return (ctx = lookup(ActiveNode, context.id)) !== undefined ? ctx : context.defaultValue;
+}
+
+export function children(fn) {
+  const children = useMemo(fn);
+  const memo = useMemo(() => resolveChildren(children()));
+
+  return memo;
+}
+
+function resolveChildren(children) {
+  if (typeof children === "function" && !children.length) return resolveChildren(children());
+  if (Array.isArray(children)) {
+    const results = [];
+    for (let i = 0; i < children.length; i++) {
+      const result = resolveChildren(children[i]);
+      Array.isArray(result) ? results.push.apply(results, result) : results.push(result);
+    }
+    return results;
+  }
+  return children;
+}
+
+console.log('STATEV2');
