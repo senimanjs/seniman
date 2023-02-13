@@ -356,7 +356,7 @@ export function executeNode(window, node) {
     }
   } catch (e) {
     console.error(e);
-    //handleError(castError(e));
+    handleError(e);
   } finally {
     ActiveNode = null;
   }
@@ -365,13 +365,13 @@ export function executeNode(window, node) {
 
 export function onError(fn) {
   ERROR || (ERROR = Symbol("error"));
-  if (Owner === null) {
+  if (ActiveNode === null) {
     return;
   }
 
-  else if (Owner.context === null) Owner.context = { [ERROR]: [fn] };
-  else if (!Owner.context[ERROR]) Owner.context[ERROR] = [fn];
-  else Owner.context[ERROR].push(fn);
+  else if (ActiveNode.context === null) ActiveNode.context = { [ERROR]: [fn] };
+  else if (!ActiveNode.context[ERROR]) ActiveNode.context[ERROR] = [fn];
+  else ActiveNode.context[ERROR].push(fn);
 }
 
 function castError(err) {
@@ -382,7 +382,7 @@ function castError(err) {
 function handleError(err) {
   err = castError(err);
 
-  const fns = ERROR && lookup(Owner, ERROR);
+  const fns = ERROR && lookup(ActiveNode, ERROR);
   if (!fns) { throw err }
   for (const f of fns) f(err);
 }
@@ -466,11 +466,11 @@ function cleanNode(node) {
 
 */
 
-function lookup(owner, key) {
-  return owner
-    ? owner.context && owner.context[key] !== undefined
-      ? owner.context[key]
-      : lookup(owner.parent, key)
+function lookup(node, key) {
+  return node
+    ? node.context && node.context[key] !== undefined
+      ? node.context[key]
+      : lookup(node.parent, key)
     : undefined;
 }
 
