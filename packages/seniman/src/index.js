@@ -23,8 +23,6 @@ export {
     _createBlock,
     _createComponent,
 };
-
-
 /*
 import { _createBlock, _createComponent, useWindow } from './v2/window.js';
 import { useState, useMemo, onCleanup, useEffect, untrack, createContext, useContext, useCallback, runInNode, getActiveNode } from './v2/state.js';

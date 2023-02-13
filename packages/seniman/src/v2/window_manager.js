@@ -226,6 +226,8 @@ class WindowManager {
   initWindow(ws, pageParams) {
     let { windowId } = pageParams;
 
+    console.log('init window', windowId, getMemoryUsage());
+
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
     let window = new Window(ws, pageParams, { Head: this.Head, Body: this.Body });
 

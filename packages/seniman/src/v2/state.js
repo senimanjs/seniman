@@ -2,6 +2,8 @@ let ActiveNode = null;
 let ActiveWindow = null;
 let UntrackActive = false;
 
+let ERROR = null;
+
 export function getActiveWindow() {
   return ActiveWindow;
 }
@@ -14,10 +16,6 @@ export function setActiveWindow(window) {
   ActiveWindow = window;
 }
 
-export function setActiveNode(node) {
-  ActiveNode = node;
-}
-
 export function runInNode(node, fn) {
   let oldNode = ActiveNode;
   ActiveNode = node;
@@ -25,9 +23,19 @@ export function runInNode(node, fn) {
   ActiveNode = oldNode;
 }
 
+// createId() returns a unique id for a node
+// this is used to identify nodes in the dependency graph
+// and to identify nodes in the work queue
+let _id = 0;
+
+function createId() {
+  return _id++;
+}
+
 export function useState(initialValue) {
 
   let state = {
+    id: createId(),
     value: initialValue,
     observerSet: new Set()
   };
@@ -51,11 +59,63 @@ export function useState(initialValue) {
   return [getState, setState];
 }
 
-const NODE_FRESH = 0;
-const NODE_QUEUED = 1;
-const NODE_DESTROYED = 2;
+/*
+function B(props) {
+  let memoB = useMemo(() => {
+    console.log('calc memoB @ B', props.count);
+    return props.count * 1000;
+  });
 
-function _refreshNode(window, node) {
+  return <div>{memoB()}</div>;
+}
+
+function CompA() {
+
+  let [stateA, setStateA] = useState(100);
+
+  useEffect(() => {
+    console.log('useEffect @ CompA', stateA());
+  });
+
+  let memoA = useMemo(() => {
+    console.log('calc memoA @ CompA', stateA());
+    return stateA() * 100;
+  });
+
+  return <div>
+   {stateA() < 300 ? <B count={stateA()} /> : null}
+  </div>;
+}
+
+*/
+
+function writeState(window, state, newValue) {
+
+  let current = state.value;
+
+  if (current !== newValue) {
+    state.value = newValue;
+
+    state.observerSet.forEach(observer => {
+      _queueNodeForUpdate(window, observer);
+    });
+  }
+}
+
+const NODE_FRESH = 0;
+//const NODE_PENDING = 1;
+const NODE_QUEUED = 2;
+const NODE_DESTROYED = 3;
+
+function _queueNodeForUpdate(window, node) {
+
+  if (node.updateState === NODE_FRESH) {
+    node.updateState = NODE_QUEUED;
+    window.submitWork(node);
+    return;
+  }
+
+  /*
 
   if (node.updateState === NODE_QUEUED) {
     console.log('node already queued');
@@ -67,15 +127,14 @@ function _refreshNode(window, node) {
     //throw new Error('node already destroyed');
     return;
   }
+  */
+}
 
-  if (node.updateState === NODE_FRESH) {
-    node.updateState = NODE_QUEUED;
-    window.submitWork(node);
+function cleanNode(node) {
+  _removeNodeFromSources(node);
+  _removeNodeSubtree(node);
 
-    _removeNodeFromSources(node);
-    // destroy the node's entire subtree
-    _removeNodeSubtree(node);
-  }
+  node.updateState = NODE_FRESH;
 }
 
 function _removeNodeFromSources(node) {
@@ -88,6 +147,14 @@ function _removeNodeFromSources(node) {
       source.observerSet.delete(node);
     });
   }
+
+  if (node.cleanups && node.cleanups.length) {
+    node.cleanups.forEach(cleanup => {
+      cleanup();
+    });
+
+    node.cleanups = [];
+  }
 }
 
 function _removeNodeSubtree(node) {
@@ -97,34 +164,15 @@ function _removeNodeSubtree(node) {
 
       _removeNodeFromSources(child);
 
-      if (child.cleanups) {
-        child.cleanups.forEach(cleanup => {
-          cleanup();
-        });
-
-        child.cleanups = [];
-      }
-
-      // NOTE: maybe we don't need to do this
       child.updateState = NODE_DESTROYED;
 
       _removeNodeSubtree(child);
     });
+
+    node.children = [];
   }
 }
 
-function writeState(window, state, newValue) {
-
-  let current = state.value;
-
-  if (current !== newValue) {
-    state.value = newValue;
-
-    state.observerSet.forEach(observer => {
-      _refreshNode(window, observer);
-    });
-  }
-}
 
 function registerDependency(state) {
 
@@ -132,7 +180,6 @@ function registerDependency(state) {
     return;
   }
 
-  //console.log('registering dep', ActiveNode.id);
   let newObserver = ActiveNode;
 
   state.observerSet.add(newObserver);
@@ -158,9 +205,11 @@ function registerDependency(state) {
 function createEffect(fn, value) {
 
   const c = {
+    id: createId(),
     type: EFFECT,
     value: value,
     fn,
+    depth: !ActiveNode ? 0 : ActiveNode.depth + 1,
 
     updateState: NODE_FRESH,
     updatedAt: null,
@@ -174,7 +223,6 @@ function createEffect(fn, value) {
     context: null
   };
 
-
   if (ActiveNode) {
     ActiveNode.children.push(c);
   }
@@ -187,13 +235,8 @@ export function useDisposableEffect(fn, value, window) {
 
   (window || ActiveWindow).submitWork(effect);
 
-  return () => untrack(() => {
-    _removeNodeFromSources(effect);
-    // destroy the node's entire subtree
-    _removeNodeSubtree(effect);
-  });
+  return () => untrack(() => cleanNode(effect));
 }
-
 
 export function untrack(fn) {
 
@@ -234,9 +277,11 @@ const EFFECT = 6;
 export function useMemo(fn) {
 
   let memo = {
+    id: createId(),
     type: MEMO,
     value: null,
     fn,
+    depth: !ActiveNode ? 0 : ActiveNode.depth + 1,
     //window: ActiveNode.window,
 
     parent: ActiveNode,
@@ -256,6 +301,10 @@ export function useMemo(fn) {
     observerSlots: []
     */
   };
+
+  if (ActiveNode) {
+    ActiveNode.children.push(memo);
+  }
 
   ActiveWindow.submitWork(memo);
 
@@ -289,41 +338,54 @@ export function useCallback(fn) {
 
 export function executeNode(window, node) {
   try {
-    setActiveNode(node);
+    ActiveNode = node;
 
     if (node.updateState == NODE_DESTROYED) {
-      console.log('Destroyed node in executeNode');
+      ActiveNode = null;
       return;
     }
 
-    if (node.type === MEMO) {
+    cleanNode(node);
+    let prevValue = node.value;
+    node.value = node.fn(prevValue);
 
-      let prevValue = node.value;
-      node.value = node.fn(prevValue);
-
-      if (node.value !== prevValue) {
-        node.observerSet.forEach(observer => {
-          _refreshNode(window, observer);
-        });
-      }
-
-      node.updateState = NODE_FRESH;
-
-    } else {
-      //cleanNode(node);
-
-      let nextValue = node.fn(node.value);
-      node.value = nextValue;
-      node.updateState = NODE_FRESH;
+    if (node.value !== prevValue && node.type == MEMO) {
+      node.observerSet.forEach(observer => {
+        _queueNodeForUpdate(window, observer);
+      });
     }
   } catch (e) {
     console.error(e);
+    //handleError(castError(e));
   } finally {
     ActiveNode = null;
   }
 }
 
 
+export function onError(fn) {
+  ERROR || (ERROR = Symbol("error"));
+  if (Owner === null) {
+    return;
+  }
+
+  else if (Owner.context === null) Owner.context = { [ERROR]: [fn] };
+  else if (!Owner.context[ERROR]) Owner.context[ERROR] = [fn];
+  else Owner.context[ERROR].push(fn);
+}
+
+function castError(err) {
+  if (err instanceof Error || typeof err === "string") return err;
+  return new Error("Unknown error");
+}
+
+function handleError(err) {
+  err = castError(err);
+
+  const fns = ERROR && lookup(Owner, ERROR);
+  if (!fns) { throw err }
+  for (const f of fns) f(err);
+}
 
 /*
 console.log('node.sources', node.sources.map(s => s.id), node.sourceObserverSlots);

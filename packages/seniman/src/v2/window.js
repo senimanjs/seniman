@@ -1,6 +1,6 @@
 
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, executeNode } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, executeNode, getActiveNode } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
 import { build } from '../build.js';
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
@@ -81,6 +81,36 @@ function setCookieValue(cookieString, key, value) {
   return newCookieString;
 }
 
+class WorkQueue {
+
+  constructor() {
+    this.queue = [];
+  }
+
+  add(item) {
+    // looping from the end of the list, find the first item that has the similar or less depth,
+    // if so, insert after it. otherwise, insert at the beginning
+    let i = this.queue.length - 1;
+    while (i >= 0) {
+      if (this.queue[i].depth <= item.depth) {
+        this.queue.splice(i + 1, 0, item);
+        return;
+      }
+
+      i--;
+    }
+
+    this.queue.unshift(item);
+  }
+
+  isEmpty() {
+    return this.queue.length === 0;
+  }
+
+  poll() {
+    return this.queue.shift();
+  }
+}
 
 function processWorkQueue(window, workQueue) {
   // NOTE: set the active window / worker while executing a few nodes, then later deassigning the active window?
@@ -89,15 +119,22 @@ function processWorkQueue(window, workQueue) {
 
   setActiveWindow(window);
 
-  while (workQueue.length) {
-    let node = workQueue.shift();
+  // time perf of loop
+  let start = performance.now();
 
+  let i = 0;
+
+  while (!workQueue.isEmpty()) {
+    let node = workQueue.poll();
     executeNode(window, node);
 
-    if (Math.random() > 0.5) {
-      //await sleep(30);
-    }
+    i++;
   }
+
+  let end = performance.now();
+
+  // print perf of loop in milliseconds
+  console.log(`[processWorkQueue] ${i} nodes: ${(end - start).toFixed(2)}ms`);
 
   setActiveWindow(null);
 }
@@ -178,7 +215,6 @@ export class Window {
     this.clientTemplateInstallationSet = new Set();
     this.clientFunctionInstallationSet = new Set();
 
-
     this.lastEventHandlerId = 0;
     this.eventHandlers = new Map();
 
@@ -188,7 +224,8 @@ export class Window {
 
     this.inputMessageQueue = [];
     this.hasPendingInput = false;
-    this.workQueue = [];
+    this.workQueue = new WorkQueue();
+
     this.hasPendingWork = false;
 
     this.lastPongTime = Date.now();
@@ -303,7 +340,7 @@ export class Window {
 
 
   submitWork(node) {
-    this.workQueue.push(node);
+    this.workQueue.add(node);
 
     if (!this.hasPendingWork) {
       windowManager.requestExecution(this);
@@ -693,23 +730,8 @@ export class Window {
       //console.log('_attachBlock', nodeResult.id);
       this._streamAttachBlockCommand(blockId, anchorIndex, nodeResult.id);
     } else if (nodeResult instanceof Function) {
-
-      //let outerName = getActiveNode().name;
-      //let outerNode = getActiveNode();
-
-
-      //console.log('BEFORE USEEFFECT');
       useEffect(() => {
-
-        //console.log('USEEFFECT', blockId, anchorIndex);
         let value = nodeResult();
-        /*
-        if (typeof value == 'string') {
-
-          console.log('at', value);
-          console.log('parent-children', outerNode == getActiveNode().parent);
-        }
-        */
         this._attach(blockId, anchorIndex, value);
       });
     } else if (Array.isArray(nodeResult)) {
