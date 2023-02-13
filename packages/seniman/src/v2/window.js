@@ -1,6 +1,6 @@
 
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, executeNode, getActiveNode } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
 import { build } from '../build.js';
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
@@ -112,32 +112,7 @@ class WorkQueue {
   }
 }
 
-function processWorkQueue(window, workQueue) {
-  // NOTE: set the active window / worker while executing a few nodes, then later deassigning the active window?
-  // that way we don't need to re-set the window everytime, and there's a direct ActiveWindow reference to call from the various hooks
-  // for better performance 
 
-  setActiveWindow(window);
-
-  // time perf of loop
-  let start = performance.now();
-
-  let i = 0;
-
-  while (!workQueue.isEmpty()) {
-    let node = workQueue.poll();
-    executeNode(window, node);
-
-    i++;
-  }
-
-  let end = performance.now();
-
-  // print perf of loop in milliseconds
-  console.log(`[processWorkQueue] ${i} nodes: ${(end - start).toFixed(2)}ms`);
-
-  setActiveWindow(null);
-}
 
 function processInput(window, inputQueue) {
 

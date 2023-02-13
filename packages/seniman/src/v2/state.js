@@ -37,7 +37,9 @@ export function useState(initialValue) {
   let state = {
     id: createId(),
     value: initialValue,
-    observerSet: new Set()
+
+    observers: [],
+    observerSlots: []
   };
 
   function getState() {
@@ -96,9 +98,12 @@ function writeState(window, state, newValue) {
   if (current !== newValue) {
     state.value = newValue;
 
-    state.observerSet.forEach(observer => {
-      _queueNodeForUpdate(window, observer);
-    });
+    let observers = state.observers;
+    let length = observers.length;
+
+    for (let i = 0; i < length; i++) {
+      _queueNodeForUpdate(window, observers[i]);
+    }
   }
 }
 
@@ -139,19 +144,30 @@ function cleanNode(node) {
 
 function _removeNodeFromSources(node) {
 
-  while (node.sourceSet.size) {
-    let sourceList = Array.from(node.sourceSet);
+  if (node.sources) {
+    while (node.sources.length) {
+      const source = node.sources.pop(),
+        index = node.sourceSlots.pop(),
+        obs = source.observers;
 
-    sourceList.forEach(source => {
-      node.sourceSet.delete(source);
-      source.observerSet.delete(node);
-    });
+      // TODO: we don't need to check for observers list existence?
+      if (obs && obs.length) {
+        const n = obs.pop(),
+          s = source.observerSlots.pop();
+        if (index < obs.length) {
+          n.sourceSlots[s] = index;
+          obs[index] = n;
+          source.observerSlots[index] = s;
+        }
+      }
+    }
   }
 
   if (node.cleanups && node.cleanups.length) {
-    node.cleanups.forEach(cleanup => {
-      cleanup();
-    });
+    // loop over the clean ups 
+    for (let i = 0; i < node.cleanups.length; i++) {
+      node.cleanups[i]();
+    }
 
     node.cleanups = [];
   }
@@ -160,14 +176,16 @@ function _removeNodeFromSources(node) {
 function _removeNodeSubtree(node) {
 
   if (node.children) {
-    node.children.forEach(child => {
+    let childrenCount = node.children.length;
 
+    for (let i = 0; i < childrenCount; i++) {
+      let child = node.children[i];
       _removeNodeFromSources(child);
 
       child.updateState = NODE_DESTROYED;
 
       _removeNodeSubtree(child);
-    });
+    }
 
     node.children = [];
   }
@@ -180,10 +198,13 @@ function registerDependency(state) {
     return;
   }
 
-  let newObserver = ActiveNode;
+  let sSlot = state.observers ? state.observers.length : 0;
 
-  state.observerSet.add(newObserver);
-  newObserver.sourceSet.add(state);
+  ActiveNode.sources.push(state);
+  ActiveNode.sourceSlots.push(sSlot);
+
+  state.observers.push(ActiveNode);
+  state.observerSlots.push(ActiveNode.sources.length - 1);
 
   /*
 
@@ -204,7 +225,7 @@ function registerDependency(state) {
 
 function createEffect(fn, value) {
 
-  const c = {
+  const effect = {
     id: createId(),
     type: EFFECT,
     value: value,
@@ -217,17 +238,18 @@ function createEffect(fn, value) {
     parent: ActiveNode,
     children: [],
 
-    sourceSet: new Set(),
+    sources: [],
+    sourceSlots: [],
 
     cleanups: null,
     context: null
   };
 
   if (ActiveNode) {
-    ActiveNode.children.push(c);
+    ActiveNode.children.push(effect);
   }
 
-  return c;
+  return effect;
 }
 
 export function useDisposableEffect(fn, value, window) {
@@ -289,17 +311,11 @@ export function useMemo(fn) {
     updateState: NODE_FRESH,
     updatedAt: null,
 
-    sourceSet: new Set(),
-    observerSet: new Set()
-
-    /*
-
     sources: [],
-    sourceObserverSlots: [],
+    sourceSlots: [],
 
     observers: [],
     observerSlots: []
-    */
   };
 
   if (ActiveNode) {
@@ -336,7 +352,30 @@ export function useCallback(fn) {
   }
 }
 
-export function executeNode(window, node) {
+export function processWorkQueue(window, workQueue) {
+  setActiveWindow(window);
+
+  // time perf of loop
+  let start = performance.now();
+
+  let i = 0;
+
+  while (!workQueue.isEmpty()) {
+    let node = workQueue.poll();
+    executeNode(window, node);
+
+    i++;
+  }
+
+  let end = performance.now();
+
+  // print perf of loop in milliseconds
+  //console.log(`[processWorkQueue] ${i} nodes: ${(end - start).toFixed(2)}ms`);
+
+  setActiveWindow(null);
+}
+
+function executeNode(window, node) {
   try {
     ActiveNode = node;
 
@@ -350,9 +389,12 @@ export function executeNode(window, node) {
     node.value = node.fn(prevValue);
 
     if (node.value !== prevValue && node.type == MEMO) {
-      node.observerSet.forEach(observer => {
-        _queueNodeForUpdate(window, observer);
-      });
+      let obs = node.observers;
+      let length = obs.length;
+
+      for (let i = 0; i < length; i++) {
+        _queueNodeForUpdate(window, obs[i]);
+      }
     }
   } catch (e) {
     console.error(e);
