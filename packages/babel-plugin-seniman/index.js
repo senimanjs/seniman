@@ -468,8 +468,7 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
 }
 
 let contextBlock = null;
-let activeBlockIndex = 0;
-
+let componentStack = [];
 let pendingBlockStack = [];
 
 let moduleLevelLastBlockId = 0;
@@ -540,6 +539,13 @@ function enterJSX(path) {
 
     // if Component
 
+    componentStack.push({
+      name: node.openingElement.name,
+      props: {}
+    });
+
+    pendingBlockStack.push(contextBlock);
+    contextBlock = null;
   }
 
   /*
@@ -554,44 +560,58 @@ function enterJSX(path) {
 }
 
 function exitJSX(path) {
-  console.log('JSXELement exit');
+  let isHTMLElement = path.node.openingElement.name.type == 'JSXIdentifier' &&
+    isComponentTag(path.node.openingElement.name.name) == false;
 
-  contextBlock.__elementStack.pop();
+  if (isHTMLElement) {
+    contextBlock.__elementStack.pop();
 
-  if (contextBlock.__elementStack.length == 0) {
-    //activeBlock = pendingBlockStack.pop();
-    //moduleLevelLastBlockId++;
+    if (contextBlock.__elementStack.length == 0) {
 
-    console.log('block exit', contextBlock);
+      moduleLevelLastBlockId++;
 
-    moduleLevelLastBlockId++;
+      let blockId = moduleLevelLastBlockId;
 
-    let blockId = moduleLevelLastBlockId;
+      insertBlockStatement(path, contextBlock, blockId);
 
-    insertBlockStatement(path, contextBlock, blockId);
+      path.replaceWith(
+        t.callExpression(
+          t.identifier('_createBlock'),
+          [
+            t.identifier(`_b$${blockId}`),
+            // list of expressions contained in contextBlock.anchors
+            t.arrayExpression(contextBlock.anchors),
+            // list of expressions contained in contextBlock.eventHandlers
+            t.arrayExpression(contextBlock.eventHandlers),
+            // list of expressions contained in contextBlock.styleEffects
+            t.arrayExpression(contextBlock.styleEffects)
+          ]
+        )
+      );
 
+      contextBlock = null;
+    }
 
-    //replace JSX element block with a _createBlock call
+  } else { // if is closing to a Component
+
+    let component = componentStack.pop();
+
+    //console.log('component props', component.props, path.node.children);
+
+    contextBlock = pendingBlockStack.pop();
+
+    // wrap the expression in a single-expression arrow function
     // example:
-    // _createBlock($block1)
+    // () => test()
+    contextBlock.anchors.push(createCreateComponentExpression(component.name, component.props, path.node.children));
 
-    path.replaceWith(
-      t.callExpression(
-        t.identifier('_createBlock'),
-        [
-          t.identifier(`_b$${blockId}`),
-          // list of expressions contained in contextBlock.anchors
-          t.arrayExpression(contextBlock.anchors),
-          // list of expressions contained in contextBlock.eventHandlers
-          t.arrayExpression(contextBlock.eventHandlers),
-          // list of expressions contained in contextBlock.styleEffects
-          t.arrayExpression(contextBlock.styleEffects)
-        ]
-      )
-    );
+    // push the component as anchor
+    let parentElement = getActiveParentElement();
+    let anchorIndex = contextBlock.anchors.length;
 
-    contextBlock = null;
+    parentElement.children.push({ type: '$anchor', value: anchorIndex });
   }
+
 }
 
 function insertBlockStatement(path, block, blockId) {
@@ -605,10 +625,16 @@ function insertBlockStatement(path, block, blockId) {
 
   const blockDeclaration = createDeclareBlockExpression(blockId, block);
 
-  // Find the last import statement
-  const lastImportIndex = programPath.get('body').findIndex((node) => {
-    return node.isImportDeclaration();
-  });
+  let lastImportIndex = 0;
+
+  // Find the last import statement in the program body
+  for (let i = 0; i < programPath.node.body.length; i++) {
+    if (programPath.node.body[i].type === 'ImportDeclaration') {
+      lastImportIndex = i;
+    } else {
+      break;
+    }
+  }
 
   if (lastImportIndex >= 0) {
     // Insert the new node after the last import statement
@@ -633,18 +659,20 @@ function getProgramPath(path) {
 
 function enterJSXEpression(path) {
 
-  if (path.parent.type == 'JSXElement') {
+  if (path.parentPath.isJSXElement()) {
     pendingBlockStack.push(contextBlock);
-
-    console.log('enterJSXExpression', pendingBlockStack.length)
     contextBlock = null;
   }
 }
 
 function exitJSXExpression(path) {
-  console.log('exitJSXExpression');
-  if (path.parent.type == 'JSXElement') {
+  if (path.parentPath.isJSXAttribute() && isComponentTag(path.parentPath.parentPath.node.name.name)) {
+    componentStack[componentStack.length - 1].props[path.parentPath.node.name.name] = path.node.expression;
+  } else if (path.parentPath.isJSXElement()) {
 
+    // check if the JSXExpressionContainer is a child of a JSXElement
+
+    // if it is, then we need to wrap the expression in a single-expression arrow function
     // re-activate the wrapping block from the stack
     contextBlock = pendingBlockStack.pop();
 
@@ -668,8 +696,13 @@ function getActiveParentElement() {
 }
 
 function enterJSXText(path) {
-  let parentElement = getActiveParentElement();
-  parentElement.children.push({ type: '$text', value: path.node.value });
+  if (contextBlock) {
+    let parentElement = getActiveParentElement();
+    parentElement.children.push({ type: '$text', value: path.node.value });
+  } else {
+    // remove the path
+    path.remove();
+  }
 }
 
 module.exports = function () {
@@ -678,10 +711,10 @@ module.exports = function () {
     visitor: {
       Program: {
         enter(path) {
-          console.log('enter');
         },
         exit(path) {
-          console.log('exit');
+          // add internal compiler imports
+          path.node.body.unshift(createCompilerInternalImportsExpression())
         }
       },
       JSXElement: {
@@ -698,3 +731,146 @@ module.exports = function () {
     },
   };
 };
+
+
+function createCreateComponentExpression(componentIdentifier, props, children) {
+
+  if (Object.keys(props).length > 0) {
+
+    propObject = {
+      "type": "ObjectExpression",
+      // loop through props and create a property for each
+      "properties": Object.keys(props).map((key) => {
+        return {
+          "type": "ObjectMethod",
+          "kind": "get",
+          "key": {
+            "type": "Identifier",
+            "name": key
+          },
+          "params": [],
+          "body": {
+            "type": "BlockStatement",
+            "body": [
+              {
+                "type": "ReturnStatement",
+                "argument": props[key]
+              }]
+          }
+        }
+      })
+    };
+
+  } else {
+    // create empty object expression
+    propObject = {
+      "type": "ObjectExpression",
+      "properties": []
+    };
+  }
+
+  propObject.properties.push({
+    "type": "ObjectMethod",
+    "kind": "get",
+    "key": {
+      "type": "Identifier",
+      "name": "children"
+    },
+    "params": [],
+    "body": {
+      "type": "BlockStatement",
+      "body": [
+        {
+          "type": "ReturnStatement",
+          "argument": children.length > 1 ? {
+            "type": "ArrayExpression",
+            "elements": children
+          } : children[0]
+        }]
+    }
+  });
+
+  let arguments_ = [componentIdentifier, propObject];
+
+  return t.callExpression(
+    t.identifier('_createComponent'),
+    arguments_
+  );
+}
+
+function createCompilerInternalImportsExpression() {
+
+  let importDeclaration = {
+    "type": "ImportDeclaration",
+    "specifiers": [
+      {
+        "type": "ImportSpecifier",
+        "local": {
+          "type": "Identifier",
+          "name": "_declareBlock"
+        },
+        "imported": {
+          "type": "Identifier",
+          "name": "_declareBlock"
+        }
+      },
+      {
+        "type": "ImportSpecifier",
+        "local": {
+          "type": "Identifier",
+          "name": "_declareClientFunction"
+        },
+        "imported": {
+          "type": "Identifier",
+          "name": "_declareClientFunction"
+        }
+      },
+
+      // create one for _createBlock
+      {
+        "type": "ImportSpecifier",
+        "local": {
+          "type": "Identifier",
+          "name": "_createBlock"
+        },
+        "imported": {
+          "type": "Identifier",
+          "name": "_createBlock"
+        }
+      },
+
+      // create one for _createComponent
+      {
+        "type": "ImportSpecifier",
+        "local": {
+          "type": "Identifier",
+          "name": "_createComponent"
+        },
+        "imported": {
+          "type": "Identifier",
+          "name": "_createComponent"
+        }
+      },
+
+      // add a useMemo import, rename it to _useMemo$
+      {
+        "type": "ImportSpecifier",
+        "local": {
+          "type": "Identifier",
+          "name": "_useMemo$"
+        },
+        "imported": {
+          "type": "Identifier",
+          "name": "useMemo"
+        }
+      },
+
+    ],
+    "source": {
+      "type": "StringLiteral",
+      "value": "seniman"
+    }
+  };
+
+  return importDeclaration;
+}

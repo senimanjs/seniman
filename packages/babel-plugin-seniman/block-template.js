@@ -1,8 +1,5 @@
-var { encode } = require('base64-arraybuffer');
-
 exports.createDeclareBlockExpression = function createDeclareBlockExpression(blockId, block) {
 
-  console.log('_declareBlock', JSON.stringify(block));
   let variables2 = [];
   let templateBufferProp = getTemplateStringInit(block, variables2);
 
@@ -67,7 +64,7 @@ function getTemplateStringInit(block, variables2) {
     },
     "value": {
       "type": "StringLiteral",
-      "value": encode(buffer)
+      "value": buffer.toString('base64')
     }
   };
 }
@@ -283,7 +280,7 @@ function getElscriptInit(block) {
     },
     "value": {
       "type": "StringLiteral",
-      "value": encode(getElscriptBuffer(block))
+      "value": getElscriptBuffer(block).toString('base64')
     }
   };
 }
@@ -462,42 +459,10 @@ function getElscriptBuffer(block) {
     }
   }
 
-  //console.time('prune');
   prune();
-  //console.timeEnd('prune');
-
-  /*
-  if (lengthBeforePrune != _els.length) {
-      console.log('PRUNING WORKS!', lengthBeforePrune, _els.length);
-
-      console.log('els', _els);
-      console.log('anchors', _anchors);
-      console.log('targets', _targets);
-      console.log('=======================')
-  }
-  */
-
 
   return _createElScriptBuffer(_els, _anchors, _targets);
-
-  //console.log('createElScriptBuffer lenght', buffer.length);
-
-  return {
-    "type": "ObjectProperty",
-    "key": {
-      "type": "Identifier",
-      "name": "elScriptBuffer"
-    },
-    "value": {
-      "type": "StringLiteral",
-      "value": encode(buffer)
-    }
-  };
-
 }
-
-
-
 
 function _createElScriptBuffer(els, anchors, targets) {
 
