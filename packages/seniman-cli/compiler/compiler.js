@@ -171,9 +171,6 @@ export function processFile(fileName, fileString) {
             if (isHTMLElement) {
 
                 let elementName = node.openingElement.name.name;
-
-                //compressionRegistry.elementNames.add(elementName);
-
                 let attributeNames = getAttributeNames(node);
                 let hasAttributes = attributeNames.size > 0;
                 let hasEventHandlers = hasAttributes && eventNameInAttributeNames(attributeNames);

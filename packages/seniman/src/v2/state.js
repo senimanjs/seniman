@@ -4,6 +4,58 @@ let UntrackActive = false;
 
 let ERROR = null;
 
+export function processWorkQueue(window, workQueue) {
+  setActiveWindow(window);
+
+  // time perf of loop
+  let start = performance.now();
+
+  let i = 0;
+
+  while (!workQueue.isEmpty()) {
+    let node = workQueue.poll();
+    executeNode(window, node);
+
+    i++;
+  }
+
+  let end = performance.now();
+
+  // print perf of loop in milliseconds
+  //console.log(`[processWorkQueue] ${i} nodes: ${(end - start).toFixed(2)}ms`);
+
+  setActiveWindow(null);
+}
+
+function executeNode(window, node) {
+  try {
+    ActiveNode = node;
+
+    if (node.updateState == NODE_DESTROYED) {
+      ActiveNode = null;
+      return;
+    }
+
+    cleanNode(node);
+    let prevValue = node.value;
+    node.value = node.fn(prevValue);
+
+    if (node.value !== prevValue && node.type == MEMO) {
+      let obs = node.observers;
+      let length = obs.length;
+
+      for (let i = 0; i < length; i++) {
+        _queueNodeForUpdate(window, obs[i]);
+      }
+    }
+  } catch (e) {
+    console.error(e);
+    handleError(e);
+  } finally {
+    ActiveNode = null;
+  }
+}
+
 export function getActiveWindow() {
   return ActiveWindow;
 }
@@ -351,59 +403,6 @@ export function useCallback(fn) {
     return fn(...arguments);
   }
 }
-
-export function processWorkQueue(window, workQueue) {
-  setActiveWindow(window);
-
-  // time perf of loop
-  let start = performance.now();
-
-  let i = 0;
-
-  while (!workQueue.isEmpty()) {
-    let node = workQueue.poll();
-    executeNode(window, node);
-
-    i++;
-  }
-
-  let end = performance.now();
-
-  // print perf of loop in milliseconds
-  //console.log(`[processWorkQueue] ${i} nodes: ${(end - start).toFixed(2)}ms`);
-
-  setActiveWindow(null);
-}
-
-function executeNode(window, node) {
-  try {
-    ActiveNode = node;
-
-    if (node.updateState == NODE_DESTROYED) {
-      ActiveNode = null;
-      return;
-    }
-
-    cleanNode(node);
-    let prevValue = node.value;
-    node.value = node.fn(prevValue);
-
-    if (node.value !== prevValue && node.type == MEMO) {
-      let obs = node.observers;
-      let length = obs.length;
-
-      for (let i = 0; i < length; i++) {
-        _queueNodeForUpdate(window, obs[i]);
-      }
-    }
-  } catch (e) {
-    console.error(e);
-    handleError(e);
-  } finally {
-    ActiveNode = null;
-  }
-}
-
 
 export function onError(fn) {
   ERROR || (ERROR = Symbol("error"));
