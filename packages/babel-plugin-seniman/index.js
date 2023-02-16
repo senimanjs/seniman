@@ -1,7 +1,3 @@
-//import parser from "@babel/parser";
-//import generator from "@babel/generator";
-//import traverse from "@babel/traverse";
-
 var parser = require('@babel/parser');
 var traverse = require('@babel/traverse');
 var generate = require('@babel/generator').default;
@@ -25,7 +21,6 @@ const eventTypeIdMap = {
 const eventNames = Object.keys(eventTypeIdMap);
 const eventNamesSet = new Set(eventNames);
 const styleAttributeNames = ['classList', 'style', 'class'];
-
 
 /*
 
