@@ -1,7 +1,14 @@
+//import parser from "@babel/parser";
+//import generator from "@babel/generator";
+//import traverse from "@babel/traverse";
+
+var parser = require('@babel/parser');
+var traverse = require('@babel/traverse');
+var generate = require('@babel/generator').default;
 var JSX = require("@babel/plugin-syntax-jsx").default;
 var t = require('babel-types');
 
-var { createDeclareBlockExpression } = require('./block-template');
+var { createCompilerInternalImportsExpression, createDeclareBlockExpression, createDeclareClientFunctionExpression } = require("./declare");
 
 const eventTypeIdMap = {
   'onClick': 1,
@@ -19,6 +26,30 @@ const eventNames = Object.keys(eventTypeIdMap);
 const eventNamesSet = new Set(eventNames);
 const styleAttributeNames = ['classList', 'style', 'class'];
 
+
+/*
+
+function inverse(obj) {
+    var retobj = {};
+    for (var key in obj) {
+        retobj[obj[key]] = key;
+    }
+    return retobj;
+}
+export function getDecodeCompressionMap() {
+    let encodeCompressionMap = getEncodeCompressionMap();
+    return {
+        typeIdMapping: inverse(encodeCompressionMap.typeIdMapping),
+        staticAttributeMap: inverse(encodeCompressionMap.staticAttributeMap),
+    };
+}
+*/
+
+function getAttribute(node, name) {
+  let index = node.openingElement.attributes.findIndex(attrNode => attrNode.name.name == name);
+  return index > -1 ? node.openingElement.attributes[index].value : null;
+}
+
 function getAttributeNames(node) {
   let names = new Set();
 
@@ -29,14 +60,19 @@ function getAttributeNames(node) {
   return names;
 }
 
-function getAttribute(node, name) {
-  let index = node.openingElement.attributes.findIndex(attrNode => attrNode.name.name == name);
-  return index > -1 ? node.openingElement.attributes[index].value : null;
-}
-
 function eventNameInAttributeNames(names) {
   for (let i = 0; i < eventNames.length; i++) {
     if (names.has(eventNames[i])) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function stylingAttributeInAttributeNames(names) {
+  for (let i = 0; i < styleAttributeNames.length; i++) {
+    if (names.has(styleAttributeNames[i])) {
       return true;
     }
   }
@@ -99,38 +135,613 @@ function nodeHasDynamicAttribute(node) {
 }
 
 
-function handleCreateBlockEventsExpression(contextBlock, targetId, node) {
+module.exports = function () {
+
+  return {
+    inherits: JSX,
+    visitor: {
+      Program: processProgram
+    }
+  };
+}
+
+
+function processProgram(path) {
+
+  let gatheredUIBlocks = [];
+  let gatheredClientFunctions = [];
+
+  let moduleLevelLastBlockId = 0;
+  let moduleLevelLastClientFunctionId = 0;
+
+  function processJSX(node, parentElement, contextBlock) {
+
+    if (node.type == 'JSXFragment') {
+      let children = _cleanChildren(node.children);
+      return {
+        "type": "ArrayExpression",
+        "elements": children.map(child => {
+          return processJSX(child, null, null);
+        })
+      };
+
+    } else if (node.type == 'JSXElement') {
+      let isHTMLElement = node.openingElement.name.type == 'JSXIdentifier' &&
+        isComponentTag(node.openingElement.name.name) == false;
+      let isNewBlockEnclosingElement = parentElement == null;
+
+      // is dom element
+      if (isHTMLElement) {
+
+        let elementName = node.openingElement.name.name;
+        let attributeNames = getAttributeNames(node);
+        let hasAttributes = attributeNames.size > 0;
+        let hasEventHandlers = hasAttributes && eventNameInAttributeNames(attributeNames);
+        //let hasStyling = hasAttributes && stylingAttributeInAttributeNames(attributeNames);
+
+        let element = {
+          type: elementName,
+          children: [],
+          isTarget: false,
+          style: [],
+          attributes: {}
+        };
+
+        let targetId;
+
+        if (isNewBlockEnclosingElement) {
+          moduleLevelLastBlockId++;
+          contextBlock = {
+            id: moduleLevelLastBlockId,//createNewBlockId(),
+            rootElement: element,
+            anchors: [],
+            targetElementCount: 0,
+            eventHandlers: [],
+            styleEffects: []
+          };
+          gatheredUIBlocks.push(contextBlock);
+
+          // no need to allocate manual target entry to root element 
+          // -- it always gets the ID of 255.
+          targetId = 255;
+        } else {
+          parentElement.children.push(element);
+
+          let hasDynamicAttribute = nodeHasDynamicAttribute(node);
+
+          // Allocate a target entry to this element.
+          element.isTarget = hasEventHandlers || hasDynamicAttribute;
+
+          if (element.isTarget) {
+            targetId = contextBlock.targetElementCount;
+            contextBlock.targetElementCount++;
+          }
+        }
+
+        if (hasEventHandlers) {
+          handleCreateBlockEventsExpression(contextBlock, targetId, node, process);
+        }
+
+        handleCreateElementEffectsEntryExpression(contextBlock, targetId, node, element);
+
+        //console.log('-------------');
+        if (node.children.length > 0) {
+          let children = _cleanChildren(node.children);
+
+          children.map(childNode => {
+            processJSX(childNode, element, contextBlock);
+          });
+        }
+
+        prepElement(element);
+        //console.log('EL children', element.children);
+
+        if (isNewBlockEnclosingElement) {
+          return createCallBlockExpression(contextBlock);
+        } else {
+          return null;
+        }
+
+      } else { // is user component
+
+        let props = {};
+
+        node.openingElement.attributes.forEach(attribute => {
+          // if the prop does not have a value
+          // example: <MyComponent myProp />
+          if (!attribute.value) {
+            // assign true to the prop
+            props[attribute.name.name] = {
+              "type": "BooleanLiteral",
+              "value": true
+            };
+          } else if (attribute.value.type == 'StringLiteral' || attribute.value.type == 'NumericLiteral') {
+            // check if attribute.value is a stringliteral or numericliteral
+            // if so, just add it to the props object
+            // if not, add it to the props object as an expression
+            props[attribute.name.name] = attribute.value;
+          } else {
+            props[attribute.name.name] = attribute.value.expression;
+          }
+        })
+
+        if (node.children.length > 0) {
+          let children = _cleanChildren(node.children);
+
+          if (children.length > 1) {
+            props['children'] = {
+              "type": "ArrayExpression",
+              "elements": children.map(child => {
+                return processJSX(child, null, null);
+              })
+            };
+          } else {
+            let child = children[0];
+
+            let childProcessed;
+
+            if (child.type == 'JSXExpressionContainer') {
+              childProcessed = process(child.expression);
+            } else {
+              childProcessed = processJSX(child, null, null);
+            }
+
+            props['children'] = childProcessed;
+          }
+        }
+
+        let createComponentExpression = createCreateComponentExpression(node.openingElement.name, props, process);
+
+        if (!isNewBlockEnclosingElement) {
+          // add new anchor to the currently active UI block
+          let anchorIndex = contextBlock.anchors.length;
+
+          contextBlock.anchors.push(createComponentExpression);
+          parentElement.children.push({ type: '$anchor', value: anchorIndex });
+
+          return node;
+        } else {
+          return createComponentExpression;
+        }
+      }
+    } else if (node.type == 'JSXText') {
+
+      let trimmedValue = node.value.replace(/\s\s+/g, ' ');
+
+      if (trimmedValue == '') {
+        throw new Error();
+      }
+
+      let isNewBlockEnclosingElement = parentElement == null;
+
+      if (isNewBlockEnclosingElement) {
+        moduleLevelLastBlockId++;
+        let contextBlock = {
+          id: moduleLevelLastBlockId,
+          rootElement: { type: '$text', value: trimmedValue },
+          anchors: [],
+          targetElementCount: 0,
+          eventHandlers: [],
+          styleEffects: []
+        };
+
+        gatheredUIBlocks.push(contextBlock);
+
+        return createCallBlockExpression(contextBlock);
+      } else {
+        parentElement.children.push({ type: '$text', value: trimmedValue });
+        return null;
+      }
+
+    } else if (node.type == 'JSXExpressionContainer') {
+
+      let anchorExpression = process(node.expression);
+
+      // if the expression is an identifier, we'll do nothing
+      // if it isn't, then there's special handling to do
+      if (node.expression.type != 'Identifier') {
+
+        // if the expression is a conditional expression, we'll need to wrap it in a useMemo
+        // NOTE: disable for now
+        if (false) {//node.expression.type == 'ConditionalExpression') {
+          let testExpression = node.expression.test;
+
+          anchorExpression = {
+            type: 'ArrowFunctionExpression',
+            params: [],
+            body: {
+              "type": "BlockStatement",
+              body: [
+                {
+                  "type": "VariableDeclaration",
+                  declarations: [
+                    {
+                      "type": "VariableDeclarator",
+                      "id": {
+                        "type": "Identifier",
+                        "name": "_c"
+                      },
+                      "init": {
+                        "type": "CallExpression",
+                        "callee": {
+                          "type": "Identifier",
+                          "name": "_useMemo$"
+                        },
+                        "arguments": [
+                          {
+                            "type": "ArrowFunctionExpression",
+                            "params": [],
+                            "body": testExpression
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "kind": "let"
+                },
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "ConditionalExpression",
+                    "test": {
+                      "type": "CallExpression",
+                      "callee": {
+                        "type": "Identifier",
+                        "name": "_c"
+                      },
+                      "arguments": []
+                    },
+                    "consequent": processJSX(node.expression.consequent),
+                    "alternate": processJSX(node.expression.alternate)
+                  }
+                }
+              ]
+            }
+          };
+        } else {
+          anchorExpression = {
+            "type": "ArrowFunctionExpression",
+            "params": [],
+            "body": anchorExpression
+          };
+        }
+      }
+
+      if (contextBlock) {
+        let anchorIndex = contextBlock.anchors.length;
+
+        contextBlock.anchors.push(anchorExpression);
+
+        parentElement.children.push({ type: '$anchor', value: anchorIndex });
+        return null;
+      } else {
+        return anchorExpression;
+      }
+
+
+    } else {
+      return process(node);
+    }
+  }
+
+  function process(node) {
+
+    // TODO: we probably need to move to the visitor pattern here
+
+    if (node.type == 'File') {
+      node.program = process(node.program);
+      return node;
+    } else if (node.type == 'Program') {
+      let lastImportStatementIndex;
+
+      node.body.map((bodyNode, index) => {
+
+        if (bodyNode.type == 'ImportDeclaration') {
+          lastImportStatementIndex = index;
+        }
+
+        node.body[index] = process(bodyNode);
+      });
+
+      //let encodeCompressionMap = getEncodeCompressionMap();
+
+      gatheredUIBlocks.forEach((block, index) => {
+        node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareBlockExpression(block));
+      });
+
+      gatheredClientFunctions.forEach((clientFunction, index) => {
+        node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareClientFunctionExpression(clientFunction));
+      });
+
+
+      node.body.splice(lastImportStatementIndex + 1, 0, createCompilerInternalImportsExpression());
+
+      return node;
+    } else if (node.type == 'IfStatement') {
+      node.consequent = process(node.consequent);
+      node.test = process(node.test);
+
+      if (node.alternate) {
+        node.alternate = process(node.alternate);
+      }
+
+      return node;
+    } else if (node.type == 'ExportDefaultDeclaration') {
+      node.declaration = process(node.declaration);
+
+      return node;
+    } else if (node.type == 'ExportNamedDeclaration') {
+      node.declaration = process(node.declaration);
+
+      return node;
+    } else if (node.type == 'FunctionDeclaration') {
+      node.body = process(node.body);
+
+      return node;
+    } else if (node.type == 'BlockStatement') {
+      node.body.map((bodyNode, index) => {
+        node.body[index] = process(bodyNode);
+        //console.log('========');
+      });
+      return node;
+    } else if (node.type == 'ReturnStatement') {
+
+      if (node.argument) {
+        //console.log('ReturnStatement', node.argument.type);
+        node.argument = process(node.argument);
+      }
+
+      return node;
+    } else if (node.type == 'JSXText') {
+      throw new Error('JSXText happens outside processJSX');
+    } else if (node.type == 'JSXExpressionContainer') {
+      throw new Error('JSXExpressionContainer happens outside processJSX');
+    } else if (node.type == 'JSXFragment') {
+      return processJSX(node, null, null);
+    } else if (node.type == 'JSXElement') {
+      return processJSX(node, null, null);
+    } else if (node.type == 'CallExpression') {
+
+      // if the function name is runOnClient, then we'll need to do some special handling
+      if (node.callee.type == 'Identifier' && node.callee.name == '$c') {
+
+        // assign a unique ID to this client function
+        moduleLevelLastClientFunctionId++;
+        let clientFunctionId = moduleLevelLastClientFunctionId; //createNewClientFunctionId();
+
+        // node.arguments[0] is the function called within $c((arg1, arg2) => {...})
+        let cParsed = parse$CDefinition(node.arguments[0]);
+
+        let clientFunction = {
+          id: clientFunctionId,
+          argNames: cParsed.argNames,
+          body: cParsed.body
+        };
+
+        // get the first argument, which is the function to run
+        gatheredClientFunctions.push(clientFunction);
+
+        // rewrite the CallExpression node to an object
+        // example: { clientFnId: 3 }
+        node.type = 'ObjectExpression';
+
+        let props = [
+          {
+            type: 'ObjectProperty',
+            key: {
+              type: 'Identifier',
+              name: 'clientFnId'
+            },
+            value: {
+              type: 'NumericLiteral',
+              value: '_c$' + clientFunctionId.toString()
+            }
+          }
+        ];
+
+        if (cParsed.serverBindNodes.length > 0) {
+          props.push({
+            type: 'ObjectProperty',
+            key: {
+              type: 'Identifier',
+              name: 'serverBindFns'
+            },
+            value: {
+              type: 'ArrayExpression',
+              elements: cParsed.serverBindNodes
+            }
+          })
+        }
+
+        node.properties = props;
+      } else {
+        node.arguments.map((bodyNode, index) => {
+          node.arguments[index] = process(bodyNode);
+        });
+      }
+
+      return node;
+
+    } else if (node.type == 'ArrowFunctionExpression') {
+      node.body = process(node.body);
+      return node;
+    } else if (node.type == 'SwitchStatement') {
+
+      for (let i = 0; i < node.cases.length; i++) {
+        node.cases[i] = process(node.cases[i]);
+      }
+
+      return node;
+    } else if (node.type == 'SwitchCase') {
+      if (node.test) {
+        node.test = process(node.test);
+      }
+
+      for (let i = 0; i < node.consequent.length; i++) {
+        node.consequent[i] = process(node.consequent[i]);
+      }
+
+      return node;
+    } else if (node.type == 'LogicalExpression') {
+      node.left = process(node.left);
+      node.right = process(node.right);
+      return node;
+    } else if (node.type == 'OptionalCallExpression') {
+      // do we need to process the callee?
+      //node.callee = process(node.callee);
+      node.arguments.map((bodyNode, index) => {
+        node.arguments[index] = process(bodyNode);
+      });
+
+      return node;
+    } else if (node.type == 'ExpressionStatement') {
+      node.expression = process(node.expression);
+      return node;
+    } else if (node.type == 'ObjectExpression') {
+      node.properties.map((bodyNode, index) => {
+        node.properties[index] = process(bodyNode);
+      });
+      return node;
+    } else if (node.type == 'ObjectProperty') {
+      node.value = process(node.value);
+      return node;
+    } else if (node.type == 'AssignmentExpression') {
+      node.right = process(node.right);
+      return node;
+    } else if (node.type == 'VariableDeclaration') {
+      node.declarations.forEach((decl, index) => {
+        node.declarations[index] = process(decl);
+      });
+      return node;
+    } else if (node.type == 'VariableDeclarator') {
+
+      if (node.init) {
+        node.init = process(node.init);
+      }
+      return node;
+    }
+    // handle class and its methods
+    else if (node.type == 'ClassDeclaration') {
+      node.body.body.forEach((method, index) => {
+        node.body.body[index] = process(method);
+      });
+      return node;
+    } else if (node.type == 'ClassMethod') {
+      node.body = process(node.body);
+      return node;
+    } else if (node.type == 'ClassProperty') {
+      node.value = process(node.value);
+      return node;
+
+    } else if (node.type == 'ConditionalExpression') {
+      node.test = process(node.test);
+      node.consequent = process(node.consequent);
+      node.alternate = process(node.alternate);
+      return node;
+    }
+
+    else if (node.type == 'ArrayExpression') {
+
+      node.elements.forEach((element, index) => {
+        node.elements[index] = process(element);
+      });
+
+      return node;
+
+    } else {
+      //console.log('unknown node', node.type);
+      return node;
+    }
+  }
+
+  process(path.node);
+}
+
+
+function parse$CDefinition(functionNode) {
+  // TODO: create a faster implementation that does not implementing print-ing and re-parsing
+  // the $c source code
+  let functionNodeString = generate(functionNode).code;
+  let newFunctionAst = parser.parse(functionNodeString);
+
+  let serverBindNodes = [];
+
+  traverse.default(newFunctionAst, {
+    CallExpression: function (path) {
+
+      if (path.node.callee.type == 'Identifier' && path.node.callee.name == '$s') {
+        serverBindNodes.push(path.node.arguments[0]);
+
+        // replace it with a this.serverFunctions[id] call
+        path.replaceWith({
+          type: 'MemberExpression',
+          object: {
+            type: 'MemberExpression',
+            object: {
+              type: 'ThisExpression'
+            },
+            property: {
+              type: 'Identifier',
+              name: 'serverFunctions'
+            }
+          },
+          property: {
+            type: 'NumericLiteral',
+            value: serverBindNodes.length - 1
+          }
+        });
+      }
+    },
+  });
+
+  // tranform the argument signature into a list of argument names
+  let argNames = functionNode.params.map((param) => {
+    return param.name;
+  });
+
+  // fetch the first function node from the program AST
+  let functionNodeAst = newFunctionAst.program.body[0].expression.body;
+
+  let newFunctionBodyString = generate(functionNodeAst).code;
+
+  return {
+    body: newFunctionBodyString,
+    argNames,
+    serverBindNodes
+  }
+}
+
+function handleCreateBlockEventsExpression(contextBlock, targetId, node, process) {
   eventNames.forEach(eventName => {
     let eventAttribute = getAttribute(node, eventName);
 
     if (eventAttribute) {
       let fnExpression = eventAttribute.expression;
-      contextBlock.eventHandlers.push(createBlockEventHandlerEntryExpression(targetId, eventTypeIdMap[eventName], fnExpression));
+      contextBlock.eventHandlers.push(createBlockEventHandlerEntryExpression(targetId, eventTypeIdMap[eventName], process(fnExpression)));
     }
   });
 }
 
-function createBlockEventHandlerEntryExpression(targetId, type, fnExpression) {
+function _buildStyleConditionKeyExpression(cond) {
+  return { type: "StringLiteral", value: cond.key };
 
-  // sample:
-  // {
-  //   targetId: 1,
-  //   type: 1,
-  //   fn: () => {
-  //     console.log('onClick');
-  //   }
-  // }
-
-  // create object expression
-  return t.objectExpression([
-    t.objectProperty(t.identifier('targetId'), t.numericLiteral(targetId)),
-    t.objectProperty(t.identifier('type'), t.numericLiteral(type)),
-    t.objectProperty(t.identifier('fn'), fnExpression)
-  ]);
-}
-
-function camelCaseToDash(str) {
-  return str.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+  /*
+  // Disable this for now, since it is making debug harder while the framework isn't too mature yet.
+ 
+  if (condType == 'style' || condType == 'attribute') {
+      let set = condType == 'style' ? compressionRegistry.stylePropertyKeys : compressionRegistry.elementAttributeNames;
+ 
+      if (set.has(cond.key)) {
+          let keysList = Array.from(set);
+          return { type: 'NumericLiteral', value: keysList.indexOf(cond.key) + 1 };
+      } else {
+          //console.log('cond.key', cond.key, set);
+          throw new Error();
+      }
+  } else {
+      return { type: "StringLiteral", value: cond.key };
+  }
+  */
 }
 
 function _buildStyleConditionValueExpression(cond) {
@@ -172,10 +783,6 @@ function _buildStyleConditionValueExpression(cond) {
   }
 
   return condition;
-}
-
-function _buildStyleConditionKeyExpression(cond) {
-  return { type: "StringLiteral", value: cond.key };
 }
 
 function _buildElRefCallExpression(cond, _arguments) {
@@ -307,6 +914,10 @@ function createSingleConditionStyleEffectBodyBlockStatement(styleCondition) {
     type: "BlockStatement",
     body: [_buildElRefCallExpression(styleCondition, _arguments)]
   };
+}
+
+function camelCaseToDash(str) {
+  return str.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
 }
 
 function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node, element) {
@@ -467,410 +1078,314 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
   });
 }
 
-let contextBlock = null;
-let componentStack = [];
-let pendingBlockStack = [];
+function createCallBlockExpression(block) {
 
-let moduleLevelLastBlockId = 0;
-let moduleLevelLastClientFunctionId = 0;
+  let arguments_ = [{
+    "type": "Identifier",
+    "name": "_b$" + block.id.toString()
+  }];
 
-function enterJSX(path) {
+  arguments_.push(block.anchors.length > 0 ? {
+    "type": "ArrayExpression",
+    "elements": block.anchors || []
+  } : { type: "NullLiteral" });
 
-  let isHTMLElement = path.node.openingElement.name.type == 'JSXIdentifier' &&
-    isComponentTag(path.node.openingElement.name.name) == false;
-  let isNewBlockEnclosingElement = contextBlock == null;
+  arguments_.push(block.eventHandlers.length > 0 ? {
+    "type": "ArrayExpression",
+    "elements": block.eventHandlers
+  } : { type: "NullLiteral" });
 
-  let node = path.node;
 
-  if (isHTMLElement) {
-    let elementName = node.openingElement.name.name;
+  arguments_.push(block.styleEffects.length > 0 ? {
+    "type": "ArrayExpression",
+    "elements": block.styleEffects
+  } : { type: "NullLiteral" });
 
-    let attributeNames = getAttributeNames(node);
-    let hasAttributes = attributeNames.size > 0;
-    let hasEventHandlers = hasAttributes && eventNameInAttributeNames(attributeNames);
-
-    let targetId;
-
-    let parentElement = (contextBlock && contextBlock.__elementStack[contextBlock.__elementStack.length - 1]) || null;
-
-    let element = {
-      type: elementName,
-      children: [],
-      isTarget: false,
-      style: [],
-      attributes: {}
-    };
-
-    if (isNewBlockEnclosingElement) {
-      contextBlock = {
-        //id: moduleLevelLastBlockId,//createNewBlockId(),
-        rootElement: element,
-        anchors: [],
-        targetElementCount: 0,
-        eventHandlers: [],
-        styleEffects: [],
-
-        __elementStack: [element]
-      }
-
-      targetId = 255;
-    } else {
-
-      parentElement.children.push(element);
-
-      contextBlock.__elementStack.push(element);
-
-      // Allocate a target entry to this element.
-      element.isTarget = hasEventHandlers || nodeHasDynamicAttribute(node);
-
-      if (element.isTarget) {
-        targetId = contextBlock.targetElementCount;
-        contextBlock.targetElementCount++;
-      }
-    }
-
-    if (hasEventHandlers) {
-      handleCreateBlockEventsExpression(contextBlock, targetId, node);
-    }
-
-    handleCreateElementEffectsEntryExpression(contextBlock, targetId, node, element);
-
-  } else {
-
-    // if Component
-
-    componentStack.push({
-      name: node.openingElement.name,
-      props: {}
-    });
-
-    pendingBlockStack.push(contextBlock);
-    contextBlock = null;
+  return {
+    "type": "CallExpression",
+    "callee": {
+      "type": "Identifier",
+      "name": "_createBlock"
+    },
+    "arguments": arguments_
   }
+}
+
+function createBlockEventHandlerEntryExpression(targetId, type, fnExpression) {
+
+  //console.log('createBlockEventHandlerEntryExpression', targetId, type);
 
   /*
-  <div>
-    <div>{test}</div>
-    <div>
-      {list.map(item => <div>{item}</div>)}
-    </div>
-    <div>This is a test</div>
-  </div>
+  // if classList, then wrap the class object expression in a function.
+  if (type == 5) {
+      fnExpression = {
+          "type": "ArrowFunctionExpression",
+          "params": [],
+          "body": fnExpression
+      }
+  }
   */
-}
 
-function exitJSX(path) {
-  let isHTMLElement = path.node.openingElement.name.type == 'JSXIdentifier' &&
-    isComponentTag(path.node.openingElement.name.name) == false;
-
-  if (isHTMLElement) {
-    contextBlock.__elementStack.pop();
-
-    if (contextBlock.__elementStack.length == 0) {
-
-      moduleLevelLastBlockId++;
-
-      let blockId = moduleLevelLastBlockId;
-
-      insertBlockStatement(path, contextBlock, blockId);
-
-      path.replaceWith(
-        t.callExpression(
-          t.identifier('_createBlock'),
-          [
-            t.identifier(`_b$${blockId}`),
-            // list of expressions contained in contextBlock.anchors
-            t.arrayExpression(contextBlock.anchors),
-            // list of expressions contained in contextBlock.eventHandlers
-            t.arrayExpression(contextBlock.eventHandlers),
-            // list of expressions contained in contextBlock.styleEffects
-            t.arrayExpression(contextBlock.styleEffects)
-          ]
-        )
-      );
-
-      contextBlock = null;
-    }
-
-  } else { // if is closing to a Component
-
-    let component = componentStack.pop();
-
-    //console.log('component props', component.props, path.node.children);
-
-    contextBlock = pendingBlockStack.pop();
-
-    // wrap the expression in a single-expression arrow function
-    // example:
-    // () => test()
-    contextBlock.anchors.push(createCreateComponentExpression(component.name, component.props, path.node.children));
-
-    // push the component as anchor
-    let parentElement = getActiveParentElement();
-    let anchorIndex = contextBlock.anchors.length;
-
-    parentElement.children.push({ type: '$anchor', value: anchorIndex });
-  }
-
-}
-
-function insertBlockStatement(path, block, blockId) {
-
-  const programPath = getProgramPath(path);
-
-  // create a new _declareBlock function call
-  // example:
-  // let $block1 = _declareBlock();
-  // 1 is the block id
-
-  const blockDeclaration = createDeclareBlockExpression(blockId, block);
-
-  let lastImportIndex = 0;
-
-  // Find the last import statement in the program body
-  for (let i = 0; i < programPath.node.body.length; i++) {
-    if (programPath.node.body[i].type === 'ImportDeclaration') {
-      lastImportIndex = i;
-    } else {
-      break;
-    }
-  }
-
-  if (lastImportIndex >= 0) {
-    // Insert the new node after the last import statement
-    programPath.get('body')[lastImportIndex].insertAfter(blockDeclaration);
-  } else {
-    // If no import statement is found, insert the new node at the beginning of the program body
-    programPath.get('body')[0].insertBefore(blockDeclaration);
-  }
-}
-
-function getProgramPath(path) {
-  let parentPath = path.parentPath;
-
-  while (parentPath) {
-    if (parentPath.isProgram()) {
-      return parentPath;
-    }
-
-    parentPath = parentPath.parentPath;
-  }
-}
-
-function enterJSXEpression(path) {
-
-  if (path.parentPath.isJSXElement()) {
-    pendingBlockStack.push(contextBlock);
-    contextBlock = null;
-  }
-}
-
-function exitJSXExpression(path) {
-  if (path.parentPath.isJSXAttribute() && isComponentTag(path.parentPath.parentPath.node.name.name)) {
-    componentStack[componentStack.length - 1].props[path.parentPath.node.name.name] = path.node.expression;
-  } else if (path.parentPath.isJSXElement()) {
-
-    // check if the JSXExpressionContainer is a child of a JSXElement
-
-    // if it is, then we need to wrap the expression in a single-expression arrow function
-    // re-activate the wrapping block from the stack
-    contextBlock = pendingBlockStack.pop();
-
-    // wrap the expression in a single-expression arrow function
-    // example:
-    // () => test()
-    contextBlock.anchors.push(t.arrowFunctionExpression(
-      [],
-      path.node.expression
-    ));
-
-    let parentElement = getActiveParentElement();
-    let anchorIndex = contextBlock.anchors.length;
-
-    parentElement.children.push({ type: '$anchor', value: anchorIndex });
-  }
-}
-
-function getActiveParentElement() {
-  return contextBlock.__elementStack[contextBlock.__elementStack.length - 1];
-}
-
-function enterJSXText(path) {
-  if (contextBlock) {
-    let parentElement = getActiveParentElement();
-    parentElement.children.push({ type: '$text', value: path.node.value });
-  } else {
-    // remove the path
-    path.remove();
-  }
-}
-
-module.exports = function () {
   return {
-    inherits: JSX,
-    visitor: {
-      Program: {
-        enter(path) {
+    "type": "ObjectExpression",
+    "properties": [
+      {
+        "type": "ObjectProperty",
+        "key": {
+          "type": "Identifier",
+          "name": "targetId"
         },
-        exit(path) {
-          // add internal compiler imports
-          path.node.body.unshift(createCompilerInternalImportsExpression())
+        "value": {
+          "type": "NumericLiteral",
+          "value": targetId
         }
       },
-      JSXElement: {
-        enter: enterJSX,
-        exit: exitJSX,
+      {
+        "type": "ObjectProperty",
+        "key": {
+          "type": "Identifier",
+          "name": "type"
+        },
+        "value": {
+          "type": "NumericLiteral",
+          "value": type
+        }
+      },
+      {
+        "type": "ObjectProperty",
+        "key": {
+          "type": "Identifier",
+          "name": "fn"
+        },
+        "value": fnExpression
       },
 
-      JSXExpressionContainer: {
-        enter: enterJSXEpression,
-        exit: exitJSXExpression
-      },
+    ]
+  }
+}
 
-      JSXText: enterJSXText
-    },
-  };
-};
+function createCreateComponentExpression(componentIdentifier, props, process) {
 
+  let arguments_ = [componentIdentifier];
 
-function createCreateComponentExpression(componentIdentifier, props, children) {
+  if (Object.keys(props).length) {
 
-  if (Object.keys(props).length > 0) {
-
-    propObject = {
+    let props_ = {
       "type": "ObjectExpression",
-      // loop through props and create a property for each
-      "properties": Object.keys(props).map((key) => {
-        return {
-          "type": "ObjectMethod",
-          "kind": "get",
-          "key": {
-            "type": "Identifier",
-            "name": key
-          },
-          "params": [],
-          "body": {
-            "type": "BlockStatement",
-            "body": [
+      "properties": Object.keys(props).map(propKey => {
+
+        let propExpression = props[propKey];
+
+        /*
+        if (propExpression.type == 'Identifier') {
+ 
+            //console.log('propExpression standard', propExpression);
+ 
+            return {
+                "type": "ObjectProperty",
+                "key": {
+                    "type": "Identifier",
+                    "name": propKey
+                },
+                "value": process(propExpression)
+            };
+        } else 
+        
+        */
+        if (propExpression.type == 'ArrowFunctionExpression') {
+          return {
+            "type": "ObjectProperty",
+            "key": {
+              "type": "Identifier",
+              "name": propKey
+            },
+            "value": process(propExpression)
+          };
+        } else {
+          // Wrap expressions that are not bare identifier or function.
+
+          let body;
+
+          // handle binary expression specially -- memo-wrap them
+          // NOTE: disable for now
+          if (false) { //propExpression.type == 'BinaryExpression') {
+            body = [
+              {
+                type: 'VariableDeclaration',
+                kind: 'let',
+                declarations: [
+                  {
+                    "type": "VariableDeclarator",
+
+                    id: { type: "Identifier", name: "_c" },
+                    init: {
+                      type: 'CallExpression',
+                      callee: { type: 'Identifier', name: '_useMemo$' },
+                      arguments: [{ type: 'ArrowFunctionExpression', params: [], body: process(propExpression) }]
+                    }
+                  }]
+              },
               {
                 "type": "ReturnStatement",
-                "argument": props[key]
-              }]
+                "argument": {
+                  type: 'CallExpression',
+                  callee: { type: 'Identifier', name: '_c' },
+                  arguments: []
+                }
+              }
+            ]
+          } else {
+            body = [
+              { "type": "ReturnStatement", "argument": process(propExpression) }
+            ]
           }
+
+          return {
+            "type": "ObjectMethod",
+            "kind": "get",
+            "key": {
+              "type": "Identifier",
+              "name": propKey
+            },
+            "method": false,
+            "id": null,
+            "params": [],
+            "body": {
+              "type": "BlockStatement",
+              "body": body
+            }
+          };
         }
       })
     };
 
+    arguments_.push(props_);
   } else {
     // create empty object expression
-    propObject = {
+    let prop = {
       "type": "ObjectExpression",
       "properties": []
     };
+
+    arguments_.push(prop);
   }
 
-  propObject.properties.push({
-    "type": "ObjectMethod",
-    "kind": "get",
-    "key": {
+  return {
+    "type": "CallExpression",
+    "callee": {
       "type": "Identifier",
-      "name": "children"
+      "name": "_createComponent"
     },
-    "params": [],
-    "body": {
-      "type": "BlockStatement",
-      "body": [
-        {
-          "type": "ReturnStatement",
-          "argument": children.length > 1 ? {
-            "type": "ArrayExpression",
-            "elements": children
-          } : children[0]
-        }]
+    "arguments": arguments_
+  }
+}
+
+function prepElement(element) {
+
+  // TODO: still need to handle two signals that are not spaced to each other
+  // example: {signal1}{signal2}
+  // this current does not work and signal1 will appear after signal2 in the DOM.
+
+  let before = element.children.map(c => [c.type, c.value])
+  let hasPrecedingAnchor = false;
+  let i = 0;
+
+  while (i < element.children.length) {
+
+    let childEl = element.children[i];
+
+    if (childEl.type == '$anchor') {
+      hasPrecedingAnchor = true;
+      i++;
+      //precedingAnchorIndex = index;
+    } else if (childEl.type == '$text') {
+
+      if (hasPrecedingAnchor) {
+        // insert comment
+        element.children.splice(i, 0, { type: '$text', value: '<!>' });
+        hasPrecedingAnchor = false;
+        i += 2;
+      } else {
+        i++;
+      }
+
+    } else {
+      hasPrecedingAnchor = false;
+      i++;
+    }
+  }
+
+  if (before.length != element.children.length) {
+    //console.log('prepElement ', bef, '=>', element.children.map(c => [c.type, c.value]));
+  }
+}
+
+function replaceNewlinesWithSpace(str) {
+  // Use the replace method to replace all newline characters with a
+  // single space character
+  return str.replace(/\r?\n/g, " ");
+}
+function replaceMultipleSpacesWithSingleSpace(str) {
+  // Use the replace method to replace multiple consecutive space
+  // characters with a single space character
+  return str.replace(/\s+/g, " ");
+}
+function trimLeft(str) {
+  // Use a regular expression to match any whitespace characters at the
+  // beginning of the string, and then use the replace method to remove
+  // them
+  return str.replace(/^\s+/, "");
+}
+function trimRight(str) {
+  return str.replace(/\s+$/, '');
+}
+
+function _cleanChildren(children) {
+
+
+  children.forEach(childNode => {
+
+    if (childNode.type == 'JSXText') {
+      //childNode.value = replaceNewlinesAndSpaces(childNode.value);//.replace(/\s/g, '') != '';
+      //let str = childNode.value;
+      let newValue = replaceMultipleSpacesWithSingleSpace(replaceNewlinesWithSpace(childNode.value));//.replace(/\s/g, '') != '';;//isAllWhitespace(str) && hasNewline(str) ? '' : replaceNewlinesAndSpaces(childNode.value);
+      childNode.value = newValue;
+      //console.log('childNode', JSON.stringify(childNode.value), '=>', JSON.stringify(newValue), newValue != '');
     }
   });
 
-  let arguments_ = [componentIdentifier, propObject];
+  if (children[0].type == 'JSXText') {
+    children[0].value = trimLeft(children[0].value);
+  }
 
-  return t.callExpression(
-    t.identifier('_createComponent'),
-    arguments_
-  );
-}
+  if (children[children.length - 1].type == 'JSXText') {
+    children[children.length - 1].value = trimRight(children[children.length - 1].value);
+  }
 
-function createCompilerInternalImportsExpression() {
+  let filtered = children.filter(childNode => {
 
-  let importDeclaration = {
-    "type": "ImportDeclaration",
-    "specifiers": [
-      {
-        "type": "ImportSpecifier",
-        "local": {
-          "type": "Identifier",
-          "name": "_declareBlock"
-        },
-        "imported": {
-          "type": "Identifier",
-          "name": "_declareBlock"
-        }
-      },
-      {
-        "type": "ImportSpecifier",
-        "local": {
-          "type": "Identifier",
-          "name": "_declareClientFunction"
-        },
-        "imported": {
-          "type": "Identifier",
-          "name": "_declareClientFunction"
-        }
-      },
-
-      // create one for _createBlock
-      {
-        "type": "ImportSpecifier",
-        "local": {
-          "type": "Identifier",
-          "name": "_createBlock"
-        },
-        "imported": {
-          "type": "Identifier",
-          "name": "_createBlock"
-        }
-      },
-
-      // create one for _createComponent
-      {
-        "type": "ImportSpecifier",
-        "local": {
-          "type": "Identifier",
-          "name": "_createComponent"
-        },
-        "imported": {
-          "type": "Identifier",
-          "name": "_createComponent"
-        }
-      },
-
-      // add a useMemo import, rename it to _useMemo$
-      {
-        "type": "ImportSpecifier",
-        "local": {
-          "type": "Identifier",
-          "name": "_useMemo$"
-        },
-        "imported": {
-          "type": "Identifier",
-          "name": "useMemo"
-        }
-      },
-
-    ],
-    "source": {
-      "type": "StringLiteral",
-      "value": "seniman"
+    if (childNode.type == 'JSXText') {
+      //return childNode.value.replace(/\s/g, '') != '';
+      return childNode.value != '';
     }
-  };
 
-  return importDeclaration;
+    return true;
+  });
+
+
+  /*
+  if (filtered.length == 1) {
+      filtered[0].value == '';
+  }
+  */
+
+  //console.log();
+
+  /*
+  if (filtered.length == 1 && filtered[0].type == 'JSXText') {
+      console.log(JSON.stringify(filtered[0].value));
+  }
+  */
+
+  return filtered.length == 1 && filtered[0].value == '' ? [] : filtered;
 }
