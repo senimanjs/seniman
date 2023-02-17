@@ -1,8 +1,7 @@
 import express from 'express';
-import { wrapExpress, useState } from 'seniman';
+import { useState } from 'seniman';
+import { wrapExpress } from 'seniman/express';
 import { Database } from 'sqlite-async';
-
-import { ErrorHandler } from './errors.js';
 
 let app = express();
 
@@ -36,20 +35,22 @@ try {
   throw Error('Could not insert new task');
 }
 
-function Head(props) {
+const cssText = `
+  body, * {
+    padding: 0;
+    margin: 0;
+    font-family: sans-serif;
+  }
+  body { padding: 10px; background:#444; }
+`;
+
+function Head() {
   return <>
-    <title>{props.window.pageTitle}</title>
-    <style>{props.cssText}</style>
+    <style>{cssText}</style>
   </>;
 }
 
-function Body(props) {
-  return <ErrorHandler syntaxErrors={props.syntaxErrors}>
-    <TodoList />
-  </ErrorHandler>;
-}
-
-function TodoList(props) {
+function Body() {
   let [getTasks, setTasks] = useState([]);
 
   async function loadTasks() {

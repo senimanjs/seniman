@@ -1,22 +1,30 @@
 import express from 'express';
-import { wrapExpress } from 'seniman';
-import { ErrorHandler } from './errors.js';
+import { wrapExpress } from 'seniman/express';
 
 let app = express();
-
 wrapExpress(app, { Head, Body });
 
-app.listen(process.env.PORT || 3002);
+let port = process.env.PORT || 3002;
+app.listen(port);
 
-function Head(props) {
+console.log('Listening on port', port);
+
+const cssText = `
+body,
+* {
+  padding: 0;
+  margin: 0;
+  font-family: sans-serif;
+  padding: 10px;
+}
+`;
+
+function Head() {
   return <>
-    <title>{props.window.pageTitle}</title>
-    <style>{props.cssText}</style>
+    <style>{cssText}</style>
   </>;
 }
 
-function Body(props) {
-  return <ErrorHandler syntaxErrors={props.syntaxErrors}>
-    <div>Hello World</div>
-  </ErrorHandler>;
+function Body() {
+  return <div>Hello World</div>;
 }

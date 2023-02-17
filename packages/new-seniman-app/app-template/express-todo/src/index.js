@@ -1,21 +1,48 @@
 import express from 'express';
-import { wrapExpress, onCleanup, useWindow, useEffect, useState, useMemo } from 'seniman';
-import { ErrorHandler } from './errors.js';
+import { onCleanup, useWindow, useEffect, useState, useMemo } from 'seniman';
+import { wrapExpress } from 'seniman/express';
 import produce from 'immer';
 
-let app = express();
+const app = express();
 wrapExpress(app, { Head, Body });
 
-app.listen(process.env.PORT || 3002);
+const port = process.env.PORT || 3002;
+app.listen(port);
 
-function Head(props) {
+console.log('Listening on port', port);
+
+const cssText = `
+body,
+* {
+  padding: 0;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+body {
+  padding: 10px;
+  height: 100vh;
+  background: #444;
+  color: #fff;
+}
+
+.todo-item {
+  padding: 5px;
+  border: 1px solid #ccc;
+  width: 300px;
+  margin-bottom: 10px;
+}`;
+
+function Head() {
+  let window = useWindow();
+
   return <>
-    <title>{props.window.pageTitle}</title>
-    <style>{props.cssText}</style>
+    <title>{window.pageTitle}</title>
+    <style>{cssText}</style>
   </>;
 }
 
-function Body(props) {
+function Body() {
   let [firstName, setFirstName] = useState("James");
   let [lastName, setLastName] = useState("Bond");
 
@@ -71,22 +98,20 @@ function Body(props) {
     clearInterval(interval);
   });
 
-  return <ErrorHandler syntaxErrors={props.syntaxErrors}>
-    <div style={{ padding: "20px" }}>
-      <div style={{ fontSize: "24px", marginBottom: "10px" }}>{fullName}'s Todo List</div>
-      <div style={{ paddingTop: "10px", marginTop: "10px", borderTop: "1px solid #ccc" }}>
-        {todoList().map(task => {
-          return <div class="todo-item">
-            {task.text}
-            <button onClick={() => deleteTask(task)} style={{ float: "right" }}>Delete</button>
-          </div>;
-        })}
-      </div>
-      <div>
-        <input type="text" onBlur={onBlurClientHandler} />
-        <button onClick={() => addTask(newTaskDraft)}>+ Task</button>
-      </div>
-      <div style={{ fontSize: "10px" }}>Elapsed Window Time: {realtimeCount}</div>
+  return <div style={{ padding: "20px" }}>
+    <div style={{ fontSize: "24px", marginBottom: "10px" }}>{fullName}'s Todo List</div>
+    <div style={{ paddingTop: "10px", marginTop: "10px", borderTop: "1px solid #ccc" }}>
+      {todoList().map(task => {
+        return <div class="todo-item">
+          {task.text}
+          <button onClick={() => deleteTask(task)} style={{ float: "right" }}>Delete</button>
+        </div>;
+      })}
     </div>
-  </ErrorHandler>;
+    <div>
+      <input type="text" onBlur={onBlurClientHandler} />
+      <button onClick={() => addTask(newTaskDraft)}>+ Task</button>
+    </div>
+    <div style={{ fontSize: "10px" }}>Elapsed Window Time: {realtimeCount}</div>
+  </div>;
 }

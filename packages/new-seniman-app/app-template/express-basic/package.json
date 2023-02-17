@@ -6,12 +6,14 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node dist/index.js",
-    "dev": "npx concurrently \"npx seniman watch\" \"npx nodemon --delay 5ms dist/index.js\""
+    "dev": "npx concurrently \"npx babel src --out-dir dist --watch\" \"npx nodemon --delay 5ms dist/index.js\""
   },
   "dependencies": {
-    "seniman": "^0.0.55",
-    "stacktrace-parser": "^0.1.10",
-    "immer": "^9.0.18",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "seniman": "^0.0.68"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.20.7",
+    "babel-plugin-seniman": "^0.0.6"
   }
 }
