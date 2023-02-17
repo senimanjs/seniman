@@ -561,5 +561,3 @@ function resolveChildren(children) {
   }
   return children;
 }
-
-console.log('STATEV2');

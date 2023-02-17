@@ -8,7 +8,9 @@ import { Window } from './window.js';
 const RSS_LOW_MEMORY_THRESHOLD = process.env.RSS_LOW_MEMORY_THRESHOLD ? parseInt(process.env.RSS_LOW_MEMORY_THRESHOLD) : 0;
 const RSS_LOW_MEMORY_THRESHOLD_ENABLED = RSS_LOW_MEMORY_THRESHOLD > 0;
 
-console.log('RSS_LOW_MEMORY_THRESHOLD', RSS_LOW_MEMORY_THRESHOLD + 'MB');
+if (RSS_LOW_MEMORY_THRESHOLD_ENABLED) {
+  console.log('RSS_LOW_MEMORY_THRESHOLD enabled: ', RSS_LOW_MEMORY_THRESHOLD + 'MB');
+}
 
 function getMemoryUsage() {
   const used = process.memoryUsage();

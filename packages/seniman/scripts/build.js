@@ -43,8 +43,7 @@ await buildClientScaffolding({
 });
 
 // run child process for babel
-
-await execa('babel', [
+await execa('./node_modules/.bin/babel', [
   'src',
   '--out-dir',
   './dist'

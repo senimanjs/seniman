@@ -1,6 +1,6 @@
 
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue, getActiveNode } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
 import { build } from '../build.js';
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
@@ -8,7 +8,6 @@ import { windowManager } from './window_manager.js';
 import { ErrorViewer, ErrorHandler } from './errors.js';
 
 export const WindowContext = createContext(null);
-export const WindowProvider = WindowContext.Provider;
 
 export function useWindow() {
   return useContext(WindowContext);
@@ -309,12 +308,12 @@ export class Window {
         return;
       }
 
-      this._attach(1, 0, <components.Head pageTitle={pageTitle} />);
+      getActiveNode().context = { [WindowContext.id]: windowContext };
+
+      this._attach(1, 0, <components.Head />);
       this._attach(2, 0,
         <ErrorHandler>
-          <WindowProvider value={windowContext}>
-            <components.Body />
-          </WindowProvider>
+          <components.Body />
         </ErrorHandler>
       );
 
@@ -477,7 +476,6 @@ export class Window {
   }
 
   destroy() {
-    console.log('treedispose');
     this.treeDisposer();
   }
 
