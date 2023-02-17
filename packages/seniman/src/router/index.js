@@ -237,8 +237,9 @@ export function RouterRoot(props) {
   return <RouterProvider routing={props.routing}>
     {() => {
       let router = useRouter();
+      let Component = router.activeComponent();
 
-      return _createComponent(router.activeComponent(), { router: router });
+      return <Component router={router} />;
     }}
   </RouterProvider>
 }
