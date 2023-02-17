@@ -5,6 +5,7 @@ import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declar
 import { build } from '../build.js';
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
 import { windowManager } from './window_manager.js';
+import { ErrorViewer, ErrorHandler } from './errors.js';
 
 export const WindowContext = createContext(null);
 export const WindowProvider = WindowContext.Provider;
@@ -299,16 +300,23 @@ export class Window {
 
     this.rootDisposer = useDisposableEffect(() => {
 
-      this._attach(1, 0, _createComponent(components.Head, { cssText: build.globalCss, pageTitle }));
+      if (build.syntaxErrors) {
+        let fileName = Object.keys(build.syntaxErrors)[0];
+        let err = build.syntaxErrors[fileName];
+        let stack = [err];
 
-      this._attach(2, 0, _createComponent(WindowProvider, {
-        get value() {
-          return windowContext;
-        },
-        get children() {
-          return _createComponent(components.Body, { syntaxErrors: build.syntaxErrors })
-        }
-      }));
+        this._attach(2, 0, <ErrorViewer name={err.name} message={err.message} stack={stack} />);
+        return;
+      }
+
+      this._attach(1, 0, <components.Head pageTitle={pageTitle} />);
+      this._attach(2, 0,
+        <ErrorHandler>
+          <WindowProvider value={windowContext}>
+            <components.Body />
+          </WindowProvider>
+        </ErrorHandler>
+      );
 
     }, null, this);
   }

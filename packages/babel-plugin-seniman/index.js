@@ -449,7 +449,9 @@ function processProgram(path) {
       });
 
 
-      node.body.splice(lastImportStatementIndex + 1, 0, createCompilerInternalImportsExpression());
+      if (gatheredUIBlocks.length > 0 || gatheredClientFunctions.length > 0) {
+        node.body.splice(lastImportStatementIndex + 1, 0, createCompilerInternalImportsExpression());
+      }
 
       return node;
     } else if (node.type == 'IfStatement') {
@@ -466,7 +468,14 @@ function processProgram(path) {
 
       return node;
     } else if (node.type == 'ExportNamedDeclaration') {
-      node.declaration = process(node.declaration);
+
+      if (node.declaration) {
+        node.declaration = process(node.declaration);
+      } else {
+        node.specifiers.map((specifier, index) => {
+          node.specifiers[index] = process(specifier);
+        });
+      }
 
       return node;
     } else if (node.type == 'FunctionDeclaration') {
