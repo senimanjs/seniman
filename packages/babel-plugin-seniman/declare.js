@@ -45,7 +45,7 @@ exports.createCompilerInternalImportsExpression = function createCompilerInterna
         "type": "ImportSpecifier",
         "local": {
           "type": "Identifier",
-          "name": "_createComponent"
+          "name": "_$createComponent"
         },
         "imported": {
           "type": "Identifier",

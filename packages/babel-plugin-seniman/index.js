@@ -448,10 +448,7 @@ function processProgram(path) {
         node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareClientFunctionExpression(clientFunction));
       });
 
-
-      if (gatheredUIBlocks.length > 0 || gatheredClientFunctions.length > 0) {
-        node.body.splice(lastImportStatementIndex + 1, 0, createCompilerInternalImportsExpression());
-      }
+      node.body.splice(lastImportStatementIndex + 1, 0, createCompilerInternalImportsExpression());
 
       return node;
     } else if (node.type == 'IfStatement') {
@@ -1278,7 +1275,7 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
     "type": "CallExpression",
     "callee": {
       "type": "Identifier",
-      "name": "_createComponent"
+      "name": "_$createComponent"
     },
     "arguments": arguments_
   }
