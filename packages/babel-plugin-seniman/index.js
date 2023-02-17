@@ -1106,7 +1106,7 @@ function createCallBlockExpression(block) {
     "type": "CallExpression",
     "callee": {
       "type": "Identifier",
-      "name": "_createBlock"
+      "name": "_$createBlock"
     },
     "arguments": arguments_
   }
