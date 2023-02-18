@@ -1,3 +1,12 @@
+// Acknowledgement:
+// This state system is highly inspired by SolidJS's signal system -- some lines of code are directly ported from SolidJS. 
+// Some public API function names are directly ported from ReactJS.
+// 
+// SolidJS Github:
+// https://github.com/solidjs/solid
+// ReactJS Github:
+// https://github.com/facebook/react
+
 let ActiveNode = null;
 let ActiveWindow = null;
 let UntrackActive = false;
@@ -113,36 +122,6 @@ export function useState(initialValue) {
   return [getState, setState];
 }
 
-/*
-function B(props) {
-  let memoB = useMemo(() => {
-    console.log('calc memoB @ B', props.count);
-    return props.count * 1000;
-  });
-
-  return <div>{memoB()}</div>;
-}
-
-function CompA() {
-
-  let [stateA, setStateA] = useState(100);
-
-  useEffect(() => {
-    console.log('useEffect @ CompA', stateA());
-  });
-
-  let memoA = useMemo(() => {
-    console.log('calc memoA @ CompA', stateA());
-    return stateA() * 100;
-  });
-
-  return <div>
-   {stateA() < 300 ? <B count={stateA()} /> : null}
-  </div>;
-}
-
-*/
-
 function writeState(window, state, newValue) {
 
   let current = state.value;
@@ -160,7 +139,6 @@ function writeState(window, state, newValue) {
 }
 
 const NODE_FRESH = 0;
-//const NODE_PENDING = 1;
 const NODE_QUEUED = 2;
 const NODE_DESTROYED = 3;
 
@@ -169,22 +147,7 @@ function _queueNodeForUpdate(window, node) {
   if (node.updateState === NODE_FRESH) {
     node.updateState = NODE_QUEUED;
     window.submitWork(node);
-    return;
   }
-
-  /*
-
-  if (node.updateState === NODE_QUEUED) {
-    console.log('node already queued');
-    return;
-  }
-
-  if (node.updateState === NODE_DESTROYED) {
-    console.log('node already destroyed');
-    //throw new Error('node already destroyed');
-    return;
-  }
-  */
 }
 
 function cleanNode(node) {
@@ -321,24 +284,6 @@ export function untrack(fn) {
   return val;
 }
 
-/*
-
-let [a, setA] = useState(0);
-
-let memoA = useMemo(() => {
-
-  return 1 + a();
-
-});
-
-let memoB = useMemo(() => {
-
-  return memoA() + 1;
-
-});
-
-*/
-
 export function useEffect(fn, value) {
   let effect = createEffect(fn, value);
 
@@ -427,85 +372,6 @@ function handleError(err) {
   if (!fns) { throw err }
   for (const f of fns) f(err);
 }
-
-/*
-console.log('node.sources', node.sources.map(s => s.id), node.sourceObserverSlots);
-
-// each loop, take out the last source and its slot
-const sourceToDelete = node.sources.pop(),
-  deletedSourceIndex = node.sourceObserverSlots.pop(),
-  // prep the observers list
-  sourceToDeleteObservers = sourceToDelete.observers;
-
-console.log('deleting', sourceToDelete.id)
-console.log('sourceToDeleteObservers BEFORE', sourceToDeleteObservers.map(o => o.id));
-
-// if there are observers, we need to remove the node from the observers list
-// NOTE: but why do we need to check if there are observers? 
-// unless there are bugs in the code, there should always be at least one observer (the node itself)
-if (sourceToDeleteObservers && sourceToDeleteObservers.length) {
-
-  // pop the last observer and its slot
-  const poppedObserver = sourceToDeleteObservers.pop(),
-    poppedObserverSlot = sourceToDelete.observerSlots.pop();
-
-  // if the node we're removing is not the last one in the list,
-  if (deletedSourceIndex < sourceToDeleteObservers.length) {
-
-    // we need to swap the observer we just removed with the actual entry we want to remove
-
-    sourceToDelete.observerSlots[deletedSourceIndex] = poppedObserverSlot;
-    sourceToDeleteObservers[deletedSourceIndex] = poppedObserver;
-
-    console.log('deletedSourceIndex', deletedSourceIndex);
-    // need to update the slot of the observer we just swapped
-    poppedObserver.sourceObserverSlots[poppedObserverSlot] = deletedSourceIndex;
-  }
-}
-console.log('sourceToDeleteObservers AFTER', sourceToDeleteObservers.map(o => o.id));
-*/
-
-/*
-function cleanNode(node) {
-
-  //console.log('cleaning up node ', node.id)
-  // remove the node from its sources
-  if (node.sourceSet.size) {
-
-    //console.log('sources', node.sourceSet.size);
-    // for every node's source, we need to remove the node from the source's observers list 
-    // (source can be either memo or signal)
-    while (node.sourceSet.size) {
-
-      let sourceList = Array.from(node.sourceSet);
-
-      sourceList.forEach(source => {
-        node.sourceSet.delete(source);
-        source.observerSet.delete(node);
-      });
-
-    }
-  }
-
-  if (node.children) {
-    for (let i = 0; i < node.children.length; i++) {
-      cleanNode(node.children[i]);
-    }
-    node.children = [];
-  }
-
-  if (node.cleanups) {
-    for (let i = 0; i < node.cleanups.length; i++) {
-      node.cleanups[i]();
-    }
-
-    node.cleanups = [];
-  }
-
-  node.updateState = FRESH;
-}
-
-*/
 
 function lookup(node, key) {
   return node

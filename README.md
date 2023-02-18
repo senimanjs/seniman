@@ -1,5 +1,6 @@
 # Seniman
 
+
 Seniman is a server-driven UI framework that runs your UI components on the server, enabling your UI to operate without downloading your component & business logic code to the client. 
 
 Seniman synchronizes the latest UI server state with the browser using a custom binary protocol over WebSocket and a thin ~2KB browser runtime, allowing fast-loading, low-latency user interfaces.
@@ -18,6 +19,8 @@ function Counter(props) {
 }
 ```
 Seniman runs on Node.JS and uses familiar JSX syntax & state management APIs, so you can hit the ground running.
+
+##### Note: Seniman is alpha software. The API is unstable and may change in the future. Please use with caution.
 
 ## Table of Contents
 - [How it Works](#how-it-works)
