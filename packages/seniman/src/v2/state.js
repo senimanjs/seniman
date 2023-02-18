@@ -209,7 +209,7 @@ function _removeNodeSubtree(node) {
 
 function registerDependency(state) {
 
-  if (UntrackActive) {
+  if (UntrackActive || !ActiveNode) {
     return;
   }
 
