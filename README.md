@@ -58,7 +58,7 @@ To start off simple, let's create a simple `Hello World` component. Create a new
 import { useState } from "seniman";
 import { createServer } from "seniman/server";
 
-function HelloWorld(props) {
+function Body() {
   let [getCount, setCount] = useState(0);
   let onClick = () => setCount(count => count + 1);
 
@@ -68,7 +68,7 @@ function HelloWorld(props) {
   </div>;
 }
 
-let server = createServer({Body: HelloWorld});
+let server = createServer({ Body });
 
 server.listen(3002);
 
