@@ -95,6 +95,11 @@ Open up your browser and navigate to `http://localhost:3002`, and you should see
 
 ## FAQ
 
+
+### Is my actual component code downloaded to the client?
+
+No, only the resulting DOM operations are sent to the client -- your component code is never downloaded to the client. This  means you can safely implement sensitive logic (like loading data from a database) or use sensitive data (like secret tokens) within the component code.  
+
 ### I have some logic I need running on the client. How do I do that?
 
 While most UI patterns are entirely implementable server-side with Seniman, Seniman also supports running custom logic on the client. Things that naturally need to run on the client like Google Single Sign-On, or custom analytics can be implemented using the `$c` and `$s` syntax.
@@ -114,7 +119,3 @@ In order for your users to have better experience during network reconnection, h
 ### Any example of this framework running somewhere?
 
 Yes -- the documentation site for Seniman is built using Seniman itself! You can access the (currently in-development) site at [seniman.space](https://seniman.space).
-
-### Is my actual component code downloaded to the client?
-
-No, only the resulting DOM operations are sent to the client -- your component code is never downloaded to the client. This  means you can safely implement sensitive logic (like loading data from a database) or use sensitive data (like secret tokens) within the component code.
