@@ -10,11 +10,11 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "immer": "^9.0.18",
-    "seniman": "^0.0.68"
+    "seniman": "^0.0.70",
+    "sqlite-async": "^1.2.0"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
-    "babel-plugin-seniman": "^0.0.4"
+    "babel-plugin-seniman": "^0.0.6"
   }
 }
