@@ -103,7 +103,7 @@ This will watch your `src` directory for changes, and compile them to the `dist`
 node dist/index.js
 ```
 
-Open up your browser and navigate to `http://localhost:3002`, and you should see a counter that increments when you click the button.
+Open up your browser and navigate to `http://localhost:3002`, and you should see a counter that increments when you click the button. For more examples, you can check out the [examples](examples) directory.
 
 ## FAQ
 
@@ -117,7 +117,7 @@ This might sound slow, but in most cases, 4G connections are now low-latency eno
 
 Seniman is designed to be resilient to network failures. When a client loses its connection to the server, the client will automatically execute connection retries -- and upon reconnection to the existing window session, the server will re-stream the command buffers that are not yet acknowledged by the client, getting the client up to speed with the latest state.
 
-When a server goes down, the client will similarly automatically reconnect to a different server in the cluster -- albeit restarting the session and losing any state that is not persisted to a database. If there is any important UI state you cannot afford to lose to a server crash -- say, a long, multi-input form -- you can persist the state to a database and re-load it when the client reconnects to a different window.
+When a server goes down, the client will similarly automatically reconnect to a different server in the cluster -- albeit restarting the session and losing any state that is not persisted to a database. If there is any important UI state you cannot afford to lose to a server crash -- say, a long, multi-page form -- you can persist the draft state to a database and re-load it when the client reconnects to a different window.
 
 ### This looks pretty stateful -- do I get to deploy this normally?
 
