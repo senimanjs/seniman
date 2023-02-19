@@ -32,8 +32,8 @@ function createJWTSession(cookieKey = '__CD') {
   return {
     loggedIn: loggedIn,
     data: sessionData,
-    login: (email, name) => {
-      let token = jwt.sign({ email, name }, JWT_SECRET, { expiresIn: '1d' });
+    login: (loginData) => {
+      let token = jwt.sign(loginData, JWT_SECRET, { expiresIn: '1d' });
       window.setCookie(cookieKey, token);
     },
     logout: () => {
