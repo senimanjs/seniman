@@ -1,9 +1,9 @@
 # Seniman
 
 
-Seniman is a server-driven UI framework that runs your UI components on the server, enabling your UI to operate without downloading your component & business logic code to the client. 
+Seniman is a JavaScript server-driven UI framework that runs your UI components on the server, enabling your UI to operate without downloading your component & business logic code to the client. 
 
-Seniman synchronizes the latest UI server state with the browser using a custom binary protocol over WebSocket and a thin ~2KB browser runtime, allowing fast-loading, low-latency user interfaces.
+Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~2KB browser runtime, allowing fast-loading, low-latency user interfaces.
 
 ```js
 import { useState } from "seniman";
