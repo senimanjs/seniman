@@ -40,22 +40,28 @@ In order to achieve network efficiency, Seniman server communicates to the clien
 
 ## Installation
 
-To use Seniman, the packages you need to install are Seniman itself, and the Babel plugin that will transform your Seniman JSX code.
+To use Seniman, the packages you need to install are Seniman itself, and the Babel packages that will transform your Seniman JSX code.
 
 Run the following command to install Seniman:
 ```sh
 npm install seniman
 ```
 
-And the following for the Babel plugin:
+And the following for the Babel packages:
 
 ```sh
-npm install --save-dev babel-plugin-seniman
+npm install --save-dev @babel/cli babel-plugin-seniman 
 ```
 
 ## Basic Usage
 
-To start off simple, let's create a simple `Hello World` component. Create a new file called `src/index.js` with the following contents:
+First, initialize your project's `package.json` and make sure to enable ES module with the following line in the file:
+
+```json
+"type": "module"
+```
+
+To start off simple, let's create a simple counter component. Create a new file called `src/index.js` with the following contents:
 
 ```js
 import { useState } from "seniman";
