@@ -111,7 +111,7 @@ Open up your browser and navigate to `http://localhost:3002`, and you should see
 
 When the user clicks the button, the browser runtime will send a `click` event to the server. The server will then execute the `onClick` handler assigned to the element, which will update the UI state, depending on your logic. If there is any change to the UI state, the server will generate a set of DOM operations to update the UI, and send it to the client. The client will then execute the DOM operations, updating the UI. 
 
-This might sound slow, but in most cases, 4G connections are now low-latency enough for the users to not notice the delay. In addition, Seniman is designed to be efficient in terms of network usage -- only the necessary DOM operations are sent to the client. You can feel the latency for yourself, live at our docs page: [seniman.space](https://seniman.space), and decide if it is acceptable for your use case.
+This might sound slow, but in most cases, 4G connections are now low-latency enough for the users to not notice the delay. In addition, Seniman is designed to be efficient in terms of network usage -- only the necessary DOM operations are sent to the client. You can feel the latency for yourself, live at our docs page: [senimanjs.org](https://senimanjs.org/), and decide if it is acceptable for your use case.
 
 ### This looks pretty stateful -- what happens when a client loses its connection to the server, or a server goes down?
 
@@ -135,4 +135,4 @@ While most UI patterns are entirely implementable server-side with Seniman, Seni
 
 ### Any example of this framework running somewhere? I want to feel how a remotely-driven UI feels like.
 
-Yes -- the documentation site for Seniman is built using Seniman itself! You can access the (currently in-development) site at [seniman.space](https://seniman.space).
+Yes -- the documentation site for Seniman is built using Seniman itself! You can access the (currently in-development) site at [senimanjs.org](https://senimanjs.org/).
