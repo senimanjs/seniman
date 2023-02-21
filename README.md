@@ -40,7 +40,7 @@ In order to achieve network efficiency, Seniman server communicates with the cli
 
 ## Installation
 
-To use Seniman, the packages you need to install are Seniman itself, and the Babel packages that will transform your Seniman JSX code.
+To use Seniman, the packages you need to install are Seniman itself, and the Babel packages that will transform your Seniman JSX code. 
 
 Run the following command to install Seniman:
 ```sh
@@ -52,6 +52,8 @@ And the following for the Babel packages:
 ```sh
 npm install --save-dev @babel/cli babel-plugin-seniman 
 ```
+
+#### Note: Seniman supports Node.JS v16 or above.
 
 ## Basic Usage
 
