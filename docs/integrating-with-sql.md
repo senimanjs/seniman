@@ -39,7 +39,8 @@ Let's start by looking at the imports:
 ```js
 
 import express from 'express';
-import { wrapExpress, useState } from 'seniman';
+import { wrapExpress } from 'seniman/express';
+import { useState } from 'seniman';
 import { Database } from 'sqlite-async';
 ```
 
@@ -110,9 +111,7 @@ The `Head` component's pretty standard; tags that you usually put in the `<head>
 
 ```js
 function Body(props) {
-  return <ErrorHandler syntaxErrors={props.syntaxErrors}>
-    <TodoList />
-  </ErrorHandler>;
+  return <TodoList />;
 }
 ```
 

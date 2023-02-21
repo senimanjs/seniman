@@ -36,7 +36,7 @@ At a high-level, Seniman runtime is divided into two parts: the server, and clie
 
 On the server-side, Seniman includes a custom runtime to build and maintain your UI component tree, track state changes across components, and manage connections to concurrently-connected browser windows. The server-side runtime is also responsible for generating UI update commands to make sure the browser is able to render the latest UI state. Event system is also implemented on the server-side -- allowing your server-side code to respond to events triggered by the client.
 
-In order to achieve network efficiency, Seniman server communicates to the client using a custom binary protocol over WebSocket, which are then interpreted into actual DOM operations by a ~2kb browser runtime. The result is a low-latency, fast-loading, remotely-driven user interface that feels local over a normal 4G connection.
+In order to achieve network efficiency, Seniman server communicates with the client by sending commands using a custom binary protocol over WebSocket, which are then interpreted into actual DOM operations by a ~2kb browser runtime. The result is a low-latency, fast-loading, remotely-driven user interface that feels local over a normal 4G connection.
 
 ## Installation
 
@@ -55,7 +55,7 @@ npm install --save-dev @babel/cli babel-plugin-seniman
 
 ## Basic Usage
 
-First, initialize your project's `package.json` and make sure to enable ES module with the following line in the file:
+First, initialize your project's `package.json` and make sure to enable ES modules with the following line in the file:
 
 ```json
 "type": "module"
@@ -133,6 +133,6 @@ No, only the resulting DOM operations are sent to the client -- your component c
 
 While most UI patterns are entirely implementable server-side with Seniman, Seniman also supports running custom logic on the client. Things that naturally need to run on the client like Google Single Sign-On, or custom analytics can be implemented using the `$c` and `$s` syntax.
 
-### Any example of this framework running somewhere? I want to feel how a remotely-driven UI feels like.
+### Any example of this framework running somewhere? I want to see how a remotely-driven UI feels like.
 
 Yes -- the documentation site for Seniman is built using Seniman itself! You can access the (currently in-development) site at [senimanjs.org](https://senimanjs.org/).
