@@ -50,7 +50,17 @@ function MyComponent() {
 }
 ```
 
-Much simpler!
+Much simpler! You can even pass it as an inline function -- without the `$c` wrapper -- to the `onClick` prop, like so:
+
+```js
+function MyComponent() {
+  return (
+    <button onClick={() => console.log('Clicked!')}>Click me!</button>
+  );
+}
+```
+
+And we have a simple, server-executed event handler on our hands.
 
 #### Passing arguments to the `$s` function
 

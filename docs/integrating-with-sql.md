@@ -37,7 +37,6 @@ All the source code for the todo list application is located in a single file --
 Let's start by looking at the imports:
 
 ```js
-
 import express from 'express';
 import { wrapExpress } from 'seniman/express';
 import { useState } from 'seniman';
@@ -99,15 +98,23 @@ Here, we create a table called `tasks` and insert two tasks into it to start wit
 Let's now go through the `Head` and `Body` components:
 
 ```js
-function Head(props) {
+const cssText = `
+  body, * {
+    padding: 0;
+    margin: 0;
+    font-family: sans-serif;
+  }
+  body { padding: 10px; background:#444; }
+`;
+
+function Head() {
   return <>
-    <title>{props.window.pageTitle}</title>
-    <style>{props.cssText}</style>
+    <style>{cssText}</style>
   </>;
 }
 ```
 
-The `Head` component's pretty standard; tags that you usually put in the `<head>` element of the HTML document, you can put here. You can see there's two tags already there to set the page title and the main CSS style, provided by Seniman.
+The `Head` component's pretty standard; tags that you usually put in the `<head>` element of the HTML document, you can put here. You can see there's a single `style` already there to set minimum styling for the application.
 
 ```js
 function Body(props) {
