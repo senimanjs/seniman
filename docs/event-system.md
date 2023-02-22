@@ -17,7 +17,7 @@ The events themselves, however, are standard browser events. These are the brows
 
 ##### Note: Other standard browser events not currently listed here will shortly be supported.
 
-Let's go through how you'd handle these event types in Seniman. Note: familiarity with [`Client Functions`](#client-functions) is helpful!
+Let's go through how you'd handle these event types in Seniman. Note: familiarity with [`Client Functions`](/docs/client-functions) is helpful!
 
 
 ---

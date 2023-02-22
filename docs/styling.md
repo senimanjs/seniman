@@ -24,7 +24,7 @@ You can also use dynamic values for the individual style properties:
 function Counter(props) {
   let [getCount, setCount] = useState(0);
   
-  return <div style={{ background:'white', color: getCount() > 0 ? 'green' : 'red' }}>
+  return <div style={{ color: getCount() > 0 ? 'green' : 'red', background: 'white' }}>
     {getCount}
   </div>;
 }

@@ -2,7 +2,7 @@
 
 Using Seniman, being a server-driven UI framework, means your interfaces are generated on the server, derived from values that already exist on the server. It is inevitable, however, that you will need to implement some client-side functionality. At the very least, you will need to know when a user clicks a button -- or when a user types something into a text field, and what they typed, and respond to that event. Seniman provides a way to implement client-side functionality, and it is called client functions.
 
-Client functions allows you to define functions which execute on the client-side, which can be used to implement event handlers, or any other kind of client-side logic. Let's go through the different forms of client functions and how they can be used.
+Client functions allows you to define functions which execute on the client-side, which can be used to implement event handlers, or any other kind of client-side logic. Let's go through the two different forms of using client functions: [event handlers](#event-handlers) and [`clientExec`](#clientexec).
 
 ### Event handlers
 
