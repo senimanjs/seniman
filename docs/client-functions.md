@@ -84,6 +84,36 @@ function MyComponent() {
 
 In this example, the `onChange` event handler will call the `handleNameChange` function on the server, passing the value of the input as an argument.
 
+
+As with the `onClick` handler, we can also simplify the handler declaration. For `$c` functions that passes the event's target value like this one -- which you'll find frequently -- you can use the `withValue` helper function:
+
+```js
+
+import { withValue } from 'seniman';
+
+function MyComponent() {
+  ...
+
+  let handleNameChange = (name) => {
+    // do something with the name
+  }
+
+  return (
+    ...
+    <input onChange={withValue(handleNameChange)} />
+    ...
+  );
+}
+```
+
+The `withValue` helper function takes a server function, and wraps it in a `$c` handler that calls the server function with the event's target value as an argument -- making the component code a bit more readable. It's a pretty small one, so here's the implementation of the `withValue` helper function:
+
+```js
+function withValue(fn) {
+  return $c(e => $s(fn)(e.target.value));
+}
+```
+
 ### clientExec
 
 Another way to use client functions is by calling them directly from the server. 

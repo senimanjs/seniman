@@ -87,7 +87,7 @@ function MyComponent() {
     console.log('input blurred with value: ', value);
   }
 
-  return  <input type="text" onBlur={$c(() => $s(handleInputBlurredValue)(e.target.value) )} />
+  return  <input type="text" onBlur={withValue(handleInputBlurredValue)} />
 }
 ```
 
@@ -101,7 +101,7 @@ function MyComponent() {
     console.log('input changed with value: ', value);
   }
 
-  return  <input type="text" onChange={$c(() => $s(handleInputChangedValue)(e.target.value) )} />
+  return  <input type="text" onChange={withValue(handleInputChangedValue)} />
 }
 ```
 
@@ -115,7 +115,7 @@ function MyComponent() {
     console.log('input keydown with value: ', value);
   }
 
-  return  <input type="text" onKeyDown={$c(() => $s(handleInputKeyDownValue)(e.target.value) )} />
+  return  <input type="text" onKeyDown={withValue(handleInputKeyDownValue)} />
 }
 ```
 
@@ -129,7 +129,7 @@ function MyComponent() {
     console.log('input keyup with value: ', value);
   }
 
-  return  <input type="text" onKeyUp={$c(() => $s(handleInputKeyUpValue)(e.target.value) )} />
+  return  <input type="text" onKeyUp={withValue(handleInputKeyUpValue)} />
 }
 ```
 
