@@ -1,5 +1,5 @@
 import express from 'express';
-import { useState } from 'seniman';
+import { useState, withValue } from 'seniman';
 import { wrapExpress } from 'seniman/express';
 import { Database } from 'sqlite-async';
 
@@ -52,6 +52,7 @@ function Head() {
 
 function Body() {
   let [getTasks, setTasks] = useState([]);
+  let [inputValue, setInputValue] = useState('');
 
   async function loadTasks() {
     const tasks = await db.all("SELECT id, text FROM tasks");
@@ -68,6 +69,7 @@ function Body() {
 
     await db.run("INSERT INTO tasks (text) VALUES (?)", taskText);
 
+    setInputValue('');
     loadTasks();
   }
 
@@ -77,19 +79,6 @@ function Body() {
     loadTasks();
   };
 
-
-  let newTaskDraft = '';
-
-  let onBlur = (value) => {
-    newTaskDraft = value;
-  }
-
-  let onBlurClientHandler = $c(e => {
-    $s(onBlur)(e.target.value);
-
-    e.target.value = '';
-  });
-
   return <div>
     {getTasks().map(task => {
       return <div style={{ width: "300px", background: "#eee", padding: "5px" }}>
@@ -98,8 +87,11 @@ function Body() {
       </div>
     })}
     <div>
-      <input type="text" onBlur={onBlurClientHandler} />
-      <button onClick={() => addTask(newTaskDraft)}>+ Task</button>
+      <input
+        type="text"
+        value={inputValue()}
+        onChange={withValue(setInputValue)} />
+      <button onClick={() => addTask(inputValue())}>+ Task</button>
     </div>
   </div>;
 }

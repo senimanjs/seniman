@@ -208,46 +208,27 @@ return <div>
   })}
   ...
   <div>
-    <input type="text" onBlur={onBlurClientHandler} />
+    <input
+      type="text"
+      value={inputValue()}
+      onChange={withValue(setInputValue)} />
     ...
   </div>
 </div>;
 ```
 
-We have a `text` input field, and we're passing `onBlurClientHandler` as the `onBlur` handler. The event handler is defined below:
+Here, we have an input element that allows the user to type in the text of the new task. We use the `value` attribute to set the value of the input, and the `onChange` handler to set the value of the input. 
 
-```js
-let onBlurClientHandler = $c(e => {
-  $s(onBlur)(e.target.value);
+In the `value` attribute, we use the `inputValue` state getter function to set the `input` element's value to the current value of the `inputValue` state variable. While it is not particularly useful while the user is typing, it is useful when the user clicks the "Add" button, because the `inputValue` state variable will be reset to an empty string, and the `input` element's value will be reset to an empty string as well.
 
-  e.target.value = '';
-});
-```
+In the `onChange` handler, we use the `withValue` helper function (and the `setInputValue` state setter to set the `inputValue` state variable to the value of the `target.value` property of the event object.
 
-As you can see, instead of passing an anonymous function, we're passing a `$c` function. Anonymous function is good for simple event triggers without any arguments, but when you need to pass arguments to the event handler, namely from data only available from the browser's event object, you need to use the `$c` function.
-
-At compile time, the `$c` syntax marks the function that it wraps as a client-side function. Passing its return value as an event handler of an element will cause the function wrapped inside `$c` to be executed right on the browser as a native event listener when the event is triggered.
-
-Like a regular browser event listener, the function receives the browser's event object when it is called. We then use the `$s` function (the  complementary for `$c` function, on the client-side) to refer and call the `onBlur` function on the server, passing the value of the input field as the argument. Finally, we clear out the input field.
-
-Let's take a look at the `onBlur` function:
-
-```js
-let newTaskDraft = '';
-
-let onBlur = (value) => {
-  newTaskDraft = value;
-}
-```
-
-The `onBlur` function, running on the server, takes the value that was just passed from the `$c` event handler function over the socket, and assigns it to the `newTaskDraft` variable -- which we use to temporarily store the text of the new task, to be used when the user finally clicks the "Add" button.
-
-Let's take a look at the "Add" button:
+Let's now take a look at the "Add" button:
 
 ```js
 <div>
   <input type="text" onBlur={onBlurClientHandler} />
-  <button onClick={() => addTask(newTaskDraft)}>+ Task</button>
+  <button onClick={() => addTask(newTaskDraft)}>+ Add Task</button>
 </div>
 ```
 
