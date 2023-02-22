@@ -53,7 +53,7 @@ And the following for the Babel packages:
 npm install --save-dev @babel/cli babel-plugin-seniman 
 ```
 
-#### Note: Seniman supports Node.JS v16 or above.
+##### Note: Seniman supports Node.JS v16 or above.
 
 ## Basic Usage
 
