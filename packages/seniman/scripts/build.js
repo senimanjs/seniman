@@ -14,6 +14,11 @@ async function buildClientScaffolding(config) {
   let jsCodeString = jsCode.toString();
   var options = {
     toplevel: true,
+    mangle: {
+      properties: {
+        regex: /^_/
+      }
+    },
     output: {
       beautify: false
     }
@@ -22,7 +27,6 @@ async function buildClientScaffolding(config) {
   let minifiedCode = uglifyjs.minify(jsCodeString, options).code;
   let htmlString = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1" /><script>${minifiedCode}</script>`;
   let htmlBuffer = Buffer.from(htmlString);
-
 
   let frontendBundlePath = targetDirectory + '/frontend-bundle';
 

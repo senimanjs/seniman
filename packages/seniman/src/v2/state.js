@@ -84,6 +84,31 @@ export function runInNode(node, fn) {
   ActiveNode = oldNode;
 }
 
+/*
+
+The wrapPromise makes sure that the activeNode  that was active before the promise resolves is the same after the promise resolves.
+
+let a = await wrapPromise(fetch(...));
+
+*/
+export function wrapPromise(promise) {
+  let node = ActiveNode;
+  let window = ActiveWindow;
+
+  return promise.then(
+    v => {
+      ActiveNode = node;
+      ActiveWindow = window;
+      return v;
+    },
+    e => {
+      ActiveNode = node;
+      ActiveWindow = window;
+      throw e;
+    }
+  );
+}
+
 // createId() returns a unique id for a node
 // this is used to identify nodes in the dependency graph
 // and to identify nodes in the work queue
@@ -112,6 +137,7 @@ export function useState(initialValue) {
   let _activeWindow = ActiveWindow;
 
   function setState(newValue) {
+
     if (newValue instanceof Function) {
       newValue = newValue(state.value);
     }
@@ -386,9 +412,9 @@ function createProvider(id, options) {
   return function Provider(props) {
 
     return () => {
-      untrack(() => {
-        ActiveNode.context = { [id]: props.value };
-      });
+      //untrack(() => {
+      ActiveNode.context = { [id]: props.value };
+      //});
 
       return props.children;
     };

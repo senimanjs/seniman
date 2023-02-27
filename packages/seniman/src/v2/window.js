@@ -1,6 +1,6 @@
 
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue, getActiveNode } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue, getActiveNode, runInNode } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
 import { build } from '../build.js';
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
@@ -122,7 +122,11 @@ function processInput(window, inputQueue) {
     let msg = inputQueue.shift();
 
     untrack(() => {
-      window._onMessage(msg);
+      try {
+        window._onMessage(msg);
+      } catch (e) {
+        console.error(e);
+      }
     });
   }
 
@@ -141,6 +145,7 @@ let CMD_INIT_BLOCK = 8;
 let CMD_REMOVE_BLOCKS = 9;
 let CMD_INSTALL_CLIENT_FUNCTION = 10;
 let CMD_RUN_CLIENT_FUNCTION = 11;
+let CMD_INIT_SEQUENCE = 13;
 
 let pingBuffer = Buffer.from([0]);
 const multiStylePropScratchBuffer = Buffer.alloc(32768);
@@ -588,7 +593,6 @@ export class Window {
     let currentPageOffset = this.global_writeOffset - mg.page.global_headOffset;
 
     //console.log('currentPageOffset', currentPageOffset);
-
     //console.log('currentPageOffset', currentPageOffset, size, this.global_writeOffset, mg.page.global_headOffset);
 
     // if we're about to overflow the current page, let's allocate a new one
@@ -700,91 +704,78 @@ export class Window {
   }
 
   _attach(blockId, anchorIndex, nodeResult) {
-
     if (typeof nodeResult == 'string') {
       this._streamTextInitCommand(blockId, anchorIndex, nodeResult);
     } else if (typeof nodeResult == 'number') {
       this._streamTextInitCommand(blockId, anchorIndex, nodeResult.toString());
     } else if (!nodeResult) {
       this._streamTextInitCommand(blockId, anchorIndex, '');
-    } else if (nodeResult.type == 'block') {
-      //console.log('_attachBlock', nodeResult.id);
-      this._streamAttachBlockCommand(blockId, anchorIndex, nodeResult.id);
-    } else if (nodeResult instanceof Function) {
-      useEffect(() => {
-        let value = nodeResult();
-        this._attach(blockId, anchorIndex, value);
-      });
-    } else if (Array.isArray(nodeResult)) {
-      this._attachList(blockId, anchorIndex, nodeResult);
+    } else {
+      switch (nodeResult.constructor) {
+        case Block:
+          this._streamAttachBlockCommand(blockId, anchorIndex, nodeResult.id);
+          break;
+        case Component:
+          useEffect(() => {
+            this._attach(blockId, anchorIndex, nodeResult.fn(nodeResult.props));
+          });
+          break;
+        /*
+        case Promise:
+          let node = getActiveNode();
+
+          nodeResult.then(value => {
+            runInNode(node, () => {
+              this._attach(blockId, anchorIndex, value);
+            });
+          }).catch(err => {
+            console.error(err);
+          });
+          break;
+        */
+        case Function:
+          useEffect(() => {
+            let value = nodeResult();
+            this._attach(blockId, anchorIndex, value);
+          });
+          break;
+        case Array:
+          this._attachListV2(blockId, anchorIndex, nodeResult);
+          break;
+        default:
+          console.error('Unknown nodeResult', nodeResult);
+      }
     }
   }
 
-  // TODO: this might be doing it too cleverly -- will be hard to understand without comments.
-  // also lots of optimizations can be done.
+  _createSequence(listLength) {
+    let _seqId = this._createBlockId();
 
-  // what we're doing here is creating a single effect scope to capture all of the callables, then
-  // passing the resolved values down to the recursive _attachList call, down to the final code path
-  // where no callables are present, and we can start streaming the values to the client.
-  // TODO: this doesn't currently handle nested lists
-  _attachList(blockId, anchorIndex, list) {
-    let includesCallables = false;
-    let listLength = list.length;
+    // stream the sequence initialization command
+    // CMD + BLOCK_ID + LIST_LENGTH
+    let bufferLength = 1 + 2 + 2;
 
-    // TODO: optimize -- hint from the compiler?
-    // i.e. includesCallables, callable positions, etc.
-    for (let i = 0; i < listLength; i++) {
-      let val = list[i];
+    let buf = this._allocCommandBuffer(bufferLength);
 
-      if (val instanceof Function) {
-        includesCallables = true;
-        break;
-      }
-    }
+    buf.writeUInt8(CMD_INIT_SEQUENCE, 0);
+    buf.writeUInt16BE(_seqId, 1);
+    buf.writeUInt16BE(listLength, 3);
 
-    if (includesCallables) {
-      // create an effect scope to capture any of the callables, then pass the resolved values down the
-      // recursive _attachList call
-      // TODO: optimize this
-      let valueList = [];
+    onCleanup(() => {
+      this._handleBlockCleanup(_seqId);
+    });
 
-      // TODO: optimize -- hint from the compiler?
-      for (let i = 0; i < listLength; i++) {
-        let val = list[i];
+    return _seqId;
+  }
 
-        if (val instanceof Function) {
-          valueList.push(null);
-        } else {
-          valueList.push(val);
-        }
-      }
+  _attachListV2(blockId, anchorIndex, list) {
 
-      useEffect(() => {
-        for (let i = 0; i < listLength; i++) {
-          let value = list[i];
+    let _seqId = this._createSequence(list.length);
 
-          if (value instanceof Function) {
-            value = value();
+    this._streamAttachBlockCommand(blockId, anchorIndex, _seqId);
 
-            if (typeof value == 'number') {
-              value = value.toString();
-            } else if (!value) {
-              value = '';
-            } else if (Array.isArray(value) && value.length == 0) {
-              value = '';
-            }
-
-            valueList[i] = value;
-          }
-        }
-
-        this._attachList(blockId, anchorIndex, valueList);
-      });
-
-    } else {
-
-      // once we got rid of all the callables, stream down the list
-      this._streamAttachListCommand(blockId, anchorIndex, list);
+    for (let i = 0; i < list.length; i++) {
+      this._attach(_seqId, i, list[i]);
     }
   }
 
@@ -816,7 +807,7 @@ export class Window {
     let textLength = textBuffer.length; //Buffer.byteLength(value);
 
     // TODO: handle string length longer than 32K
-    let buf2 = this._allocCommandBuffer(1 + 2 + 1 + 2 + textLength + 2);
+    let buf2 = this._allocCommandBuffer(1 + 2 + 1 + 2 + textLength);
 
     buf2.writeUint8(CMD_ATTACH_ANCHOR, 0);
     buf2.writeUint16BE(blockId, 1);
@@ -830,11 +821,11 @@ export class Window {
 
     buf2.writeUint16BE(textLength, 4);
     textBuffer.copy(buf2, 6);
-    buf2.writeUint16BE(65535, 6 + textLength);
+    //buf2.writeUint16BE(65535, 6 + textLength);
   }
 
   _streamAttachBlockCommand(parentBlockId, anchorIndex, blockId) {
-    let buf2 = this._allocCommandBuffer(1 + 2 + 1 + 2 + 2);
+    let buf2 = this._allocCommandBuffer(1 + 2 + 1 + 2);
 
     buf2.writeUint8(CMD_ATTACH_ANCHOR, 0);
     buf2.writeUint16BE(parentBlockId, 1);
@@ -842,7 +833,7 @@ export class Window {
     buf2.writeUint8(anchorIndex, 3);
 
     buf2.writeUint16BE(blockId |= (1 << 15), 4);
-    buf2.writeUint16BE(65535, 6);
+    //buf2.writeUint16BE(65535, 6);
   }
 
   _streamAttachListCommand(blockId, anchorIndex, nodeResultsArray) {
@@ -851,13 +842,13 @@ export class Window {
 
     //console.log('_streamAttachListCommand', blockId, anchorIndex, count, nodeResultsArray);
 
-    // TODO: handle text in the results array
     for (let i = 0; i < count; i++) {
       let val = nodeResultsArray[i];
 
-      if (val.type == 'block') {
+      if (val instanceof Block) {
         length += 2;
       } else {
+        // handle text
         length += (2 + val.length);
       }
     };
@@ -872,15 +863,15 @@ export class Window {
 
     let offset = 4;
 
-    // TODO: handle text in the results array
     for (let i = 0; i < count; i++) {
       let val = nodeResultsArray[i];
 
-      if (val.type == 'block') {
+      if (val instanceof Block) {
         let childBlockId = val.id;
         buf2.writeUint16BE(childBlockId |= (1 << 15), offset);
         offset += 2;
       } else {
+        // handle text
         buf2.writeUint16BE(val.length, offset);
         buf2.write(val, offset + 2, val.length);
         offset += (2 + val.length);
@@ -903,20 +894,10 @@ export class Window {
     elementEffects && this._handleElementEffects(newBlockId, elementEffects);
 
     anchors && anchors.map((anchorNodeResult, anchorIndex) => {
-      //this._processNodeV2(anchorNode, newBlockId, anchorIndex, -1);
       this._attach(newBlockId, anchorIndex, anchorNodeResult);
     });
 
-
-    onCleanup(() => {
-      //console.log('cleanup block', newBlockId);
-      this._handleBlockCleanup(newBlockId);
-    });
-
-    return {
-      type: "block",
-      id: newBlockId
-    };
+    return new Block(newBlockId);
   }
 
   _handleBlockEventHandlers(newBlockId, eventHandlers) {
@@ -1148,8 +1129,17 @@ export class Window {
   }
 }
 
+function Block(id) {
+  this.id = id;
+}
+
+function Component(fn, props) {
+  this.fn = fn;
+  this.props = props;
+}
+
 export function _createComponent(componentFunction, props) {
-  return untrack(() => componentFunction(props));
+  return new Component(componentFunction, props);
 }
 
 export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffects) {

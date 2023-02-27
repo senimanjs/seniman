@@ -211,18 +211,6 @@
   }
 
 
-  let _initBlock = () => {
-
-    let blockId = getUint16(); //buf.writeUint16LE(blockId, 3);
-    let templateId = getUint16();//dv.get buf.writeUint16LE(templateId, 6);
-
-    let componentDef = templateDefinitionMap.get(templateId);
-    let componentRootElement = componentDef.tpl.cloneNode(true);//[templateIndex];
-    let [anchorDefs, targetEls] = componentDef.fn(componentRootElement);
-
-    _blocksMap.set(blockId, _createNewBlockEntry(componentRootElement, targetEls, anchorDefs));
-  }
-
   let clickEventHandlerIdWeakMap = new WeakMap();
 
   let _getBlockTargetElement = (blockId, targetId) => {
@@ -676,88 +664,252 @@
     return new Function("_", fnString);
   }
 
+  class BlockAnchor {
+    constructor(el, marker) {
+      this.el = el;
+      this.marker = marker;
 
-  let _createNewBlockEntry = (rootEl, targetEls, anchorDefs) => {
-    return {
-      rootEl,
-      targetEls,
-      anchors: anchorDefs.map(anchor => {
-        return {
-          el: anchor.el,
-          marker: anchor.marker,
-          nodes: [],
-          blockIds: []
-        }
-      }),
+      this.node = null;
+      this.seqId = -1;
+    }
+
+    _attachText(text) {
+      this._attachSingle(_document.createTextNode(text));
+    }
+
+    _attachBlock(blockId) {
+      let block = getBlock(blockId);
+
+      if (block.isSeq) {
+        this._attachSeq(blockId);
+      } else {
+        this._attachSingle(block.rootEl);
+      }
+    }
+
+    _attachSeq(seqId) {
+      // clean up
+      this._clean();
+
+      getBlock(seqId)._setParent(this);
+
+      this.node = null;
+      this.seqId = seqId;
+    }
+
+    _attachSingle(newNode) {
+      //let current = this.nodes;
+      // clean up
+      this._clean();
+      // insert new node
+      this.el.insertBefore(newNode, this.marker);
+
+      this.node = newNode;
+      this.seqId = -1;
+    }
+
+    _clean() {
+      if (this.seqId > -1) {
+        let nodes = [];
+        let seq = getBlock(this.seqId);
+
+        gatherSequenceNodes(nodes, seq);
+
+        nodes.forEach(node => {
+          node.remove();
+        });
+      } else if (this.node) {
+        this.node.remove();
+      }
     }
   }
 
-  let tempMarker = _document.createTextNode('');
+  let gatherSequenceNodes = (nodes, seq) => {
 
-  let _attach = (anchor, value) => {
-    let parentElement = anchor.el;
-    let current = anchor.nodes;
+    seq.items.forEach(item => {
+      if (item.isSeq) {
+        throw new Error('nested sequence is not yet supported');
+        //gatherSequenceNodes(nodes, item.seqId);
+      } else {
 
-    if (current.length) {
-      parentElement.insertBefore(tempMarker, current[0]);
+        if (item.node) {
+          nodes.push(item.node);
+        }
+      }
+    });
+  }
 
-      current.forEach(node => {
-        node.remove();
-      });
+  let _createNewBlockEntry = (rootEl, targetEls, anchorDefs) => {
+    return {
+      isSeq: false,
+      anchors: anchorDefs.map(anchor => {
+        return new BlockAnchor(anchor.el, anchor.marker);
+      }),
+      rootEl,
+      targetEls
+    }
+  }
 
-      value.forEach(el => {
-        parentElement.insertBefore(el, tempMarker);
-      });
+  let _initBlock = () => {
+    let blockId = getUint16(); //buf.writeUint16LE(blockId, 3);
+    let templateId = getUint16();//dv.get buf.writeUint16LE(templateId, 6);
 
-      tempMarker.remove();
-    } else {
-      value.forEach(el => {
-        parentElement.insertBefore(el, anchor.marker);
-      });
+    let componentDef = templateDefinitionMap.get(templateId);
+    let componentRootElement = componentDef.tpl.cloneNode(true);//[templateIndex];
+    let [anchorDefs, targetEls] = componentDef.fn(componentRootElement);
+
+    _blocksMap.set(blockId, _createNewBlockEntry(componentRootElement, targetEls, anchorDefs));
+  }
+
+  class SequenceItem {
+    constructor(i, seq) {
+      this.i = i;
+      this.seq = seq;
+      this.node = null;
+      this.seqId = -1;
     }
 
-    anchor.nodes = value;
-  };
+    _attachText(text) {
+      this.seq._attachText(this.i, text);
+    }
+
+    _attachBlock(blockId) {
+      this.seq._attachBlock(this.i, blockId);
+    }
+  }
+
+  class Sequence {
+    constructor(itemLength) {
+      this.isSeq = true;
+      this.items = [];
+      this.parent = null;
+
+      for (let i = 0; i < itemLength; i++) {
+        this.items.push(new SequenceItem(i, this));
+      }
+    }
+
+    _setParent(parent) {
+      this.parent = parent;
+    }
+
+    _getBeforeSiblingInsertReference(index) {
+      while (--index >= 0) {
+        let item = this.items[index];
+
+        if (item.node) {
+          return item.node;
+        }
+
+        // TODO: check if item is a sequence
+      }
+    }
+
+    _getAfterSiblingInsertReference(index) {
+      while (++index < this.items.length - 1) {
+        let item = this.items[index];
+
+        if (item.node) {
+          return item.node;
+        }
+
+        // TODO: check if item is a sequence
+      }
+    }
+
+    _getParentInsertReference() {
+      return {
+        el: this.parent.el,
+        marker: this.parent.marker
+      }
+    }
+
+    _attachSingle(index, newNode) {
+      let prevNode = this.items[index].node;
+
+      // if the sequence item has an existing node, just replace it
+      if (prevNode) {
+        prevNode.replaceWith(newNode);
+        return;
+      }
+
+      // if this isn't the first item, try to find before sibling reference
+      if (index > 0) {
+        let refEl = this._getBeforeSiblingInsertReference(index);
+
+        if (refEl) {
+          refEl.after(newNode);
+          return;
+        }
+      }
+
+      if (index < this.items.length - 1) {
+        let refEl = this._getAfterSiblingInsertReference(index);
+
+        if (refEl) {
+          refEl.parentElement.insertBefore(newNode, refEl);
+          return;
+        }
+      }
+
+      let parentRef = this._getParentInsertReference();
+
+      parentRef.el.insertBefore(newNode, parentRef.marker);
+    }
+
+
+    _attachText(index, text) {
+      let node = _document.createTextNode(text);
+
+      this._attachSingle(index, node);
+
+      let item = this.items[index];
+      item.node = node;
+      item.seqId = -1;
+    }
+
+    _attachBlock(index, blockId) {
+
+      let block = getBlock(blockId);
+
+      if (block.isSeq) {
+        throw new Error('nested sequence is not yet supported');
+        //this._attachSeq(index, block);
+      } else {
+        let node = block.rootEl;
+
+        this._attachSingle(index, node);
+
+        let item = this.items[index];
+        item.node = node;
+        item.seqId = -1;
+      }
+    }
+
+  }
+
+  let _initSequence = () => {
+    let seqId = getUint16();
+    let seqLength = getUint16();
+
+    _blocksMap.set(seqId, new Sequence(seqLength));
+  }
 
   let _attachAtAnchorV2 = () => {
-    let block = getBlock(getUint16());
-    let anchor = block.anchors[getUint8()];
-    let elements = [];
-    let newBlockIds = [];
+    let blockId = getUint16();
+    let block = getBlock(blockId);
 
-    while (true) {
-      let marker16bit = getUint16();
+    let index = getUint8();
+    let [highestOrderBit, value] = magicSplitUint16(getUint16());
 
-      // element loop termination bytes
-      if (marker16bit == 65535) {
-        break;
-      }
+    let target = block.isSeq ? block.items[index] : block.anchors[index];
+    let isText = !highestOrderBit;
 
-      let [highestOrderBit, value] = magicSplitUint16(marker16bit);
-
-      // if highest order bit is 1 is blockId, if 0, it's text
-      if (highestOrderBit) {
-        //console.log('value', value);
-        newBlockIds.push(value);
-        //throw new Error('test');
-        //console.log('attaching  block datum', datum);
-        elements.push(getBlock(value).rootEl);
-      } else {
-        let text = getString(value);// textDecoder.decode(buffer.slice(6, 6 + textLength));  
-        elements.push(_document.createTextNode(text)); // datum is the text
-      }
+    if (isText) {
+      target._attachText(getString(value));
+    } else {
+      target._attachBlock(value);
     }
-
-    _attach(anchor, elements);
-
-    /*
-    if (newBlockIds.length > 0) {
-        let removedBlockIds = arrayNotInB(anchor.blockIds, newBlockIds);
-        anchor.blockIds = newBlockIds; // data is list of new blockIds
-
-        _scheduleBlocksDeletion(removedBlockIds);
-    }
-    */
   }
 
   let CMD_PING = 0;
@@ -773,6 +925,7 @@
   let CMD_INSTALL_CLIENT_FUNCTION = 10;
   let CMD_RUN_CLIENT_FUNCTION = 11;
   let CMD_APPEND_TOKENLIST = 12;
+  let CMD_INIT_SEQUENCE = 13;
 
   // fill out the 0-index to make it easier for templating to do 1-indexing
   let GlobalTokenList = [''];
@@ -786,6 +939,7 @@
       _blocksMap.set(2, initializeRootBlockWithElement(_document.body));
     },
     [CMD_INIT_BLOCK]: _initBlock,
+    [CMD_INIT_SEQUENCE]: _initSequence,
     [CMD_INSTALL_TEMPLATE]: _installTemplate2,
     [CMD_ATTACH_ANCHOR]: _attachAtAnchorV2,
     //[CMD_ATTACH_EVENT]: _attachEventHandler,
