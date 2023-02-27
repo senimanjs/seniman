@@ -353,10 +353,11 @@
 
   let _sendEvent = (handlerId, data) => {
     let dataLength;
+    let encodedString;
 
     if (data) {
-      data = JSON.stringify(data);
-      dataLength = data.length;
+      encodedString = encoder.encode(JSON.stringify(data));
+      dataLength = encodedString.byteLength;
     } else {
       dataLength = 0;
     }
@@ -369,7 +370,7 @@
     writeUint16LE(buf, dataLength, 3);
 
     if (dataLength) {
-      writeString(buf, data, 5);
+      writeString(buf, encodedString, 5);
     }
 
     _socketSend(buf);
@@ -1060,7 +1061,7 @@
 
     writeUint8(buf, BACKNAV_COMMAND, 0);
     writeUint16LE(buf, pathnameLength, 1);
-    writeString(buf, pathname, 3);
+    writeString(buf, encoder.encode(pathname), 3);
 
     _socketSend(buf);
   }
@@ -1116,15 +1117,13 @@
 
   let encoder = new TextEncoder();
 
-  let blitBuffer = (src, dst, offset, length) => {
-    for (let i = 0; i < length; ++i) {
-      if ((i + offset >= dst.length) || (i >= src.length)) break
-      dst[i + offset] = src[i]
-    }
-  }
+  let writeString = (buf, encodedString, offset) => {
+    let length = encodedString.byteLength;
 
-  let writeString = (buf, string, offset) => {
-    blitBuffer(encoder.encode(string), buf, offset, string.length);
+    for (let i = 0; i < length; ++i) {
+      if ((i + offset >= buf.length) || (i >= encodedString.length)) break
+      buf[i + offset] = encodedString[i]
+    }
   }
 
   window.loadStyle = (url) => {
