@@ -5,7 +5,7 @@ After [installation](/docs/install), let's start building a simple app. This is 
 ```js
 import { createServer } from 'seniman/server';
 
-function Body(props) {
+function Body() {
   return <div>Hello World</div>;
 }
 

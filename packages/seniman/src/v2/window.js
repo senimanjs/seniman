@@ -576,6 +576,11 @@ export class Window {
 
   _allocCommandBuffer(size) {
 
+    if (size > PAGE_SIZE) {
+      // TODO: support command-stitching so that we can support commands larger than the default page size
+      throw new Error(`Command size is too large. The current page size is ${PAGE_SIZE} bytes, but the command size is ${size} bytes. This is currently unsupported; try setting the env var SENIMAN_PAGE_SIZE=${size} or a larger value.`);
+    }
+
     if (!this.mutationGroup) {
       let pageCount = this.pages.length;
       let page = pageCount == 0 ? this._allocPage(this.global_writeOffset) : this.pages[pageCount - 1];
@@ -723,7 +728,7 @@ export class Window {
         /*
         case Promise:
           let node = getActiveNode();
-
+ 
           nodeResult.then(value => {
             runInNode(node, () => {
               this._attach(blockId, anchorIndex, value);

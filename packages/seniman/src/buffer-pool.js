@@ -1,5 +1,13 @@
+const DEFAULT_PAGE_SIZE = 4096 * 4;
 
-export const PAGE_SIZE = 4096 * 3;//8192 * 2;
+const pageSize = parseInt(process.env.SENIMAN_PAGE_SIZE) || DEFAULT_PAGE_SIZE;
+
+if (pageSize != DEFAULT_PAGE_SIZE) {
+  console.log(`Setting custom page size to ${pageSize} bytes`);
+}
+
+// Seniman page size in bytes
+export const PAGE_SIZE = pageSize;
 
 Buffer.poolSize = PAGE_SIZE * 2;
 

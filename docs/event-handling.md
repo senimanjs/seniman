@@ -8,7 +8,7 @@ Let's start with the `src/index.js` file from the Hello World tutorial:
 ```js
 import { createServer } from 'seniman/server';
 
-function Body(props) {
+function Body() {
   return <div>Hello World</div>;
 }
 
@@ -19,7 +19,7 @@ server.listen(3002);
 Let's now add a button to the Body component:
 
 ```js
-function Body(props) {
+function Body() {
   return <div>
     <button>Click Me</button>
     Hello World
@@ -30,9 +30,14 @@ function Body(props) {
 Next, we'll add a click handler to the button. We will use the `onClick` attribute to do that:
 
 ```js
-function Body(props) {
+function Body() {
+  
+  let onClick = () => {
+    console.log('Button clicked');
+  };
+
   return <div>
-    <button onClick={() => console.log('Button clicked')}>Click Me</button>
+    <button onClick={onClick}>Click Me</button>
     Hello World
   </div>;
 }

@@ -7,7 +7,7 @@ Let's start with the `src/index.js` file from the Event Handling tutorial:
 ```js
 import { createServer } from 'seniman/server';
 
-function Body(props) {
+function Body() {
   return <div>
     <button onClick={() => console.log('Clicked')}>
       Click Me
@@ -25,7 +25,7 @@ Let's now add a state variable to the `Body` component:
 import { createServer } from 'seniman/server';
 import { useState } from 'seniman';
 
-function Body(props) {
+function Body() {
   let [getCount, setCount] = useState(0);
   return <div>
     <button onClick={() => console.log('Clicked')}>
@@ -41,7 +41,7 @@ Now, let's start using `getCount()` to show the value of the counter in the UI:
 
 ```js
 
-function Body(props) {
+function Body() {
   let [getCount, setCount] = useState(0);
   return <div>
     <button onClick={() => console.log('Clicked')}>
@@ -55,7 +55,7 @@ If you compile and run the app, you will see that the counter is not changing wh
 
 ```js
 
-function Body(props) {
+function Body() {
   let [getCount, setCount] = useState(0);
   return <div>
     <button onClick={() => setCount(getCount() + 1)}>
