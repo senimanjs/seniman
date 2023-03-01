@@ -34,8 +34,7 @@ At a high-level, the Seniman runtime is divided into the server and client-side 
 
 ![Seniman Architecture](images/architecture.png)
 
-On the server-side, Seniman includes a custom runtime to build and maintain your UI component tree, track state changes across components, and manage connections to concurrently-connected browser windows. The server runtime then uses
-
+On the server-side, Seniman includes a custom runtime to build and maintain your UI component tree, track state changes across components, and manage connections to concurrently-connected browser windows. The server-side runtime is also responsible for generating UI update commands to make sure the browser is able to render the latest UI state. Event system is also implemented on the server-side -- allowing your server-side code to respond to events triggered by the client.
 
 In order to achieve network efficiency, Seniman server communicates with the client by sending commands using a custom binary protocol over WebSocket, which are then interpreted into actual DOM operations by a ~3kb browser runtime. The result is a low-latency, fast-loading, remotely-driven user interface that feels local over a normal 4G connection.
 
@@ -142,4 +141,4 @@ Yes -- the documentation site for Seniman is built using Seniman itself! You can
 
 
 ### TypeScript support?
-Some early users are using TypeScript to build with Seniman -- official support's coming soon!
+Some early users are using TypeScript to build with Seniman -- official coming soon!
