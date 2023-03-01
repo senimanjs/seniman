@@ -252,4 +252,4 @@ let addTask = async (taskText) => {
 
 Here, we check if the task text is empty, and if it's not, we insert the task into the database, and then reload the tasks from the database. Your tasks now reflect the changes you've made.
 
-Congratulations! We've just built a simple Todo List application using Seniman! Hope you enjoyed this tutorial. If you have any questions, feel free to ask in the (add discord server).
+Congratulations! We've just built a simple Todo List application using Seniman! Hope you enjoyed this tutorial.

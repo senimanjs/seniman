@@ -97,7 +97,7 @@ The `Head` component's pretty standard; tags that you usually put in the `<head>
 And now, where all the fun happens -- the `Body` component:
 
 ```js
-function Body(props) {
+function Body() {
   return <div>Hello World</div>;
 }
 ```
@@ -113,7 +113,7 @@ function Counter(props) {
 and refer it from the `Body` component:
 
 ```js
-function Body(props) {
+function Body() {
   return <Counter />;
 }
 ```
@@ -202,4 +202,4 @@ function Counter(props) {
 
 And that's it, you've built your first counter application in Seniman. 
 
-You might be wondering if there is another front-end aspect to this that we need to set up. The answer is no. Seniman, and your application code, runs entirely on the server. The full component tree will be executed and maintained by the server, and Seniman will take care to send only the minimum amount of DOM manipulation commands to the browser through an efficient binary protocol running on WebSocket. You can read more about that here (add some link here).
+You might be wondering if there is another front-end aspect to this that we need to set up. The answer is no. Seniman, and your application code, runs entirely on the server. The full component tree will be executed and maintained by the server, and Seniman will take care to send only the minimum amount of DOM manipulation commands to the browser through an efficient binary protocol running on WebSocket.
