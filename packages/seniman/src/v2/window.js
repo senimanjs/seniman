@@ -7,6 +7,10 @@ import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
 import { windowManager } from './window_manager.js';
 import { ErrorViewer, ErrorHandler } from './errors.js';
 
+
+// set max input event buffer size to 1KB
+const MAX_INPUT_EVENT_BUFFER_SIZE = process.env.MAX_INPUT_EVENT_BUFFER_SIZE ? parseInt(process.env.MAX_INPUT_EVENT_BUFFER_SIZE) : 1024;
+
 export const WindowContext = createContext(null);
 
 export function useWindow() {
@@ -485,6 +489,10 @@ export class Window {
 
   _onMessage(buffer) {
 
+    if (buffer.length > MAX_INPUT_EVENT_BUFFER_SIZE) {
+      return;
+    }
+
     let EVENT_COMMAND = 1;
     let EVENT_DATA_COMMAND = 2;
     let EVENT_BACKNAV = 3;
@@ -494,6 +502,11 @@ export class Window {
 
     if (opcode == EVENT_COMMAND) {
       let handlerId = buffer.readUint16LE(1);
+
+      if (!this.eventHandlers.has(handlerId)) {
+        return;
+      }
+
       let dataLength = buffer.readUint16LE(3);
       let data;
 
@@ -506,6 +519,11 @@ export class Window {
       this._executeClientEvent({ handlerId, data });
     } else if (opcode == EVENT_BACKNAV) {
       let pathnameLength = buffer.readUint16LE(1);
+
+      if (pathnameLength > 2048) {
+        return;
+      }
+
       let path = buffer.subarray(3, 3 + pathnameLength).toString();
 
       // TODO: do we need to do something special other than just setting the path since this is a backnav?
@@ -621,11 +639,6 @@ export class Window {
 
   _executeClientEvent(command) {
     let eventHandler = this.eventHandlers.get(command.handlerId);
-
-    if (!eventHandler) {
-      console.warn('Invalid eventHandler', command.handlerId, eventHandler)
-      return;
-    }
 
     eventHandler(command.data);
   }
