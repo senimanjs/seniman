@@ -160,10 +160,6 @@ export class Window {
       readOffset,
       cookieString } = pageParams;
 
-    if (build.syntaxErrors) {
-      console.error('Starting a window with syntax errors');
-    }
-
     this.id = windowId;
     this.port = port;
     this.destroyFnCallback = null;
@@ -341,10 +337,6 @@ export class Window {
     // in high-traffic situations, cross check the output buffer if there's enough generated there
     // to start yielding to another window even though queue is not completely processed
     // to make sure everyone's windows are sufficiently responsive
-    //await this.worker.doWork();
-
-    //console.log('scheduleWork')
-
     processWorkQueue(this, this.workQueue);
 
     this._flushMutationGroup();
@@ -450,8 +442,6 @@ export class Window {
       if (readOffset != this.global_writeOffset) {
         throw new Error();
       }
-
-      //this._registerReadOffset(offset);
     }
   }
 
@@ -589,16 +579,11 @@ export class Window {
         page,
         pageStartOffset: this.global_writeOffset,
       };
-
-      //process.nextTick(() => this._flushMutationGroup());
     }
 
     let mg = this.mutationGroup;
 
     let currentPageOffset = this.global_writeOffset - mg.page.global_headOffset;
-
-    //console.log('currentPageOffset', currentPageOffset);
-    //console.log('currentPageOffset', currentPageOffset, size, this.global_writeOffset, mg.page.global_headOffset);
 
     // if we're about to overflow the current page, let's allocate a new one
     if ((currentPageOffset + size) >= PAGE_SIZE) {
@@ -809,7 +794,7 @@ export class Window {
     // value is blockId
 
     let textBuffer = Buffer.from(value, "utf-8")
-    let textLength = textBuffer.length; //Buffer.byteLength(value);
+    let textLength = textBuffer.length;
 
     // TODO: handle string length longer than 32K
     let buf2 = this._allocCommandBuffer(1 + 2 + 1 + 2 + textLength);
@@ -817,7 +802,6 @@ export class Window {
     buf2.writeUint8(CMD_ATTACH_ANCHOR, 0);
     buf2.writeUint16BE(blockId, 1);
 
-    //console.log('attach text to blockId', blockId);
     buf2.writeUint8(anchorIndex, 3);
 
     if (textLength > 32677) {
@@ -826,7 +810,6 @@ export class Window {
 
     buf2.writeUint16BE(textLength, 4);
     textBuffer.copy(buf2, 6);
-    //buf2.writeUint16BE(65535, 6 + textLength);
   }
 
   _streamAttachBlockCommand(parentBlockId, anchorIndex, blockId) {
@@ -834,63 +817,14 @@ export class Window {
 
     buf2.writeUint8(CMD_ATTACH_ANCHOR, 0);
     buf2.writeUint16BE(parentBlockId, 1);
-    //console.log('attach ', blockId, 'to blockId', parentBlockId);
     buf2.writeUint8(anchorIndex, 3);
 
     buf2.writeUint16BE(blockId |= (1 << 15), 4);
-    //buf2.writeUint16BE(65535, 6);
-  }
-
-  _streamAttachListCommand(blockId, anchorIndex, nodeResultsArray) {
-    let length = 1 + 2 + 1 + 2;
-    let count = nodeResultsArray.length;
-
-    //console.log('_streamAttachListCommand', blockId, anchorIndex, count, nodeResultsArray);
-
-    for (let i = 0; i < count; i++) {
-      let val = nodeResultsArray[i];
-
-      if (val instanceof Block) {
-        length += 2;
-      } else {
-        // handle text
-        length += (2 + val.length);
-      }
-    };
-
-    let buf2 = this._allocCommandBuffer(length);
-
-    buf2.writeUint8(CMD_ATTACH_ANCHOR, 0);
-    buf2.writeUint16BE(blockId, 1);
-    //console.log('attach multiple', nodeResultsArray, ' to blockId', blockId);
-    buf2.writeUint8(anchorIndex, 3);
-    //console.log('_attachMultiple', nodeResultsArray);
-
-    let offset = 4;
-
-    for (let i = 0; i < count; i++) {
-      let val = nodeResultsArray[i];
-
-      if (val instanceof Block) {
-        let childBlockId = val.id;
-        buf2.writeUint16BE(childBlockId |= (1 << 15), offset);
-        offset += 2;
-      } else {
-        // handle text
-        buf2.writeUint16BE(val.length, offset);
-        buf2.write(val, offset + 2, val.length);
-        offset += (2 + val.length);
-      }
-    }
-
-    buf2.writeUint16BE(65535, offset);
   }
 
   _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects) {
 
     let newBlockId = this._createBlockId();
-
-    //console.log('_createBlock3', newBlockId);
 
     this._streamTemplateInstallCommand(blockTemplateId);
     this._streamBlockInitCommand2(newBlockId, blockTemplateId);
@@ -970,11 +904,6 @@ export class Window {
 
           buf.writeUint8(propName, 5); // propName is in this case a number -- map index.
           let offset = 6;
-          /*
-          buf.writeUint8(propName.length, 5);
-          buf.write(propName, 6, propName.length);
-          let offset = 6 + propName.length;
-          */
 
           buf.writeUInt16BE(propValue.length, offset);
           offset += 2;

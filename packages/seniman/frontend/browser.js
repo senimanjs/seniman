@@ -79,12 +79,16 @@
       }
 
       socket.onclose = (event) => {
-        if (event.code == 3001) {
+        let code = event.code;
+
+        if (code == 3001) {
           _location.reload();
+        } else if (code == 3010) {
+          // excessive window creation error
+          // TODO: do nothing for now
         } else {
           requestReopen = true;
         }
-
       }
 
       socket.onerror = (error) => {

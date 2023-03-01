@@ -12,6 +12,18 @@ if (RSS_LOW_MEMORY_THRESHOLD_ENABLED) {
   console.log('RSS_LOW_MEMORY_THRESHOLD enabled: ', RSS_LOW_MEMORY_THRESHOLD + 'MB');
 }
 
+// create RATELIMIT_WINDOW_INPUT_THRESHOLD from env var
+const RATELIMIT_WINDOW_INPUT_THRESHOLD = process.env.RATELIMIT_WINDOW_INPUT_THRESHOLD ?
+  parseInt(process.env.RATELIMIT_WINDOW_INPUT_THRESHOLD) : 12;
+const RATELIMIT_WINDOW_INPUT_TTL_SECONDS = process.env.RATELIMIT_WINDOW_INPUT_TTL_SECONDS ?
+  parseInt(process.env.RATELIMIT_WINDOW_INPUT_TTL_SECONDS) : 2;
+
+// create RATELIMIT_WINDOW_CREATION_THRESHOLD from env var
+const RATELIMIT_WINDOW_CREATION_THRESHOLD = process.env.RATELIMIT_WINDOW_CREATION_THRESHOLD ?
+  parseInt(process.env.RATELIMIT_WINDOW_CREATION_THRESHOLD) : 3;
+const RATELIMIT_WINDOW_CREATION_TTL_SECONDS = process.env.RATELIMIT_WINDOW_CREATION_TTL_SECONDS ?
+  parseInt(process.env.RATELIMIT_WINDOW_CREATION_TTL_SECONDS) : 1;
+
 function getMemoryUsage() {
   const used = process.memoryUsage();
   return {
@@ -52,6 +64,21 @@ class WindowManager {
 
     this.pendingWorkWindowList = [];
     this.pendingInputWindowList = [];
+
+    // TODO: we'll want to make this configurable & broadcast
+    // this to the client so that they can adjust their message
+    // sending rate accordingly -- i.e. we'll catch mostly the bad actors
+    // here and not good actors sending too many messages in some chatty part
+    // of the app
+    this.messageLimiter = new FastRateLimit({
+      threshold: RATELIMIT_WINDOW_INPUT_THRESHOLD,
+      ttl: RATELIMIT_WINDOW_INPUT_TTL_SECONDS
+    });
+
+    this.windowCreationLimiter = new FastRateLimit({
+      threshold: RATELIMIT_WINDOW_CREATION_THRESHOLD,
+      ttl: RATELIMIT_WINDOW_CREATION_TTL_SECONDS
+    });
 
     this._runLoop();
   }
@@ -112,7 +139,11 @@ class WindowManager {
 
   _enqueueMessage(window, message) {
 
-    // TODO: rate limit
+    let isUnderLimit = this.messageLimiter.consumeSync(window.id);
+
+    if (!isUnderLimit) {
+      return;
+    }
 
     let buffer = Buffer.from(message);
 
@@ -200,7 +231,16 @@ class WindowManager {
     let currentPath = params.get('lo');
 
     // TODO: get ip address of request and do rate limiting based on ip address
-    // let ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    let ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+
+    let isUnderRateLimit = this.windowCreationLimiter.consumeSync(ipAddress);
+
+    if (!isUnderRateLimit) {
+      // 3010 is code for "excessive window creation" -- the client will close and not reconnect.
+      ws.close(3010);
+      return;
+    }
+
     let cookieString = req.headers.cookie || '';
 
     let pageParams = {
@@ -215,6 +255,7 @@ class WindowManager {
       if (this.hasWindow(windowId)) {
         this.reconnectWindow(ws, pageParams);
       } else {
+        // 3001 is the code for "no such window" -- the client will reload and re-initialize for a new window
         ws.close(3001);
         return;
       }

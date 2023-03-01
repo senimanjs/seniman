@@ -12,6 +12,14 @@ export function createServer(options) {
 
   const server = httpCreateServer(function (req, res) {
 
+    // handle favicon.ico request specially
+    // TODO: add option to load custom favicon
+    if (req.url === '/favicon.ico') {
+      res.writeHead(200, { 'Content-Type': 'image/x-icon' });
+      res.end();
+      return;
+    }
+
     let acceptEncoding = req.headers['accept-encoding'] || '';
     let algo;
     let html;
