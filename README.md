@@ -141,3 +141,6 @@ Yes -- the documentation site for Seniman is built using Seniman itself! You can
 
 ### TypeScript support?
 Some early users are using TypeScript to build with Seniman -- official support coming soon!
+
+### How about SEO support?
+A custom HTML renderer that can be activated for crawlers will be coming soon.
