@@ -143,4 +143,4 @@ Yes -- the documentation site for Seniman is built using Seniman itself! You can
 Some early users are using TypeScript to build with Seniman -- official support coming soon!
 
 ### How about SEO support?
-A custom HTML renderer that can be activated for crawlers will be coming soon.
+We'll soon be adding a separate HTML renderer that can be activated specifically for crawler requests, rendering the same JSX tree.
