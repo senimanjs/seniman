@@ -17,6 +17,6 @@
     "babel-plugin-seniman": "^0.0.6"
   },
   "dependencies": {
-    "seniman": "^0.0.70"
+    "seniman": "^0.0.77"
   }
 }
