@@ -673,18 +673,12 @@ function parse$CDefinition(functionNode) {
       if (path.node.callee.type == 'Identifier' && path.node.callee.name == '$s') {
         serverBindNodes.push(path.node.arguments[0]);
 
-        // replace it with a this.serverFunctions[id] call
+        // replace it with a sf[id] call
         path.replaceWith({
           type: 'MemberExpression',
           object: {
-            type: 'MemberExpression',
-            object: {
-              type: 'ThisExpression'
-            },
-            property: {
-              type: 'Identifier',
-              name: 'serverFunctions'
-            }
+            type: 'Identifier',
+            name: 'sf'
           },
           property: {
             type: 'NumericLiteral',
@@ -703,7 +697,47 @@ function parse$CDefinition(functionNode) {
   // fetch the first function node from the program AST
   let functionNodeAst = newFunctionAst.program.body[0].expression.body;
 
-  let newFunctionBodyString = generate(functionNodeAst).code;
+  // if the function is a single-line arrow function
+  // example: (e) => e.target.value
+  // turn it into:
+  // (e) => {
+  //    e.target.value;
+  // }
+  if (functionNodeAst.type != 'BlockStatement') {
+    functionNodeAst = {
+      type: 'BlockStatement',
+      body: [functionNodeAst]
+    }
+  }
+
+  // add a let sf = this.serverFunctions; 
+  // to the top of the function to remove dependency on the `this` context
+  functionNodeAst.body.unshift({
+    type: 'VariableDeclaration',
+    kind: 'let',
+    declarations: [{
+      type: 'VariableDeclarator',
+      id: {
+        type: 'Identifier',
+        name: 'sf'
+      },
+      init: {
+        type: 'MemberExpression',
+        object: {
+          type: 'ThisExpression'
+        },
+        property: {
+          type: 'Identifier',
+          name: 'serverFunctions'
+        }
+      }
+    }]
+  });
+
+  let newFunctionBodyString = generate(functionNodeAst, {
+    minified: true,
+    compact: true,
+  }).code;
 
   return {
     body: newFunctionBodyString,
