@@ -1,0 +1,28 @@
+{
+  "name": "with-stitches",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "build": "babel src --out-dir dist --copy-files",
+    "watch": "npm run build -- --watch",
+    "start": "node dist/index.js",
+    "dev": "npm run build && concurrently \"npm run watch\" \"nodemon --delay 5ms dist/index.js\""
+  },
+  "author": "",
+  "license": "ISC",
+  "volta": {
+    "node": "16.19.1"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.20.7",
+    "babel-plugin-seniman": "^0.0.6",
+    "concurrently": "^7.6.0",
+    "nodemon": "^2.0.21"
+  },
+  "dependencies": {
+    "@stitches/core": "^1.2.8",
+    "seniman": "^0.0.77"
+  }
+}
