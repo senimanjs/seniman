@@ -219,7 +219,7 @@ export class Window {
         });
       },
 
-      setCookie: (cookieKey, cookieValue) => {
+      setCookie: (cookieKey, cookieValue, expirationTime) => {
 
         untrack(() => {
           let cookieString = getCookie();
@@ -227,24 +227,7 @@ export class Window {
 
           setCookie(newCookieString);
 
-          // TODO: send the cookie update to the browser
-          let buf = this._allocCommandBuffer(1 + 1 + cookieKey.length + 2 + cookieValue.length + 4);
-
-          let offset = 0;
-          buf.writeUint8(CMD_COOKIE_SET, offset);
-          offset++;
-
-          buf.writeUint8(cookieKey.length, offset);
-          offset++;
-          buf.write(cookieKey, offset);
-          offset += cookieKey.length;
-
-          buf.writeUint16BE(cookieValue.length, offset);
-          offset += 2;
-          buf.write(cookieValue, offset);
-          offset += cookieValue.length;
-
-          buf.writeUint32BE(0, offset);
+          this._streamClientCookieUpdateCommand(cookieKey, cookieValue, expirationTime);
         });
       },
 
@@ -324,7 +307,6 @@ export class Window {
 
     }, null, this);
   }
-
 
   submitWork(node) {
     this.workQueue.add(node);
@@ -690,6 +672,26 @@ export class Window {
 
       this.clientFunctionInstallationSet.add(functionId);
     }
+  }
+
+  _streamClientCookieUpdateCommand(cookieKey, cookieValue, expirationTime) {
+
+    if (!expirationTime) {
+      expirationTime = new Date();
+      // set default expiration to one hour after now
+      expirationTime.setHours(expirationTime.getHours() + 1);
+    }
+
+    // build the cookie string
+    let cookieSetString = `${cookieKey}=${cookieValue}; expires=${expirationTime.toUTCString()}; path=/`;
+
+    let buf = this._allocCommandBuffer(1 + 2 + cookieSetString.length);
+
+    buf.writeUInt8(CMD_COOKIE_SET, 0);
+    buf.writeUInt16BE(cookieSetString.length, 1);
+    buf.write(cookieSetString, 3);
+
+    // TODO: add ability to set server-only cookies
   }
 
   _createBlockId() {

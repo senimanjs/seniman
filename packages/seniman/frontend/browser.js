@@ -179,13 +179,9 @@
     });
   }
 
-  //////////////////////////////////////////////////////////////////////////
-
-
   //////////////////////////////////////////////////////////////////////////////
   //// GLOBAL STATE
   //////////////////////////////////////////////////////////////////////////////
-
 
   let _clientVarMap = new Map();
 
@@ -214,7 +210,6 @@
     return _createNewBlockEntry(el, [], [{ el }, { el }, { el }]);
   }
 
-
   let clickEventHandlerIdWeakMap = new WeakMap();
 
   let _getBlockTargetElement = (blockId, targetId) => {
@@ -238,47 +233,12 @@
   };
 
   let _attachEventHandlerV2 = () => {
-    let blockId = getUint16(); //buf.writeUint16LE(parentBlockId, 1);
+    let blockId = getUint16();
     let targetId = getUint8();
     let eventType = getUint8(); // 1: click, 2: focus, 3: blur, 4: input, 5: scroll
     let targetHandlerElement = _getBlockTargetElement(blockId, targetId);
-    /*
 
-    window.runClientFunction($c(() => {
- 
-    }), [args1, args2]);
-
-    eventHandler initialization type
-
-    1) Direct passing of server-side function
-    For click, this is the most standard form:
-    onClick={someServerFunction}
-
-    // under the hood, this is translated during runtime to:
-    { clientFn: 1, serverFunctions: [someServerFunction] }  // 1 is a native client function that calls e.preventDefault()
-
-    2) Server-side function assignment that does not require e.preventDefault()
-
-    onClick={ev(NO_PREVENT_DEFAULT, someServerHandler)} // NO_PREVENT_DEFAULT is a constant for a native client function that does not call e.preventDefault()
-
-    // under the hood, this is translated during runtime to:
-    { clientFn: 2, serverFunctions: [someServerFunction] }  // 2 is a native client function that does not call e.preventDefault()
-
-    3) inline custom function with a server-side function dependency
-    
-    onClick={$c(e => {
-        e.preventDefault(); 
-
-        // call some server function
-        $s(someServerFunction)(e.target.value);
-    })}
-
-    // this is compiled to:
-    onClick={{ clientFn: 1001, serverFunctions: [someServerFunction] }}
-
-    */
-
-    let clientFnId = getUint16(); //buf.writeUint16LE(parentBlockId, 1);
+    let clientFnId = getUint16();
     let fn = clientFnId == 1 ? bareServerCallWithoutPreventDefault : clientFunctionsMap.get(clientFnId);
 
     let serverFunctions = [];
@@ -304,57 +264,6 @@
       _addEventListener(targetHandlerElement, eventName, fn);
     }
   }
-
-  /*
-  let _attachEventHandler = () => {
-      let blockId = getUint16(); //buf.writeUint16LE(parentBlockId, 1);
-      let targetId = getUint8();
-      let eventType = getUint8();
-      let handlerId = getUint16(); //buf.writeUint16LE(parentBlockId, 1);
-
-      let targetHandlerElement = _getBlockTargetElement(blockId, targetId);
-      let EVENT_TYPE_CLICK = 1;
-      let EVENT_TYPE_FOCUS = 2;
-      let EVENT_TYPE_BLUR = 3;
-      let EVENT_TYPE_INPUT = 4;
-      let EVENT_TYPE_SCROLL = 5;
-
-      switch (eventType) {
-          case EVENT_TYPE_CLICK:
-              clickEventHandlerIdWeakMap.set(targetHandlerElement, handlerId);
-              break;
-          case EVENT_TYPE_FOCUS:
-              _addEventListener(targetHandlerElement, "focus", _createEventHandlerFunction(handlerId));
-              break;
-          case EVENT_TYPE_BLUR:
-              // TODO: check if the host block's already scheduled to be garbage collected.
-              _addEventListener(targetHandlerElement, "blur", _createEventHandlerFunction(handlerId));
-              break;
-          case EVENT_TYPE_INPUT:
-              _addEventListener(targetHandlerElement, "input", (e) => {
-                  _sendEvent(handlerId, e.target.value);
-              });
-              break;
-          case EVENT_TYPE_SCROLL:
-              
-                  _addEventListener(targetHandlerElement, "scroll", throttleDebounce((e) => {
-                      //_sendEvent(handlerId, e.target.value);
-                      //console.log('scroll', e.target.scrollLeft, e.target.scrollTop);
-                      //_sendEvent(handlerId,)
-                  }, 300));
-              
-              break;
-
-      }
-  }
-
-  let _createEventHandlerFunction = (handlerId) => {
-      return () => {
-          _sendEvent(handlerId);
-      }
-  }
-  */
-
   let _sendEvent = (handlerId, data) => {
     let dataLength;
     let encodedString;
@@ -451,7 +360,6 @@
                   targetHandlerElement.setAttribute('class', name);//, updateMode == 3); // if updateMode == 4, then class is removed
               }
               
-
               //targetHandlerElement.setAttribute('class', name);
               break;
           }
@@ -890,7 +798,6 @@
         item.seqId = -1;
       }
     }
-
   }
 
   let _initSequence = () => {
@@ -947,24 +854,16 @@
     [CMD_INIT_SEQUENCE]: _initSequence,
     [CMD_INSTALL_TEMPLATE]: _installTemplate2,
     [CMD_ATTACH_ANCHOR]: _attachAtAnchorV2,
-    //[CMD_ATTACH_EVENT]: _attachEventHandler,
     [CMD_ATTACH_EVENT_V2]: _attachEventHandlerV2,
     [CMD_NAV]: () => {
       let pathLength = getUint16();
-      let path = getString(pathLength);// textDecoder.decode(buffer.slice(1 + 2, 1 + 2 + pathLength));//.toString('utf8');
-
+      let path = getString(pathLength);
       _window.history.pushState({}, '', path);
     },
     [CMD_ELEMENT_UPDATE]: _elementUpdate,
     [CMD_COOKIE_SET]: () => {
-      let key = getString(getUint8());
-      let value = getString(getUint16());
-      let expiration = getUint32();
-
-      // console.log('cookie set', key, value);
-
-      _document.cookie = key + '=;Max-Age=0';
-      _document.cookie = key + "=" + value + ";Path=/;";
+      let cookieString = getString(getUint16());
+      _document.cookie = cookieString;
     },
     [CMD_REMOVE_BLOCKS]: () => {
       let blockId;
@@ -1070,22 +969,8 @@
     _socketSend(buf);
   }
 
-  /*
-  let _append = (elements, currentNodes, parentElement, beforeElement) => {
-  
-      elements.map(el => {
-          parentElement.insertBefore(el, beforeElement);
-          currentNodes.push(el);
-      });
-  
-      return currentNodes;
-  }
-  */
-
-  //window.templateDefinitionMap = templateDefinitionMap;
-
   let eventHandler = (e) => {
-    let node = e.target; //(e.composedPath && e.composedPath()[0]) || e.target;
+    let node = e.target;
 
     while (node !== null) {
       let handlerFn = clickEventHandlerIdWeakMap.get(node);
@@ -1142,7 +1027,6 @@
     // link element to it
     head.appendChild(link);
   }
-
 
   // logic taken from npm package load-script
   window.loadScript = (src, cb, opts) => {
