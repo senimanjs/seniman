@@ -3,7 +3,10 @@ import { createServer } from "seniman/server";
 import fs from "fs";
 import { css, getCssText } from "./stitches.config.js";
 
-let normalizeCssText = fs.readFileSync("./dist/normalize.css", "utf8");
+let normalizeCssText = fs.readFileSync(
+  "./node_modules/normalize.css/normalize.css",
+  "utf8"
+);
 
 let buttonStyle = css({
   lineHeight: "1.2",

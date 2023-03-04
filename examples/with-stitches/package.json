@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@stitches/core": "^1.2.8",
+    "normalize.css": "^8.0.1",
     "seniman": "^0.0.77"
   }
 }
