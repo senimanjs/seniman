@@ -1,4 +1,4 @@
-import { useState } from "seniman";
+import { onCleanup, useState } from "seniman";
 import { createServer } from "seniman/server";
 import fs from "fs";
 import { css, getCssText } from "./stitches.config.js";
@@ -87,11 +87,51 @@ function Body() {
   );
 }
 
+// create a central place to store the stitches output,
+// and check for changes every 500ms -- since it will change as users / developer interacts with the app
+let lastCssText = getCssText();
+let subscribers = new Set();
+let timeInterval = process.env.TIME_INTERVAL || 200;
+
+setInterval(() => {
+  // time perf
+  let currentCssText = getCssText();
+  if (currentCssText !== lastCssText) {
+    lastCssText = currentCssText;
+    // notify subscribers
+    subscribers.forEach((subscriber) => subscriber(currentCssText));
+  }
+}, timeInterval);
+
+function subscribeForCssText(fn) {
+  fn(lastCssText);
+  subscribers.add(fn);
+
+  // unsubscribe
+  return () => {
+    if (subscribers.remove) {
+      subscribers = subscribers.remove(fn);
+    }
+  };
+}
+
+function useStitchesCss() {
+  let [stitchesCss, setStitchesCss] = useState(getCssText());
+  let unsubscribe = subscribeForCssText((cssText) => setStitchesCss(cssText));
+
+  onCleanup(() => {
+    unsubscribe();
+  });
+
+  return stitchesCss;
+}
+
 function Head() {
+  let cssText = useStitchesCss();
   return (
     <>
       <style>{normalizeCssText}</style>
-      <style>{getCssText()}</style>
+      <style>{cssText()}</style>
     </>
   );
 }
