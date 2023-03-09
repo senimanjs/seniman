@@ -13,25 +13,26 @@ let UntrackActive = false;
 
 let ERROR = null;
 
+const EXEC_PROMISE = 3;
+const MEMO = 5;
+const EFFECT = 6;
+
 export function processWorkQueue(window, workQueue) {
   setActiveWindow(window);
-
-  // time perf of loop
-  let start = performance.now();
 
   let i = 0;
 
   while (!workQueue.isEmpty()) {
     let node = workQueue.poll();
-    executeNode(window, node);
+
+    if (node.type == EXEC_PROMISE) {
+      node.resolver();
+    } else {
+      executeNode(window, node);
+    }
 
     i++;
   }
-
-  let end = performance.now();
-
-  // print perf of loop in milliseconds
-  //console.log(`[processWorkQueue] ${i} nodes: ${(end - start).toFixed(2)}ms`);
 
   setActiveWindow(null);
 }
@@ -86,7 +87,7 @@ export function runInNode(node, fn) {
 
 /*
 
-The wrapPromise makes sure that the activeNode  that was active before the promise resolves is the same after the promise resolves.
+The wrapPromise makes sure that the activeNode that was active before the promise resolves is the same after the promise resolves.
 
 let a = await wrapPromise(fetch(...));
 
@@ -96,17 +97,39 @@ export function wrapPromise(promise) {
   let window = ActiveWindow;
 
   return promise.then(
-    v => {
-      ActiveNode = node;
-      ActiveWindow = window;
-      return v;
+    value => {
+      return schedulePromiseResolve(window)
+        .then(() => {
+          // TODO: see if setting this here is "sync" enough
+          // or if there could be executions in between this
+          // and post-await code that could change the active node
+          // small-scale tests seem to indicate that this is fine
+          // but strong feeling there will be edge cases
+          ActiveNode = node;
+          ActiveWindow = window;
+          return value;
+        });
     },
-    e => {
-      ActiveNode = node;
-      ActiveWindow = window;
-      throw e;
+    error => {
+      return schedulePromiseResolve(window)
+        .then(() => {
+          ActiveNode = node;
+          ActiveWindow = window;
+          return error;
+        });
     }
   );
+}
+
+function schedulePromiseResolve(window) {
+  return new Promise(resolve => {
+    let promiseEntry = {
+      type: EXEC_PROMISE,
+      resolver: resolve
+    };
+
+    window.submitWork(promiseEntry);
+  });
 }
 
 // createId() returns a unique id for a node
@@ -316,8 +339,6 @@ export function useEffect(fn, value) {
   ActiveWindow.submitWork(effect);
 }
 
-const MEMO = 5;
-const EFFECT = 6;
 
 export function useMemo(fn) {
 
@@ -368,10 +389,12 @@ export function onCleanup(fn) {
 
 export function useCallback(fn) {
 
+  let _activeWindow = ActiveWindow;
   let _activeNode = ActiveNode;
-  return () => {
+  return (...args) => {
     ActiveNode = _activeNode;
-    return fn(...arguments);
+    ActiveWindow = _activeWindow;
+    return fn(...args);
   }
 }
 
