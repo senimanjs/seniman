@@ -137,13 +137,25 @@ function processInput(window, inputQueue) {
   setActiveWindow(null);
 }
 
+function createNoArgHandler(fn) {
+  return $c(() => {
+    $s(fn)();
+  });
+}
+
+let navigateClientFn = $c((path) => {
+  window.history.pushState({}, '', path);
+});
+
+let cookieSetClientFn = $c((cookieString) => {
+  document.cookie = cookieString;
+});
+
 //let CMD_PING = 0;
 //let CMD_INSTALL_TEMPLATE = 1;
 let CMD_INIT_WINDOW = 2;
 let CMD_ATTACH_ANCHOR = 3;
-let CMD_COOKIE_SET = 4;
 let CMD_ATTACH_EVENT_V2 = 5;
-let CMD_NAV = 6;
 let CMD_ELEMENT_UPDATE = 7;
 let CMD_INIT_BLOCK = 8;
 let CMD_REMOVE_BLOCKS = 9;
@@ -228,18 +240,23 @@ export class Window {
 
           setCookie(newCookieString);
 
-          this._streamClientCookieUpdateCommand(cookieKey, cookieValue, expirationTime);
+          if (!expirationTime) {
+            expirationTime = new Date();
+            // set default expiration to one hour after now
+            expirationTime.setHours(expirationTime.getHours() + 1);
+          }
+
+          // build the cookie string
+          let cookieSetString = `${cookieKey}=${cookieValue}; expires=${expirationTime.toUTCString()}; path=/`;
+
+          windowContext.clientExec(cookieSetClientFn, [cookieSetString]);
         });
       },
 
       path,
 
       navigate: (path) => {
-        let buf = this._allocCommandBuffer(1 + 2 + path.length);
-        buf.writeUint8(CMD_NAV, 0);
-        buf.writeUint16BE(path.length, 1);
-        buf.write(path, 1 + 2);
-
+        windowContext.clientExec(navigateClientFn, [path]);
         setPath(path);
       },
 
@@ -668,26 +685,6 @@ export class Window {
     }
   }
 
-  _streamClientCookieUpdateCommand(cookieKey, cookieValue, expirationTime) {
-
-    if (!expirationTime) {
-      expirationTime = new Date();
-      // set default expiration to one hour after now
-      expirationTime.setHours(expirationTime.getHours() + 1);
-    }
-
-    // build the cookie string
-    let cookieSetString = `${cookieKey}=${cookieValue}; expires=${expirationTime.toUTCString()}; path=/`;
-
-    let buf = this._allocCommandBuffer(1 + 2 + cookieSetString.length);
-
-    buf.writeUInt8(CMD_COOKIE_SET, 0);
-    buf.writeUInt16BE(cookieSetString.length, 1);
-    buf.write(cookieSetString, 3);
-
-    // TODO: add ability to set server-only cookies
-  }
-
   _createBlockId() {
     this.latestBlockId++;
 
@@ -794,24 +791,24 @@ export class Window {
 
   _handleBlockEventHandlers(newBlockId, eventHandlers) {
     let eventHandlerIds = [];
+    let eventHandlersCount = eventHandlers.length;
 
-    eventHandlers.forEach((eventHandler, index) => {
+    for (let i = 0; i < eventHandlersCount; i++) {
+      let eventHandler = eventHandlers[i];
       let clientFnId;
       let serverBindFns;
 
       // do nothing if the event handler is undefined
       if (!eventHandler.fn) {
-        return;
+        continue;
       } else if (eventHandler.fn instanceof Function) {
-        // if the event handler is not yet a client function, 
-        // assign a built-in client function id of 1, 
-        // which is a function that calls the server function without any argument.
-        //
-        // TODO: this is perfect for event types like "click",
-        // but not for event types like "change" which requires an argument.
-        // assign a different built-in client function id for event types that naturally require an argument?
-        clientFnId = 1;
-        serverBindFns = [eventHandler.fn];
+        let eventHandlerFn = createNoArgHandler(eventHandler.fn);
+
+        // if the event handler is just a function instance, 
+        // assign a client function that wraps the event handler
+        // and calls it directly without arguments
+        clientFnId = eventHandlerFn.clientFnId;
+        serverBindFns = eventHandlerFn.serverBindFns;
       } else if (eventHandler.fn.clientFnId) {
         clientFnId = eventHandler.fn.clientFnId;
         serverBindFns = eventHandler.fn.serverBindFns || [];
@@ -825,7 +822,7 @@ export class Window {
 
       this._streamFunctionInstallCommand(clientFnId);
       this._streamEventInitCommandV2(newBlockId, eventHandler.targetId, eventHandler.type, clientFnId, serverBindIds);
-    });
+    }
 
     onCleanup(() => {
       this._deallocateEventHandlers(eventHandlerIds);

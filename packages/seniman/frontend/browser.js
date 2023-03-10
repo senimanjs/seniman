@@ -214,10 +214,6 @@
     return targetId == 255 ? block.rootEl : block.targetEls[targetId];
   }
 
-  function bareServerCallWithoutPreventDefault(e) {
-    this.serverFunctions[0]();
-  }
-
   let EventMap = {
     2: 'focus',
     3: 'blur',
@@ -236,7 +232,7 @@
     let targetHandlerElement = _getBlockTargetElement(blockId, targetId);
 
     let clientFnId = getUint16();
-    let fn = clientFnId == 1 ? bareServerCallWithoutPreventDefault : clientFunctionsMap.get(clientFnId);
+    let fn = clientFunctionsMap.get(clientFnId);
 
     let serverFunctions = [];
     let bindId;
@@ -261,6 +257,7 @@
       _addEventListener(targetHandlerElement, eventName, fn);
     }
   }
+
   let _sendEvent = (handlerId, data) => {
     let dataLength;
     let encodedString;
@@ -844,9 +841,7 @@
   let CMD_INSTALL_TEMPLATE = 1;
   let CMD_INIT_WINDOW = 2;
   let CMD_ATTACH_ANCHOR = 3;
-  let CMD_COOKIE_SET = 4;
   let CMD_ATTACH_EVENT_V2 = 5;
-  let CMD_NAV = 6;
   let CMD_ELEMENT_UPDATE = 7;
   let CMD_INIT_BLOCK = 8;
   let CMD_REMOVE_BLOCKS = 9;
@@ -873,16 +868,7 @@
     [CMD_INSTALL_TEMPLATE]: _installTemplate2,
     [CMD_ATTACH_ANCHOR]: _attachAtAnchorV2,
     [CMD_ATTACH_EVENT_V2]: _attachEventHandlerV2,
-    [CMD_NAV]: () => {
-      let pathLength = getUint16();
-      let path = getString(pathLength);
-      _window.history.pushState({}, '', path);
-    },
     [CMD_ELEMENT_UPDATE]: _elementUpdate,
-    [CMD_COOKIE_SET]: () => {
-      let cookieString = getString(getUint16());
-      _document.cookie = cookieString;
-    },
     [CMD_REMOVE_BLOCKS]: () => {
       let blockId;
 
