@@ -378,6 +378,10 @@ export function useMemo(fn) {
 }
 
 export function onCleanup(fn) {
+  onDispose(fn);
+}
+
+export function onDispose(fn) {
   if (ActiveNode === null) {
     throw new Error();
   } else if (ActiveNode.cleanups === null) {

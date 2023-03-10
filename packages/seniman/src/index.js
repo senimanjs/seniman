@@ -1,5 +1,5 @@
-import { _createBlock, _createComponent, useWindow, useStream } from './v2/window.js';
-import { useState, useMemo, onCleanup, useEffect, untrack, createContext, useContext, useCallback, runInNode, getActiveNode, onError, wrapPromise } from './v2/state.js';
+import { _createBlock, _createComponent, useWindow, useClient, useStream } from './v2/window.js';
+import { useState, useMemo, onCleanup, onDispose, useEffect, untrack, createContext, useContext, useCallback, runInNode, getActiveNode, onError, wrapPromise } from './v2/state.js';
 import { _declareBlock, _declareClientFunction } from './declare.js';
 
 function withValue(fn) {
@@ -11,6 +11,7 @@ export {
   useMemo,
   useEffect,
   useWindow,
+  useClient,
   useStream,
 
   createContext,
@@ -24,6 +25,7 @@ export {
 
   onError,
   onCleanup,
+  onDispose,
   untrack,
 
   _declareBlock,

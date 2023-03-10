@@ -2,19 +2,22 @@
 import { Buffer } from 'node:buffer';
 import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue, getActiveNode, runInNode, useCallback } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
-import { build } from '../build.js';
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
 import { windowManager } from './window_manager.js';
-import { ErrorViewer, ErrorHandler } from './errors.js';
+import { ErrorHandler } from './errors.js';
 
 
 // set max input event buffer size to 1KB
 const MAX_INPUT_EVENT_BUFFER_SIZE = process.env.MAX_INPUT_EVENT_BUFFER_SIZE ? parseInt(process.env.MAX_INPUT_EVENT_BUFFER_SIZE) : 1024;
 
-export const WindowContext = createContext(null);
+const ClientContext = createContext(null);
 
 export function useWindow() {
-  return useContext(WindowContext);
+  return useClient();
+}
+
+export function useClient() {
+  return useContext(ClientContext);
 }
 
 const camelCaseToKebabCaseRegex = /([a-z0-9])([A-Z])/g;
@@ -115,8 +118,6 @@ class WorkQueue {
     return this.queue.shift();
   }
 }
-
-
 
 function processInput(window, inputQueue) {
 
@@ -223,8 +224,9 @@ export class Window {
 
     this.lastPongTime = Date.now();
 
-    let windowContext = {
+    let clientContext = {
       viewportSize: viewportSizeSignal,
+
       cookie: (cookieKey) => {
         return useMemo(() => {
           let cookieString = getCookie();
@@ -249,18 +251,22 @@ export class Window {
           // build the cookie string
           let cookieSetString = `${cookieKey}=${cookieValue}; expires=${expirationTime.toUTCString()}; path=/`;
 
-          windowContext.clientExec(cookieSetClientFn, [cookieSetString]);
+          clientContext.exec(cookieSetClientFn, [cookieSetString]);
         });
       },
 
       path,
 
       navigate: (path) => {
-        windowContext.clientExec(navigateClientFn, [path]);
+        clientContext.exec(navigateClientFn, [path]);
         setPath(path);
       },
 
       clientExec: (clientFnSpec, args) => {
+        clientContext.exec(clientFnSpec, args);
+      },
+
+      exec: (clientFnSpec, args) => {
         let eventHandlerIds = [];
         let { clientFnId, serverBindFns } = clientFnSpec;
 
@@ -304,7 +310,7 @@ export class Window {
 
     this.rootDisposer = useDisposableEffect(() => {
 
-      getActiveNode().context = { [WindowContext.id]: windowContext };
+      getActiveNode().context = { [ClientContext.id]: clientContext };
 
       this._attach(1, 0, <components.Head />);
       this._attach(2, 0,
