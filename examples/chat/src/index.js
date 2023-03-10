@@ -49,10 +49,11 @@ function Message(props) {
 }
 
 function ChatStream() {
-  let messageIdStream = useStream([]);
   let window = useWindow();
   let [startOffset, setStartOffset] = useState(0);
   let [getUsername, setUsername] = useState('User2');
+
+  let messageIdStream = useStream([]);
 
   // load last 10 messages
   chatService
