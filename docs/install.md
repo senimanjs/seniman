@@ -12,6 +12,13 @@ You also need to install the Babel packages for JSX compilation:
 npm install --save-dev @babel/cli babel-plugin-seniman
 ```  
 
+
+Add the following to your project's `package.json` since the examples used here mostly use ES6 imports:
+
+```js
+  "type": "module"
+```
+
 Then, add the following to your `babel.config.json`:
   
 ```json

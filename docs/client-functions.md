@@ -144,7 +144,9 @@ function MyComponent() {
   let window = useWindow();
 
   useEffect(() => {
-    window.clientExec($c((name) => console.log(`Hello ${name} from the server!`), ['John']));
+    window.clientExec($c((name) => {
+      console.log(`Hello ${name} from the server!`)
+    }), ['John']);
   });
 
   return (

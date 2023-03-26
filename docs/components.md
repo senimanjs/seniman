@@ -94,7 +94,7 @@ function MyComponent(props) {
   return <div>Count is {props.count}!</div>;
 }
 ```
-In `MyComponent`, `{props.count}` — representing the `getCount()` call — is being used within the `div` element. This means that only the contents of the `div` element will re-render every time the state changes. The rest of `MyComponent` itself will not re-render.
+In `MyComponent`, `{props.count}` — representing the `getCount()` call up in the parent — is being used within the `div` element. This means that only the contents of the `div` element will re-render every time the state changes. The rest of `MyComponent` itself will not re-render.
 
 Now, since the components does not re-render, how do we get the updated count values from the parent to flow into the `div`? 
 
@@ -257,7 +257,7 @@ function MyComponent(props) {
 
 You can use an `async` `useEffect` function to load the data from the server, in combination with a `useState` to store the server data & loading state.
 
-Please note that in an `async` `useEffect` function, you need to resolve all the state getters you depend on before the first `await` statement for them to be tracked correctly. If not done correctly, the state getters will not be tracked, and the `useEffect` function will not re-execute when the states change.
+Please note that in an `async` `useEffect` function, you need to resolve all the state getters you depend on before the first `await` statement for them to be tracked correctly.
 
 ## Calling server API in response to user interaction
 
