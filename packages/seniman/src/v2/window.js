@@ -753,29 +753,29 @@ export class Window {
     let textLength = textBuffer.length;
 
     // TODO: handle string length longer than 32K
-    let buf2 = this._allocCommandBuffer(1 + 2 + 1 + 2 + textLength);
+    let buf2 = this._allocCommandBuffer(1 + 2 + 2 + 2 + textLength);
 
     buf2.writeUint8(CMD_ATTACH_ANCHOR, 0);
     buf2.writeUint16BE(blockId, 1);
 
-    buf2.writeUint8(anchorIndex, 3);
+    buf2.writeUint16BE(anchorIndex, 3);
 
     if (textLength > 32677) {
       throw new Error();
     }
 
-    buf2.writeUint16BE(textLength, 4);
-    textBuffer.copy(buf2, 6);
+    buf2.writeUint16BE(textLength, 5);
+    textBuffer.copy(buf2, 7);
   }
 
   _streamAttachBlockCommand(parentBlockId, anchorIndex, blockId) {
-    let buf2 = this._allocCommandBuffer(1 + 2 + 1 + 2);
+    let buf2 = this._allocCommandBuffer(1 + 2 + 2 + 2);
 
     buf2.writeUint8(CMD_ATTACH_ANCHOR, 0);
     buf2.writeUint16BE(parentBlockId, 1);
-    buf2.writeUint8(anchorIndex, 3);
+    buf2.writeUint16BE(anchorIndex, 3);
 
-    buf2.writeUint16BE(blockId |= (1 << 15), 4);
+    buf2.writeUint16BE(blockId |= (1 << 15), 5);
   }
 
   _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects) {

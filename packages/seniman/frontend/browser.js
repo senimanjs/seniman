@@ -826,7 +826,7 @@
     let blockId = getUint16();
     let block = getBlock(blockId);
 
-    let index = getUint8();
+    let index = getUint16();
     let [highestOrderBit, value] = magicSplitUint16(getUint16());
     let isText = !highestOrderBit;
 
