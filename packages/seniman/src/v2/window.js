@@ -5,10 +5,7 @@ import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declar
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
 import { windowManager } from './window_manager.js';
 import { ErrorHandler } from './errors.js';
-
-
-// set max input event buffer size to 1KB
-const MAX_INPUT_EVENT_BUFFER_SIZE = process.env.MAX_INPUT_EVENT_BUFFER_SIZE ? parseInt(process.env.MAX_INPUT_EVENT_BUFFER_SIZE) : 1024;
+import { MAX_INPUT_EVENT_BUFFER_SIZE } from '../config.js';
 
 const ClientContext = createContext(null);
 
