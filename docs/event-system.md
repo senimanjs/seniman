@@ -24,12 +24,15 @@ Let's go through how you'd handle these event types in Seniman. Note: familiarit
 
 ### onClick
 
-Simplest `onClick` example:
+Let's start with a simple `onClick` example:
 ```js
+
+import { createHandler } from 'seniman';
+
 function MyComponent() {
-  let serverClickHandler = () => {
+  let serverClickHandler = createHandler(() => {
     console.log('clicked!');
-  }
+  });
 
   return <div onClick={$c(() => $s(serverClickHandler)())}>
     Click me!
