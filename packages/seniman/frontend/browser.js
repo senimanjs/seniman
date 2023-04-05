@@ -19,54 +19,14 @@
   }
 
   let _socketSend = (buffer) => socket.send(buffer)
-
   let getBlock = (id) => _blocksMap.get(id);
-
-  let throttleDebounce = (func, delay) => {
-    let lastCall = 0;
-    let timeoutId;
-    let latestArgs;
-
-    return (...args) => {
-      latestArgs = args;
-      clearTimeout(timeoutId);
-
-      const _now = now();
-      if (_now - lastCall >= delay) {
-        lastCall = _now;
-        func.apply(null, latestArgs);
-      } else {
-        // If not enough time has passed since the last call,
-        // set a new timeout to run the function at the next
-        // opportunity (i.e. after `delay` milliseconds)
-        timeoutId = setTimeout(() => {
-          lastCall = now();
-          func.apply(null, latestArgs);
-        }, delay - (_now - lastCall));
-      }
-    };
-  }
-
-  let viewportUpdateBuffer = createBuffer(5);
-  let getWindowSize = () => [_window.innerWidth, _window.innerHeight];
-
-  _addEventListener(window, 'resize', throttleDebounce(() => {
-    let [width, height] = getWindowSize();
-
-    writeUint8(viewportUpdateBuffer, 5, 0);
-    writeUint16LE(viewportUpdateBuffer, width, 1);
-    writeUint16LE(viewportUpdateBuffer, height, 3);
-
-    _socketSend(viewportUpdateBuffer);
-  }, 1000));
 
   {
     let lastMessageTime = 0;
     let requestReopen = false;
 
     let connectSocket = () => {
-      let [width, height] = getWindowSize();
-      socket = new WebSocket(`${_window.origin.replace('http', 'ws')}?wi=${windowId}&ro=${readOffset}&vs=${width}x${height}&lo=${encodeURIComponent(_location.pathname + _location.search)}`);
+      socket = new WebSocket(`${_window.origin.replace('http', 'ws')}?wi=${windowId}&ro=${readOffset}&vs=${_window.innerWidth}x${_window.innerHeight}&lo=${encodeURIComponent(_location.pathname + _location.search)}`);
       socket.binaryType = "arraybuffer";
 
       socket.onopen = (e) => {
@@ -225,6 +185,48 @@
     9: 'mouseleave'
   };
 
+  let _decodeServerBoundValuesBuffer = () => {
+    let ARGTYPE_STRING = 1;
+    let ARGTYPE_INT16 = 2;
+    let ARGTYPE_INT32 = 3;
+    let ARGTYPE_FLOAT64 = 4;
+    let ARGTYPE_BOOLEAN = 5;
+    let ARGTYPE_NULL = 6;
+    let ARGTYPE_HANDLER = 7;
+
+    let extractValue = () => {
+      switch (getUint8()) {
+        case ARGTYPE_HANDLER:
+          let id = getUint16();
+          return (data) => {
+            _sendEvent(id, data);
+          }
+        case ARGTYPE_STRING:
+          let stringLength = getUint16();
+          return getString(stringLength);
+        case ARGTYPE_INT16:
+          return getInt16();
+        case ARGTYPE_INT32:
+          return getInt32();
+        case ARGTYPE_FLOAT64:
+          return getFloat64();
+        case ARGTYPE_BOOLEAN:
+          return !!getUint8();
+        case ARGTYPE_NULL:
+          return null;
+      }
+    }
+
+    let argsCount = getUint8();
+    let values = [];
+
+    for (let i = 0; i < argsCount; i++) {
+      values.push(extractValue());
+    }
+
+    return values;
+  }
+
   let _attachEventHandlerV2 = () => {
     let blockId = getUint16();
     let targetId = getUint8();
@@ -232,22 +234,10 @@
     let targetHandlerElement = _getBlockTargetElement(blockId, targetId);
 
     let clientFnId = getUint16();
-    let fn = clientFunctionsMap.get(clientFnId);
+    let serverBoundValues = _decodeServerBoundValuesBuffer();
 
-    let serverFunctions = [];
-    let bindId;
-
-    while ((bindId = getUint16())) {
-      let _bindId = bindId;
-
-      serverFunctions.push((data) => {
-        _sendEvent(_bindId, data);
-      });
-    }
-
-    if (serverFunctions.length) {
-      fn = fn.bind({ serverFunctions });
-    }
+    // TODO: rename the serverFunction context key in the compiler
+    let fn = clientFunctionsMap.get(clientFnId).bind({ serverFunctions: serverBoundValues });
 
     if (eventType == 1) {
       clickEventHandlerIdWeakMap.set(targetHandlerElement, fn);
@@ -287,15 +277,30 @@
   let processOffset = 0;
   let buffer;
   let dv;
+
   let getUint8 = () => {
     return dv.getUint8(processOffset++);// + offset);
   };
   let getUint16 = () => {
     return dv.getUint16((processOffset += 2) - 2);
   }
+
+  let getInt16 = () => {
+    return dv.getInt16((processOffset += 2) - 2);
+  }
+
   let getUint32 = () => {
     return dv.getUint32((processOffset += 4) - 4);
   }
+
+  let getInt32 = () => {
+    return dv.getInt32((processOffset += 4) - 4);
+  }
+
+  let getFloat64 = () => {
+    return dv.getFloat64((processOffset += 8) - 8);
+  }
+
   let getString = (length) => {
     return textDecoder.decode(buffer.slice(processOffset, processOffset += length));
   }
@@ -854,7 +859,20 @@
   // fill out the 0-index to make it easier for templating to do 1-indexing
   let GlobalTokenList = [''];
 
+  let pongBuffer = createBuffer(5);
+
+  let onPingArrival = () => {
+    writeUint8(pongBuffer, 0, 0);
+
+    // update buffer
+    writeUInt32LE(pongBuffer, readOffset, 1);
+
+    //console.log('pong read offset', readOffset);
+    _socketSend(pongBuffer);
+  }
+
   let _processMap = {
+    [CMD_PING]: onPingArrival,
     [CMD_INIT_WINDOW]: () => {
       windowId = getString(21);
 
@@ -889,28 +907,9 @@
     },
     [CMD_RUN_CLIENT_FUNCTION]: () => {
       let clientFunctionId = getUint16();
-      let serverFunctions = [];
-      let bindId;
+      let serverBoundValues = _decodeServerBoundValuesBuffer();
 
-      while ((bindId = getUint16())) {
-        let _bindId = bindId;
-
-        serverFunctions.push((data) => {
-          _sendEvent(_bindId, data);
-        });
-      }
-
-      let argsJsonLength = getUint16();
-      let str = getString(argsJsonLength);
-      let argsList = JSON.parse(str);
-
-      let thisContext = null;
-
-      if (serverFunctions.length) {
-        thisContext = { serverFunctions };
-      }
-
-      clientFunctionsMap.get(clientFunctionId).apply(thisContext, argsList);
+      clientFunctionsMap.get(clientFunctionId).apply({ serverFunctions: serverBoundValues });
     },
     [CMD_APPEND_TOKENLIST]: () => {
       let length;
@@ -921,56 +920,25 @@
     }
   }
 
-  let pongBuffer = createBuffer(5);
-
-  let onPingArrival = () => {
-    writeUint8(pongBuffer, 0, 0);
-
-    // update buffer
-    writeUInt32LE(pongBuffer, readOffset, 1);
-
-    //console.log('pong read offset', readOffset);
-    _socketSend(pongBuffer);
-  }
-
   let _apply3 = (message) => {
     processOffset = 0;
     buffer = message.data;
     dv = new DataView(buffer);
 
-    let opcode = dv.getUint8(0);
+    let totalLength = dv.byteLength;
 
-    if (opcode == CMD_PING) {
-      onPingArrival();
-    } else {
-      let totalLength = dv.byteLength;
+    while (processOffset < totalLength) {
+      let opcode = getUint8();
+      let fn = _processMap[opcode];
 
-      while (processOffset < totalLength) {
-        let opcode = getUint8();
-        let fn = _processMap[opcode];
-
-        if (fn) {
-          fn();
-        } else {
-          throw new Error('invalid opcode');
-        }
+      if (fn) {
+        fn();
+      } else {
+        throw new Error('invalid opcode');
       }
-
-      readOffset += processOffset;
     }
-  }
 
-  _window.onpopstate = () => {
-    let BACKNAV_COMMAND = 3;
-    let pathname = _location.pathname;
-    let pathnameLength = pathname.length;
-    let buf = createBuffer(3 + pathnameLength);
-
-    writeUint8(buf, BACKNAV_COMMAND, 0);
-    writeUint16LE(buf, pathnameLength, 1);
-    writeString(buf, encoder.encode(pathname), 3);
-
-    _socketSend(buf);
+    readOffset += processOffset;
   }
 
   let eventHandler = (e) => {

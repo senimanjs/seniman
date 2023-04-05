@@ -1,4 +1,4 @@
-import { useContext, createContext, useState, useWindow, useEffect, useMemo, untrack } from "../index.js";
+import { useContext, createContext, useState, useWindow, useEffect, useMemo, untrack, createHandler } from "../index.js";
 
 /**
  *
@@ -207,7 +207,7 @@ export function useRouter() {
 export function Link(props) {
   let router = useRouter();
 
-  let onClick = () => {
+  let onClick = createHandler(() => {
     if (props.onClick) {
       props.onClick();
     }
@@ -217,7 +217,7 @@ export function Link(props) {
     } else {
       router.push(props.name, props.params, props.queryString);
     }
-  }
+  });
 
   let href = useMemo(() => {
     if (props.to) {

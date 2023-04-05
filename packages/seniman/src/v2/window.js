@@ -135,19 +135,59 @@ function processInput(window, inputQueue) {
   setActiveWindow(null);
 }
 
-function createNoArgHandler(fn) {
+function createNoArgClientFunction(fn) {
   return $c(() => {
     $s(fn)();
   });
 }
 
-let navigateClientFn = $c((path) => {
-  window.history.pushState({}, '', path);
-});
+function BackButtonListener(props) {
+  let client = useClient();
+  let onPopState = createHandler((pathname) => {
+    props.onBackButton(pathname);
+  });
 
-let cookieSetClientFn = $c((cookieString) => {
-  document.cookie = cookieString;
-});
+  client.exec($c(() => {
+    window.onpopstate = () => {
+      $s(onPopState)(location.pathname);
+    }
+  }));
+}
+
+function WindowResizeListener(props) {
+  let client = useClient();
+  let onResize = createHandler(([width, height]) => {
+    props.onResize(width, height);
+  });
+
+  client.exec($c(() => {
+    let throttle = (func, delay) => {
+      let lastCall = 0;
+      let timeoutId;
+      let latestArgs;
+
+      return (...args) => {
+        latestArgs = args;
+        clearTimeout(timeoutId);
+
+        let _now = Date.now();
+        if (_now - lastCall >= delay) {
+          lastCall = _now;
+          func.apply(null, latestArgs);
+        } else {
+          timeoutId = setTimeout(() => {
+            lastCall = Date.now();
+            func.apply(null, latestArgs);
+          }, delay - (_now - lastCall));
+        }
+      };
+    }
+
+    window.addEventListener('resize', throttle(() => {
+      $s(onResize)([window.innerWidth, window.innerHeight]);
+    }, 1000));
+  }));
+}
 
 //let CMD_PING = 0;
 //let CMD_INSTALL_TEMPLATE = 1;
@@ -163,7 +203,7 @@ let CMD_INIT_SEQUENCE = 13;
 let CMD_MODIFY_SEQUENCE = 14;
 
 let pingBuffer = Buffer.from([0]);
-const multiStylePropScratchBuffer = Buffer.alloc(32768);
+const scratchBuffer = Buffer.alloc(32768);
 
 export class Window {
 
@@ -189,16 +229,6 @@ export class Window {
 
     this.latestBlockId = 10;
 
-    setActiveWindow(this);
-    let [path, setPath] = useState(currentPath);
-    let [pageTitle, set_pageTitle] = useState('');
-    let [getCookie, setCookie] = useState(cookieString);
-    let [viewportSizeSignal, setViewportSize] = useState({ width: viewportSize[0], height: viewportSize[1] });
-    setActiveWindow(null);
-
-    this.setViewportSize = setViewportSize;
-    this.setPath = setPath;
-
     // reuse the same buffer for all block delete commands
     this.deleteBlockCommandBuffer = Buffer.alloc(1000 * 2);
     this.deleteBlockCount = 0;
@@ -215,97 +245,89 @@ export class Window {
 
     this.inputMessageQueue = [];
     this.hasPendingInput = false;
-    this.workQueue = new WorkQueue();
-
     this.hasPendingWork = false;
+    this.workQueue = new WorkQueue();
 
     this.lastPongTime = Date.now();
 
-    let clientContext = {
-      viewportSize: viewportSizeSignal,
-
-      cookie: (cookieKey) => {
-        return useMemo(() => {
-          let cookieString = getCookie();
-          return cookieString ? getCookieValue(cookieString, cookieKey) : null;
-        });
-      },
-
-      setCookie: (cookieKey, cookieValue, expirationTime) => {
-
-        untrack(() => {
-          let cookieString = getCookie();
-          let newCookieString = setCookieValue(cookieString, cookieKey, cookieValue);
-
-          setCookie(newCookieString);
-
-          if (!expirationTime) {
-            expirationTime = new Date();
-            // set default expiration to one hour after now
-            expirationTime.setHours(expirationTime.getHours() + 1);
-          }
-
-          // build the cookie string
-          let cookieSetString = `${cookieKey}=${cookieValue}; expires=${expirationTime.toUTCString()}; path=/`;
-
-          clientContext.exec(cookieSetClientFn, [cookieSetString]);
-        });
-      },
-
-      path,
-
-      navigate: (path) => {
-        clientContext.exec(navigateClientFn, [path]);
-        setPath(path);
-      },
-
-      clientExec: (clientFnSpec, args) => {
-        clientContext.exec(clientFnSpec, args);
-      },
-
-      exec: (clientFnSpec, args) => {
-        let eventHandlerIds = [];
-        let { clientFnId, serverBindFns } = clientFnSpec;
-
-        this._streamFunctionInstallCommand(clientFnId);
-
-        let serverBindIds = (serverBindFns || []).map(bindFn => {
-          let handlerId = this._allocateEventHandler(bindFn);
-          eventHandlerIds.push(handlerId);
-          return handlerId;
-        });
-
-        let argJsonString = JSON.stringify(args || []);
-        let buf = this._allocCommandBuffer(1 + 2 + ((serverBindIds.length * 2) + 2) + 2 + argJsonString.length);
-
-        buf.writeUInt8(CMD_RUN_CLIENT_FUNCTION, 0);
-        buf.writeUInt16BE(clientFnId, 1);
-
-        let offset = 3;
-
-        serverBindIds.forEach(bindId => {
-          buf.writeUint16BE(bindId, offset);
-          offset += 2;
-        });
-
-        buf.writeUint16BE(0, offset);
-        offset += 2;
-        buf.writeUInt16BE(argJsonString.length, offset);
-        offset += 2;
-        buf.write(argJsonString, offset);
-
-        if (eventHandlerIds.length) {
-          onCleanup(() => {
-            this._deallocateEventHandlers(eventHandlerIds);
-          });
-        }
-      },
-
-      pageTitle: pageTitle,
-      setPageTitle: (title) => set_pageTitle(title)
-    };
-
     this.rootDisposer = useDisposableEffect(() => {
+      let [path, setPath] = useState(currentPath);
+      let [pageTitle, set_pageTitle] = useState('');
+      let [getCookie, setCookie] = useState(cookieString);
+      let [viewportSizeSignal, setViewportSize] = useState({ width: viewportSize[0], height: viewportSize[1] });
+      let [shouldSendPostScript, setShouldSendPostScript] = useState(false);
+
+      let clientContext = {
+        viewportSize: viewportSizeSignal,
+
+        cookie: (cookieKey) => {
+          return useMemo(() => {
+            let cookieString = getCookie();
+            return cookieString ? getCookieValue(cookieString, cookieKey) : null;
+          });
+        },
+
+        setCookie: (cookieKey, cookieValue, expirationTime) => {
+
+          untrack(() => {
+            let cookieString = getCookie();
+            let newCookieString = setCookieValue(cookieString, cookieKey, cookieValue);
+
+            setCookie(newCookieString);
+
+            if (!expirationTime) {
+              expirationTime = new Date();
+              // set default expiration to one hour after now
+              expirationTime.setHours(expirationTime.getHours() + 1);
+            }
+
+            // build the cookie string
+            let cookieSetString = `${cookieKey}=${cookieValue}; expires=${expirationTime.toUTCString()}; path=/`;
+
+            clientContext.exec($c(() => {
+              document.cookie = $s(cookieSetString);
+            }));
+          });
+        },
+
+        path,
+
+        navigate: (path) => {
+          clientContext.exec($c(() => {
+            window.history.pushState({}, '', $s(path));
+          }));
+          setPath(path);
+        },
+
+        clientExec: (clientFnSpec) => {
+          clientContext.exec(clientFnSpec);
+        },
+
+        exec: (clientFnSpec) => {
+          let { clientFnId, serverBindFns } = clientFnSpec;
+
+          this._streamFunctionInstallCommand(clientFnId);
+
+          let sbvBuffer = this._encodeServerBoundValues(serverBindFns || []);
+          let buf = this._allocCommandBuffer(1 + 2 + sbvBuffer.length);
+
+          buf.writeUInt8(CMD_RUN_CLIENT_FUNCTION, 0);
+          buf.writeUInt16BE(clientFnId, 1);
+
+          sbvBuffer.copy(buf, 3);
+        },
+
+        pageTitle: pageTitle,
+        setPageTitle: (title) => set_pageTitle(title)
+      };
+
+      let onBackButton = (pathname) => {
+        setPath(pathname);
+      }
+
+      let onResize = (width, height) => {
+        setViewportSize({ width, height });
+      }
 
       getActiveNode().context = { [ClientContext.id]: clientContext };
 
@@ -313,8 +335,14 @@ export class Window {
       this._attach(2, 0,
         <ErrorHandler>
           <components.Body />
+          <BackButtonListener onBackButton={onBackButton} />
+          {shouldSendPostScript() ? <WindowResizeListener onResize={onResize} /> : null}
         </ErrorHandler>
       );
+
+      setTimeout(() => {
+        setShouldSendPostScript(true);
+      }, 2000);
 
     }, null, this);
   }
@@ -485,48 +513,23 @@ export class Window {
       return;
     }
 
-    let EVENT_COMMAND = 1;
-    let EVENT_DATA_COMMAND = 2;
-    let EVENT_BACKNAV = 3;
-    let EVENT_VIEWPORT_UPDATE = 5;
+    let handlerId = buffer.readUint16LE(1);
 
-    let opcode = buffer.readUint8(0);
-
-    if (opcode == EVENT_COMMAND) {
-      let handlerId = buffer.readUint16LE(1);
-
-      if (!this.eventHandlers.has(handlerId)) {
-        return;
-      }
-
-      let dataLength = buffer.readUint16LE(3);
-      let data;
-
-      if (dataLength > 0) {
-        data = JSON.parse(buffer.subarray(5, 5 + dataLength).toString());
-      } else {
-        data = '';
-      }
-
-      this._executeClientEvent({ handlerId, data });
-    } else if (opcode == EVENT_BACKNAV) {
-      let pathnameLength = buffer.readUint16LE(1);
-
-      if (pathnameLength > 2048) {
-        return;
-      }
-
-      let path = buffer.subarray(3, 3 + pathnameLength).toString();
-
-      // TODO: do we need to do something special other than just setting the path since this is a backnav?
-      // i.e. some level of sychronization of browser's history stack with the server's history stack?
-      this.setPath(path);
-    } else if (opcode == EVENT_VIEWPORT_UPDATE) {
-      let width = buffer.readUint16LE(1);
-      let height = buffer.readUint16LE(3);
-
-      this.setViewportSize({ width, height });
+    if (!this.eventHandlers.has(handlerId)) {
+      return;
     }
+
+    let handler = this.eventHandlers.get(handlerId);
+    let dataLength = buffer.readUint16LE(3);
+    let data;
+
+    if (dataLength > 0) {
+      data = JSON.parse(buffer.subarray(5, 5 + dataLength).toString());
+    } else {
+      data = '';
+    }
+
+    handler(data);
   }
 
   onDestroy(fn) {
@@ -633,21 +636,16 @@ export class Window {
     handlerIds.forEach(handlerId => this.eventHandlers.delete(handlerId));
   }
 
-  _executeClientEvent(command) {
-    let eventHandler = this.eventHandlers.get(command.handlerId);
-
-    eventHandler(command.data);
-  }
-
   _streamInitWindow() {
     let buf = this._allocCommandBuffer(1 + 21)
     buf.writeUint8(CMD_INIT_WINDOW, 0);
     buf.write(this.id, 1, 21);
   }
 
-  _streamEventInitCommandV2(blockId, targetId, eventType, clientFnId, serverBindIds) {
+  _streamEventInitCommandV2(blockId, targetId, eventType, clientFnId, serverBindFns) {
+    let sbvBuffer = this._encodeServerBoundValues(serverBindFns);
 
-    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + ((serverBindIds.length * 2) + 2));
+    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + sbvBuffer.length);
 
     buf.writeUint8(CMD_ATTACH_EVENT_V2, 0);
     buf.writeUint16BE(blockId, 1);
@@ -655,14 +653,86 @@ export class Window {
     buf.writeUint8(eventType, 4);
     buf.writeUint16BE(clientFnId, 5);
 
-    let offset = 7;
+    sbvBuffer.copy(buf, 7);
+  }
 
-    serverBindIds.forEach(bindId => {
-      buf.writeUint16BE(bindId, offset);
-      offset += 2;
-    });
+  _encodeServerBoundValues(serverBindFns) {
+    // create a buffer to hold the encoded server bound values
+    let buf = scratchBuffer;
+    let offset = 0;
 
-    buf.writeUint16BE(0, offset);
+    // TODO: move these constants
+    const ARGTYPE_STRING = 1;
+    const ARGTYPE_INT16 = 2;
+    const ARGTYPE_INT32 = 3;
+    const ARGTYPE_FLOAT64 = 4;
+    const ARGTYPE_BOOLEAN = 5;
+    const ARGTYPE_NULL = 6;
+    const ARGTYPE_HANDLER = 7;
+
+    let argsCount = serverBindFns.length;
+
+    buf.writeUint8(argsCount, offset);
+    offset++;
+
+    for (let i = 0; i < argsCount; i++) {
+      let arg = serverBindFns[i];
+      // throw error if arg is a function
+      if (typeof arg === 'function') {
+        throw new Error('Starting from Seniman v0.0.90, referring to a function in a $s(fn) call within a custom $c function requires wrapping the function in a createHandler(fn) call.');
+      }
+
+      // check if arg is string, number, boolean, object, null, a callback, or a channel
+      if (typeof arg === 'string') {
+        buf.writeUint8(ARGTYPE_STRING, offset);
+        offset++;
+
+        let str = arg;
+        let strLen = Buffer.byteLength(str);
+
+        buf.writeUInt16BE(strLen, offset);
+        offset += 2;
+        buf.write(str, offset);
+        offset += strLen;
+      } else if (typeof arg === 'number') {
+        let isInt = Number.isInteger(arg);
+
+        if (isInt && Math.abs(arg) < 32768) {
+          buf.writeUint8(ARGTYPE_INT16, offset);
+          offset++;
+
+          buf.writeInt16BE(arg, offset);
+          offset += 2;
+        } else if (isInt) {
+          buf.writeUint8(ARGTYPE_INT32, offset);
+          offset++;
+
+          buf.writeInt32BE(arg, offset);
+          offset += 4;
+        } else {
+          buf.writeUint8(ARGTYPE_FLOAT64, offset);
+          offset++;
+
+          buf.writeDoubleBE(arg, offset);
+          offset += 8;
+        }
+      } else if (typeof arg === 'boolean') {
+        buf.writeUint8(ARGTYPE_BOOLEAN, offset);
+        offset++;
+        buf.writeUint8(arg ? 1 : 0, offset);
+        offset++;
+      } else if (arg === null) {
+        buf.writeUint8(ARGTYPE_NULL, offset);
+        offset++;
+      } else if (arg.type == 'handler') {
+        buf.writeUint8(ARGTYPE_HANDLER, offset);
+        offset++;
+        buf.writeUInt16BE(arg.id, offset);
+        offset += 2;
+      }
+    }
+
+    return buf.subarray(0, offset);
   }
 
   _streamTemplateInstallCommand(templateId) {
@@ -793,7 +863,6 @@ export class Window {
   }
 
   _handleBlockEventHandlers(newBlockId, eventHandlers) {
-    let eventHandlerIds = [];
     let eventHandlersCount = eventHandlers.length;
 
     for (let i = 0; i < eventHandlersCount; i++) {
@@ -801,35 +870,64 @@ export class Window {
       let clientFnId;
       let serverBindFns;
 
+      // 4 possible cases:
+      // 1. eventHandler.fn is undefined / null
+      // 2. eventHandler.fn is a function instance -- e.g. <... onClick={() => { ... }}
+      // 3. eventHandler.fn is a handler instance 
+      //    e.g. let handler = createHandler(() => { ... });
+      //         <... onClick={handler}
+      // 4. eventHandler.fn is a client function instance
+
+      // ultimately we want to operate against a client function instance
+      // #2 and #3 handling is basically turning either the function instance or the handler instance
+      // into a client function instance
+
       // do nothing if the event handler is undefined
       if (!eventHandler.fn) {
         continue;
       } else if (eventHandler.fn instanceof Function) {
-        let eventHandlerFn = createNoArgHandler(eventHandler.fn);
+        // this is a shortcut for the case where the event handler is just a function instance
+        // in which case we automatically create a no-argument client function that wraps the event handler
+        // and calls it directly.
+        // for other cases, the developer must create a client function explicitly
+        let handler = this._allocateHandler(eventHandler.fn);
+        let clientFn = createNoArgClientFunction(handler);
 
         // if the event handler is just a function instance, 
         // assign a client function that wraps the event handler
         // and calls it directly without arguments
-        clientFnId = eventHandlerFn.clientFnId;
-        serverBindFns = eventHandlerFn.serverBindFns;
+        clientFnId = clientFn.clientFnId;
+        serverBindFns = clientFn.serverBindFns;
+
+      } else if (eventHandler.fn.type === 'handler') {
+        let clientFn = createNoArgClientFunction(eventHandler.fn);
+
+        clientFnId = clientFn.clientFnId;
+        serverBindFns = clientFn.serverBindFns;
       } else if (eventHandler.fn.clientFnId) {
         clientFnId = eventHandler.fn.clientFnId;
         serverBindFns = eventHandler.fn.serverBindFns || [];
       }
 
-      let serverBindIds = serverBindFns.map(bindFn => {
-        let handlerId = this._allocateEventHandler(bindFn);
-        eventHandlerIds.push(handlerId);
-        return handlerId;
-      });
-
       this._streamFunctionInstallCommand(clientFnId);
-      this._streamEventInitCommandV2(newBlockId, eventHandler.targetId, eventHandler.type, clientFnId, serverBindIds);
+      this._streamEventInitCommandV2(newBlockId, eventHandler.targetId, eventHandler.type, clientFnId, serverBindFns);
     }
+  }
+
+  _allocateHandler(fn) {
+    this.lastEventHandlerId++;
+
+    let handlerId = this.lastEventHandlerId;
+    this.eventHandlers.set(handlerId, fn);
 
     onCleanup(() => {
-      this._deallocateEventHandlers(eventHandlerIds);
+      this.eventHandlers.delete(handlerId);
     });
+
+    return {
+      type: 'handler',
+      id: handlerId
+    };
   }
 
   _handleElementEffects(blockId, elementEffects) {
@@ -892,7 +990,7 @@ export class Window {
             kebabPropertyPairs.push([kebabCaseKey, value]);
           }
 
-          let buf2 = multiStylePropScratchBuffer;
+          let buf2 = scratchBuffer;
 
           buf2.writeUint8(CMD_ELEMENT_UPDATE, 0);
           buf2.writeUint16BE(blockId, 1);
@@ -1246,4 +1344,8 @@ export function _createComponent(componentFunction, props) {
 
 export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffects) {
   return getActiveWindow()._createBlock3(blockTemplateId, anchors, eventHandlers, styleEffects);
+}
+
+export function createHandler(fn) {
+  return getActiveWindow()._allocateHandler(fn);
 }

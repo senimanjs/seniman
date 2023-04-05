@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "0.0.83",
+  "version": "0.0.90",
   "description": "",
   "main": "./dist/index.js",
   "type": "module",
@@ -37,7 +37,7 @@
   "devDependencies": {
     "@babel/cli": "^7.20.7",
     "@babel/core": "^7.20.12",
-    "babel-plugin-seniman": "^0.0.6",
+    "babel-plugin-seniman": "^0.0.9",
     "execa": "^7.0.0",
     "uglify-js": "^3.17.4"
   }
