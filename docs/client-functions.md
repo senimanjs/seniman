@@ -2,7 +2,7 @@
 
 Using Seniman, being a server-driven UI framework, means your interfaces are generated on the server, derived from values that already exist on the server. It is inevitable, however, that you will need to implement some client-side functionality. At the very least, you will need to know when a user clicks a button -- or when a user types something into a text field, and what they typed, and respond to that event. Seniman provides a way to implement client-side functionality, and it is called client functions.
 
-Client functions allows you to define functions which execute on the client-side, which can be used to implement event handlers, or any other kind of client-side logic. Let's go through the two different forms of using client functions: [event handlers](#event-handlers) and [`clientExec`](#clientexec).
+Client functions allows you to define functions which execute on the client-side, which can be used to implement event handlers, or any other kind of client-side logic. Let's go through the two different forms of using client functions: [event handlers](#event-handlers) and [`client.exec`](#clientexec).
 
 ### Event handlers
 
@@ -23,10 +23,14 @@ As you can see, the function is wrapped in a `$c` call. This is a special functi
 Logging messages are great, but the real fun is notifying the server when the button is clicked. To do that, you can use the `$s` syntax:
 
 ```js
+
+import { createHandler } from 'seniman';
+
 function MyComponent() {
-  let onClick = () => {
+
+  let onClick = createHandler(() => {
     console.log('Server knows the click happened!');
-  }
+  });
 
   return (
     <button onClick={$c(() => $s(onClick)())}>Click me!</button>
@@ -34,9 +38,11 @@ function MyComponent() {
 }
 ```
 
-As you can see, we can call a server-defined function (the `onClick`) right from the event handler by wrapping it in a `$s` call. The `$s` is also another special function that tells the Seniman compiler that the wrapped function is a server function. The function identifier inside the `$s` call is the reference to the server function that you want to call. When the `$s` function reference is called, it will send a message to the server, telling it to execute the referred server function.
+As you can see, we can call a server-defined handler function (the `onClick`) right from the client by wrapping it in a `createHandler` -- marking the function as a client-callable server function -- and then wrapping it in a `$s` call within the `$c` function call.
 
-In Seniman, a `$c` handler that calls a single `$s` function without an argument can be rewritten for simplicity by just passing the server function directly, like so:
+The `$s` is also another special function that tells the Seniman compiler that the wrapped reference is a server-supplied variable. In this case, the `$s` function is wrapping a handler reference, which is the `onClick` function. When the `$s` function reference is called, the client runtime will send a message to the server, telling it to execute the referred server function.
+
+In Seniman, a `$c` event handler that calls a single `$s` handler without an argument can be rewritten for simplicity by just passing the server function directly, like so:
 
 ```js
 function MyComponent() {
@@ -67,12 +73,15 @@ And we have a simple, server-executed event handler on our hands.
 Next, let's start passing actual data to the server. Let's pick up a different example -- this time, an input:
 
 ```js
+
+import { createHandler } from 'seniman';
+
 function MyComponent() {
   ...
 
-  let handleNameChange = (name) => {
+  let handleNameChange = createHandler((name) => {
     // do something with the name
-  }
+  });
 
   return (
     ...
@@ -110,24 +119,27 @@ The `withValue` helper function takes a server function, and wraps it in a `$c` 
 
 ```js
 function withValue(fn) {
+
+  // ... verify if fn is a server handler
+
   return $c(e => $s(fn)(e.target.value));
 }
 ```
 
-### clientExec
+### client.exec
 
 Another way to use client functions is by calling them directly from the server. 
 
-To do this, we can use the `window` object's `clientExec` function. This function takes a function as an argument, and executes it on the client-side. Let's start from a simple example that logs a message to the browser console:
+To do this, we can use the `client` object's `exec` function. This function takes a function as an argument, and executes it on the client-side. Let's start from a simple example that logs a message to the browser console:
 
 ```js
-import { clientExec } from 'seniman';
+import { useClient } from 'seniman';
 
 function MyComponent() {
-  let window = useWindow();
+  let client = useClient();
 
   useEffect(() => {
-    window.clientExec($c(() => console.log('Hello from the server!')));
+    client.exec($c(() => console.log('Hello from the server!')));
   });
 
   return (
@@ -136,18 +148,20 @@ function MyComponent() {
 }
 ```
 
-You can also pass arguments to the client function:
+A server handler is not the only type of server value that can be passed to the client function. You can also pass other types of server values such as strings, numbers, or boolean values. Let's try passing a string to the client function -- also by wrapping it in a `$s` call:
 
 ```js
 
 function MyComponent() {
-  let window = useWindow();
+  let client = useClient();
 
-  useEffect(() => {
-    window.clientExec($c((name) => {
-      console.log(`Hello ${name} from the server!`)
-    }), ['John']);
-  });
+  let onClick = () => {
+    let serverString = 'Hello from the server!';
+
+    client.exec($c(() => {
+      console.log("This is a server string: " + $s(serverString));
+    }));
+  };
 
   return (
     <button onClick={onClick}>Click me!</button>
@@ -155,3 +169,4 @@ function MyComponent() {
 }
 ```
 
+When the user clicks the button, the server will tell the client to execute the client function, passing along the server string. The client function will then log the string to the browser console.

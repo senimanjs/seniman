@@ -1,37 +1,55 @@
-# Window
+# Client Object
 
-In the center of Seniman's architecture is the `Window` object. It is the representation of the connected browser window's functionality that can be accessed from the component tree on the server-side.
+Although Seniman is a primarily server-side framework, accessing the client-side functionality is still a prime necessity. Seniman provides a `Client` object that represents the client-side functionality, accessible from the server-side.
 
-It is used for the management of a couple of things that you'd expect to be available in the browser, such as:
+You can access the `Client` object from the `useClient` hook:
 
-- [`path`](#path)
+```js
+
+import { useClient } from 'seniman'
+
+export function MyComponent() {
+  let client = useClient();
+
+  return (
+    <div>
+      <p>Current path: {client.path()}</p>
+    </div>
+  )
+}
+
+```
+
+The `client` object is used for the management of a couple of things that you'd expect to be available in the browser, such as:
+
+- [`path`](#clientpath)
 - [`setPath`](#setpath)
 - [`pageTitle`](#pagetitle)
 - [`setPageTitle`](#setpagetitle)
 - [`cookie`](#cookie)
 - [`setCookie`](#setcookie)
 - [`viewportSize`](#viewportsize)
-- [`clientExec`](#clientexec)
+- [`exec`](#exec)
 
 Let's go through the usage of these functions and states.
 
 ## Path
 
-#### `window.path`
+#### `client.path`
 
 The `path` state is a string that represents the current path of the page. The value of the `path` state is automatically updated when the page's path changes. 
 
 Example use:
 
 ```js
-import { useWindow } from 'seniman'
+import { useClient } from 'seniman'
 
 export function MyComponent() {
-  const window = useWindow();
+  const client = useClient();
 
   return (
     <div>
-      <p>Current path: {window.path()}</p>
+      <p>Current path: {client.path()}</p>
     </div>
   )
 }
@@ -40,37 +58,37 @@ export function MyComponent() {
 Since this is just a regular state, you can also use it in a `useEffect` to be notified when the path changes.
 
 ```js
-import { useWindow, useEffect } from 'seniman'
+import { useClient, useEffect } from 'seniman'
 
 export function MyComponent() {
-  const window = useWindow();
+  const client = useClient();
 
   useEffect(() => {
-    console.log('Current path:', window.path());
+    console.log('Current path:', client.path());
   });
 
   return (
     <div>
-      <p>Current path: {window.path()}</p>
+      <p>Current path: {client.path()}</p>
     </div>
   )
 }
 ```
 
-#### `window.setPath`
+#### `client.setPath`
 
 The `setPath` function is used to change the current path of the browser.
 
 ```js
 
-import { useWindow } from 'seniman'
+import { useClient } from 'seniman'
 
 export function MyComponent() {
-  const window = useWindow();
+  const client = useClient();
 
   return (
     <div>
-      <button onClick={() => window.setPath('/new-path')}>Change path</button>
+      <button onClick={() => client.setPath('/new-path')}>Change path</button>
     </div>
   )
 }
@@ -81,20 +99,20 @@ Note: Seniman has a built-in router that wrap these APIs that you can use to man
 
 ### Page title
 
-#### `window.pageTitle`
+#### `client.pageTitle`
 
 The `title` state is a string that represents the current title of the page. The value of the `title` state is automatically updated when the page's title changes. You'd typically use this to set the page title in the `Head` component.
 
 ```js
 
-import { useWindow } from 'seniman'
+import { useClient } from 'seniman'
 
 function Head() {
-  const window = useWindow();
+  const client = useClient();
 
   return (
     <>
-      <title>{window.pageTitle()}</title>
+      <title>{client.pageTitle()}</title>
     </>
   )
 }
@@ -105,15 +123,15 @@ To set the page title, you can use the `setPageTitle` from somewhere in your com
 
 ```js
 
-import { useWindow } from 'seniman'
+import { useClient } from 'seniman'
 
 function ProductPage() {
-  const window = useWindow();
+  const client = useClient();
 
   useEffect(async () => {
     let product = await getProduct(3);
 
-    window.setPageTitle(product.name);
+    client.setPageTitle(product.name);
   });
 
   return (
@@ -128,21 +146,21 @@ function ProductPage() {
 
 ### Cookie
 
-#### `window.cookie` and `window.setCookie`
+#### `client.cookie` and `client.setCookie`
 
-`window.cookie` is a state whose value is a string that represents the current complete cookie value of the page. It is a state getter, meaning that you can only read its value, but not change it. The value of the `cookie` state is automatically updated when the page's cookie changes. To change the cookie, you can use the `setCookie` function.
+`client.cookie` is a state whose value is a string that represents the current complete cookie value of the page. It is a state getter, meaning that you can only read its value, but not change it. The value of the `cookie` state is automatically updated when the page's cookie changes. To change the cookie, you can use the `setCookie` function.
 
 A primary use case for this in real-world apps are to manage session and authentication. Here's one simple way you can use `cookie` to manage authentication:
 
 ```js
 
-import { useWindow } from 'seniman';
+import { useClient } from 'seniman';
 
 function MyComponent() {
-  const window = useWindow();
+  const client = useClient();
 
   let session = useMemo(() => {
-    let _cookie = window.cookie();
+    let _cookie = client.cookie();
 
     if (_cookie) {
       return { userId: parseCookie(_cookie).userId };
@@ -153,7 +171,7 @@ function MyComponent() {
 
   return (
     <div>
-      <p>Current cookie: {window.cookie()}</p>
+      <p>Current cookie: {client.cookie()}</p>
       {session() ? <p>Logged in as user {session().userId}</p> : <LoginPage />}
     </div>
   )
@@ -165,10 +183,10 @@ To set the cookie, you can use the `setCookie` from somewhere in your component 
 
 ```js
 
-import { useWindow } from 'seniman'
+import { useClient } from 'seniman'
 
 function LoginPage() {
-  const window = useWindow();
+  const client = useClient();
 
   let [username, setUsername] = useState('');
   let [password, setPassword] = useState('');
@@ -176,7 +194,7 @@ function LoginPage() {
   let login = async () => {
     let user = await login(username(), password());
 
-    window.setCookie(`userId=${user.id}`);
+    client.setCookie(`userId=${user.id}`);
   };
 
   return (
@@ -194,7 +212,7 @@ You can see more real-world example of how to use cookie for session management 
 
 ## Viewport
 
-#### `window.viewportSize`
+#### `client.viewportSize`
 
 The `viewportSize` state is an object that represents the current viewport size of the page. It is a state getter, meaning that you can only read its value, but not change it. The value of the `viewportSize` state is automatically updated when the page's viewport size changes. It is useful for implementing different layouts for different screen sizes.
 
@@ -202,16 +220,16 @@ Here's one example of how you can use it to implement a responsive layout:
 
 ```js
 
-import { useWindow } from 'seniman'
+import { useClient } from 'seniman'
 
 function Body() {
-  let window = useWindow();
-  let isMobileLayout = useMemo(() => window.viewportSize().width < 600);
+  let client = useClient();
+  let isMobileLayout = useMemo(() => client.viewportSize().width < 600);
 
   return (
     <div>
       <div>
-        <p>Current viewport size: {window.viewportSize().width} x {window.viewportSize().height}</p>
+        <p>Current viewport size: {client.viewportSize().width} x {client.viewportSize().height}</p>
       </div>
       {isMobileLayout() ? <MobileHeader /> : <DesktopHeader />}
       <Content />
@@ -222,6 +240,6 @@ function Body() {
 
 ```
 
-#### `window.clientExec`
+#### `client.exec`
 
-The `clientExec` function is used to execute a client function. A client function is used to execute logic that needs to run exclusively on the client, as opposed to the server. A more complete explanation on how to use this is written at the [Client Functions](/docs/client-functions) document.
+The `exec` function is used to execute a client function. A client function is used to execute logic that needs to run exclusively on the client, as opposed to the server. A more complete explanation on how to use this is written at the [Client Functions](/docs/client-functions) document.
