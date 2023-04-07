@@ -65,24 +65,27 @@ function Counter(props) {
 }
 ```
 
-You can then define the CSS class in the `<Head>` component:
-
+You can then define the CSS class using the built-in `<Style>` component, putting it wherever in your component tree:
 ```js
-function Head(props) {
-  return <>
-    <style>
-      {`
-        .counter {
-          background: white;
-          color: red;
-        }
-      `}
-    </style>
-  </>;
+
+import Style from 'seniman/head';
+
+function Body(props) {
+  return <div>
+    <Style text={`
+      .counter {
+        background: white;
+        color: red;
+      }
+    `} />
+
+    <div> ... </div>
+  </div>;
 }
 
-wrapExpress(app, { Head, Body });
 ```
+
+The `Style` component will take care to inject your CSS text to the `<style>` tag in the `<head>` section of your application.
 
 You can also use dynamic values for the CSS class names:
 

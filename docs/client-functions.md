@@ -94,6 +94,8 @@ function MyComponent() {
 In this example, the `onChange` event handler will call the `handleNameChange` function on the server, passing the value of the input as an argument.
 
 
+#### Using `withValue` helper function
+
 As with the `onClick` handler, we can also simplify the handler declaration. For `$c` functions that passes the event's target value like this one -- which you'll find frequently -- you can use the `withValue` helper function:
 
 ```js

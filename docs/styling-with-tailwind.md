@@ -30,20 +30,23 @@ npx tailwindcss -i ./src/input.css -o ./dist/output.css  --watch --minify
 
 ```
 
-Finally, we need to add the generated CSS file to our application. Open `src/index.js` (or wherever your `Head` component is) and add the following:
+Finally, we need to add the generated CSS file to our application. Open `src/index.js` (or wherever your `Body` component is), and add the `Style` component, wherever in your component tree, adding the generated CSS file as the `text` prop:
 
 ```js
+
+import Style from 'seniman/head';
+
 // Load the generated Tailwind CSS file 
 const tailwindCssText = fs.readFileSync('./dist/output.css', 'utf8');
 
-function Head() {
+function Body() {
   return <>
     ...
-    <style>{tailwindCssText}</style>
+    <Style text={tailwindCssText} />
   </>;
 }
 ```
 
-This will load the generated Tailwind CSS output into memory, and then inject it to the `<style>` tag in the `<head>` section of your application.
+This will load the generated Tailwind CSS output into memory, and the `Style` component will take care to inject your CSS text to the `<style>` tag in the `<head>` section of your application.
 
 You are now ready to develop with Seniman and Tailwind CSS!

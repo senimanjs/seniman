@@ -1,4 +1,3 @@
-
 import { Buffer } from 'node:buffer';
 import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue, getActiveNode, runInNode, useCallback } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
@@ -6,6 +5,7 @@ import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
 import { windowManager } from './window_manager.js';
 import { ErrorHandler } from './errors.js';
 import { MAX_INPUT_EVENT_BUFFER_SIZE } from '../config.js';
+import { HeadContext, createHeadContextValue } from '../head.js';
 
 const ClientContext = createContext(null);
 
@@ -185,7 +185,7 @@ function WindowResizeListener(props) {
 
     window.addEventListener('resize', throttle(() => {
       $s(onResize)([window.innerWidth, window.innerHeight]);
-    }, 1000));
+    }, 500));
   }));
 }
 
@@ -201,22 +201,21 @@ let CMD_INSTALL_CLIENT_FUNCTION = 10;
 let CMD_RUN_CLIENT_FUNCTION = 11;
 let CMD_INIT_SEQUENCE = 13;
 let CMD_MODIFY_SEQUENCE = 14;
+let CMD_MODIFY_HEAD = 16;
 
 let pingBuffer = Buffer.from([0]);
 const scratchBuffer = Buffer.alloc(32768);
 
 export class Window {
 
-  constructor(port, pageParams, components) {
+  constructor(bufferFn, pageParams, RootComponent) {
 
     let { windowId,
       currentPath,
       viewportSize,
-      readOffset,
       cookieString } = pageParams;
 
     this.id = windowId;
-    this.port = port;
     this.destroyFnCallback = null;
     this.connected = true;
 
@@ -224,6 +223,8 @@ export class Window {
     this.global_readOffset = 0;
     this.global_writeOffset = 0;
     this.mutationGroup = null;
+
+    this.bufferFn = bufferFn;
 
     this._streamInitWindow();
 
@@ -252,7 +253,7 @@ export class Window {
 
     this.rootDisposer = useDisposableEffect(() => {
       let [path, setPath] = useState(currentPath);
-      let [pageTitle, set_pageTitle] = useState('');
+      // let [pageTitle, set_pageTitle] = useState('');
       let [getCookie, setCookie] = useState(cookieString);
       let [viewportSizeSignal, setViewportSize] = useState({ width: viewportSize[0], height: viewportSize[1] });
       let [shouldSendPostScript, setShouldSendPostScript] = useState(false);
@@ -299,10 +300,6 @@ export class Window {
           setPath(path);
         },
 
-        clientExec: (clientFnSpec) => {
-          clientContext.exec(clientFnSpec);
-        },
-
         exec: (clientFnSpec) => {
           let { clientFnId, serverBindFns } = clientFnSpec;
 
@@ -317,8 +314,14 @@ export class Window {
           sbvBuffer.copy(buf, 3);
         },
 
-        pageTitle: pageTitle,
-        setPageTitle: (title) => set_pageTitle(title)
+        _modifyHead: (command) => {
+          let sbvBuffer = this._encodeServerBoundValues([command]);
+
+          let buf = this._allocCommandBuffer(1 + sbvBuffer.length);
+
+          buf.writeUInt8(CMD_MODIFY_HEAD, 0);
+          sbvBuffer.copy(buf, 1);
+        }
       };
 
       let onBackButton = (pathname) => {
@@ -329,12 +332,14 @@ export class Window {
         setViewportSize({ width, height });
       }
 
-      getActiveNode().context = { [ClientContext.id]: clientContext };
+      getActiveNode().context = {
+        [ClientContext.id]: clientContext,
+        [HeadContext.id]: createHeadContextValue(clientContext)
+      };
 
-      this._attach(1, 0, <components.Head />);
-      this._attach(2, 0,
+      this._attach(1, 0,
         <ErrorHandler>
-          <components.Body />
+          <RootComponent />
           <BackButtonListener onBackButton={onBackButton} />
           {shouldSendPostScript() ? <WindowResizeListener onResize={onResize} /> : null}
         </ErrorHandler>
@@ -343,8 +348,11 @@ export class Window {
       setTimeout(() => {
         setShouldSendPostScript(true);
       }, 2000);
-
     }, null, this);
+  }
+
+  onBuffer(bufferFn) {
+    this.bufferFn = bufferFn;
   }
 
   submitWork(node) {
@@ -372,7 +380,7 @@ export class Window {
   }
 
   sendPing() {
-    this.port.send(pingBuffer);
+    this.bufferFn(pingBuffer);
   }
 
   _handleBlockCleanup(blockId) {
@@ -458,7 +466,7 @@ export class Window {
           size = this.global_writeOffset - readOffset; // 6 - 3
         }
 
-        this.port.send(page.buffer.subarray(offset, offset + size));
+        this.bufferFn(page.buffer.subarray(offset, offset + size));
 
         readOffset += size;
       }
@@ -469,7 +477,7 @@ export class Window {
     }
   }
 
-  reconnect(port, pageParams) {
+  reconnect(pageParams) {
 
     let { windowId,
       currentPath,
@@ -481,7 +489,6 @@ export class Window {
 
     console.log('reconnected in window', this.id, readOffset);
 
-    this.port = port;
     this.connected = true;
     this.lastPongTime = Date.now();
 
@@ -571,7 +578,7 @@ export class Window {
       let offset = mg.pageStartOffset - mg.page.global_headOffset;
       let size = this.global_writeOffset - mg.pageStartOffset;
 
-      this.port.send(buffer.subarray(offset, offset + size));
+      this.bufferFn(buffer.subarray(offset, offset + size));
     }
 
     this.mutationGroup = null;
@@ -669,14 +676,16 @@ export class Window {
     const ARGTYPE_BOOLEAN = 5;
     const ARGTYPE_NULL = 6;
     const ARGTYPE_HANDLER = 7;
+    const ARGTYPE_ARRAY = 8;
+    const ARGTYPE_OBJECT = 9;
 
     let argsCount = serverBindFns.length;
 
     buf.writeUint8(argsCount, offset);
     offset++;
 
-    for (let i = 0; i < argsCount; i++) {
-      let arg = serverBindFns[i];
+    function encodeValue(arg) {
+
       // throw error if arg is a function
       if (typeof arg === 'function') {
         throw new Error('Starting from Seniman v0.0.90, referring to a function in a $s(fn) call within a custom $c function requires wrapping the function in a createHandler(fn) call.');
@@ -721,7 +730,7 @@ export class Window {
         offset++;
         buf.writeUint8(arg ? 1 : 0, offset);
         offset++;
-      } else if (arg === null) {
+      } else if (arg === null || arg === undefined) {
         buf.writeUint8(ARGTYPE_NULL, offset);
         offset++;
       } else if (arg.type == 'handler') {
@@ -729,7 +738,44 @@ export class Window {
         offset++;
         buf.writeUInt16BE(arg.id, offset);
         offset += 2;
+      } else if (Array.isArray(arg)) {
+        buf.writeUint8(ARGTYPE_ARRAY, offset);
+        offset++;
+        buf.writeUint16BE(arg.length, offset);
+        offset += 2;
+
+        for (let j = 0; j < arg.length; j++) {
+          encodeValue(arg[j]);
+        }
+      } else if (typeof arg === 'object') {
+        buf.writeUint8(ARGTYPE_OBJECT, offset);
+        offset++;
+
+        let keys = Object.keys(arg);
+        buf.writeUint16BE(keys.length, offset);
+        offset += 2;
+
+        for (let j = 0; j < keys.length; j++) {
+          let key = keys[j];
+          let keyLength = Buffer.byteLength(key);
+
+          buf.writeUint16BE(keyLength, offset);
+          offset += 2;
+
+          buf.write(key, offset);
+          offset += keyLength;
+
+          encodeValue(arg[key]);
+        }
+      } else {
+        throw new Error('Invalid argument type: ' + typeof arg);
       }
+    }
+
+    for (let i = 0; i < argsCount; i++) {
+      let arg = serverBindFns[i];
+
+      encodeValue(arg);
     }
 
     return buf.subarray(0, offset);

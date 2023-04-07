@@ -2,6 +2,7 @@ import process from 'node:process';
 import { FastRateLimit } from 'fast-ratelimit';
 import { nanoid } from 'nanoid';
 import { Window } from './window.js';
+import { HtmlRenderer } from '../html.js';
 
 import {
   RSS_LOW_MEMORY_THRESHOLD,
@@ -218,7 +219,6 @@ class WindowManager {
     let viewportSize = params.get('vs').split('x').map((num) => parseInt(num));
     let currentPath = params.get('lo');
 
-    // TODO: get ip address of request and do rate limiting based on ip address
     let ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
     let isUnderRateLimit = this.windowCreationLimiter.consumeSync(ipAddress);
@@ -259,9 +259,12 @@ class WindowManager {
 
     console.log('init window', windowId, getMemoryUsage());
 
-    // TODO: pass request's ip address here, and rate limit window creation based on ip address
-    let window = new Window(ws, pageParams, { Head: this.Head, Body: this.Body });
+    let bufferPushFn = (buf) => {
+      ws.send(buf);
+    };
 
+    // TODO: pass request's ip address here, and rate limit window creation based on ip address
+    let window = new Window(bufferPushFn, pageParams, this.Body);
     this.windowMap.set(windowId, window);
 
     this._setupWs(ws, window);
@@ -277,11 +280,59 @@ class WindowManager {
     });
   }
 
+  async renderHtml(req) {
+    let windowId = nanoid();
+    let cookieString = req.headers.cookie || '';
+
+    let pageParams = {
+      windowId,
+      currentPath: req.path,
+
+      // TODO: get viewport size from request
+      viewportSize: [1920, 1080],
+
+      readOffset: 0,
+      cookieString
+    };
+
+    let htmlRenderer = new HtmlRenderer();
+
+    let bufferPushFn = (buf) => {
+      htmlRenderer.feedBuffer(buf);
+    };
+
+    let window = new Window(bufferPushFn, pageParams, this.Body);
+
+    window.onDestroy(() => {
+      this.windowMap.delete(windowId);
+
+      if (this.windowDestroyCallback) {
+        this.windowDestroyCallback(windowId);
+      }
+    });
+
+    return new Promise((resolve, reject) => {
+      htmlRenderer.onRenderComplete((html) => {
+        window.destroy();
+        resolve(html);
+      });
+
+      htmlRenderer.onRenderError((err) => {
+        window.destroy();
+        reject(err);
+      });
+    });
+  }
+
   reconnectWindow(ws, pageParams) {
-
     let window = this.windowMap.get(pageParams.windowId);
-    window.reconnect(ws, pageParams);
 
+    // update the window's buffer push function to refer to the new websocket
+    window.onBuffer(buf => {
+      ws.send(buf);
+    });
+
+    window.reconnect(pageParams);
     this._setupWs(ws, window);
   }
 
@@ -312,13 +363,14 @@ class WindowManager {
   }
 
   registerEntrypoint(options) {
-    this.Head = options.Head || EmptyHead;
+
+    if (!!options.Head) {
+      throw new Error('Starting from Seniman v0.0.91 -- Head is no longer supported. To style your application, please use the Style component instead. See https://senimanjs.org/docs/head-element');
+    }
+
     this.Body = options.Body;
   }
 }
 
-function EmptyHead() {
-  return null;
-}
 
 export const windowManager = new WindowManager();

@@ -13,6 +13,7 @@
   }
   let now = () => Date.now();
   let createBuffer = (size) => new Uint8Array(size);
+  let createElement = (tagName) => _document.createElement(tagName);
 
   let setElementDisplay = (el, shouldDisplay) => {
     el.style.display = shouldDisplay ? 'block' : 'none';
@@ -164,9 +165,6 @@
   // TODO: have this somehow be given by the server -- 
   // the complete list is longer than this and we want this file to be as small as possible
   let selfClosingTagSet = new Set(['br', 'hr', 'img', 'input']);
-
-  let initializeRootBlockWithElement = (el) => new Block(el, [], [{ el }]);
-
   let clickEventHandlerIdWeakMap = new WeakMap();
 
   let _getBlockTargetElement = (blockId, targetId) => {
@@ -193,6 +191,8 @@
     let ARGTYPE_BOOLEAN = 5;
     let ARGTYPE_NULL = 6;
     let ARGTYPE_HANDLER = 7;
+    let ARGTYPE_ARRAY = 8;
+    let ARGTYPE_OBJECT = 9;
 
     let extractValue = () => {
       switch (getUint8()) {
@@ -214,6 +214,21 @@
           return !!getUint8();
         case ARGTYPE_NULL:
           return null;
+        case ARGTYPE_ARRAY:
+          let arrayLength = getUint16();
+          let array = [];
+          for (let i = 0; i < arrayLength; i++) {
+            array.push(extractValue());
+          }
+          return array;
+        case ARGTYPE_OBJECT:
+          let objectLength = getUint16();
+          let object = {};
+          for (let i = 0; i < objectLength; i++) {
+            let key = getString(getUint16());
+            object[key] = extractValue();
+          }
+          return object;
       }
     }
 
@@ -302,7 +317,10 @@
   }
 
   let getString = (length) => {
-    return textDecoder.decode(buffer.slice(processOffset, processOffset += length));
+    // Decode the view into a string and return it
+    let str = textDecoder.decode(new Uint8Array(buffer, processOffset, length));
+    processOffset += length;
+    return str;
   }
 
   let magicSplitUint16 = (key) => {
@@ -385,7 +403,7 @@
         //console.log('UPDATE_MODE_MULTI_STYLEPROP', updateMode == UPDATE_MODE_STYLEPROP ? 'STYLEPROP' : 'SET_ATTR');
         while ((keyLength = getUint16()) > 0) {
           let [key_highestOrderBit, keyBytes] = magicSplitUint16(keyLength);
-
+          let key;
           // if highest order bit is 1 it's a compression map index, otherwise it's a string length
           if (key_highestOrderBit) {
             //key = stylePropertyKeyMap[keyBytes];
@@ -395,6 +413,7 @@
           }
 
           let [value_highestOrderBit, valueBytes] = magicSplitUint16(getUint16());
+          let value;
 
           if (value_highestOrderBit) {
             //value = stylePropertyValueMap[valueBytes]; // index is 1-based
@@ -494,9 +513,7 @@
 
   let _installTemplate2 = () => {
     let templateId = getUint16();
-
     let templateTokenList = [];
-
     let id;
 
     while (id = getUint16()) {
@@ -504,9 +521,7 @@
     }
 
     let [templateString, isSvg] = _compileTemplate(templateTokenList);
-
-    //console.log('templateString', templateId, templateString);
-    const t = _document.createElement("template");
+    const t = createElement("template");
     t.innerHTML = templateString;
 
     let node = t.content.firstChild;
@@ -524,7 +539,6 @@
   let _compileFn2 = (templateId) => {
     let fnString = "";
     let refElementsCount = getUint8();
-    //offset++;
 
     for (let i = 0; i < refElementsCount; i++) {
       let rel = getUint8();
@@ -539,10 +553,7 @@
       fnString += `let _${i}=_${refElName}.${referenceType};`;
     }
 
-    // offset += 2 * refElementsCount;
-
     let anchorCount = getUint8();
-    //offset++;
 
     fnString += 'return [[';
 
@@ -561,9 +572,7 @@
 
     fnString += str.join(',') + '],[';
 
-    //offset += 2 * anchorCount;
     let targetElementCount = getUint8();
-    //offset++;
 
     str = [];
     for (i = 0; i < targetElementCount; i++) {
@@ -842,6 +851,89 @@
     }
   }
 
+  let headElementsMap = new Map();
+
+  let _modifyHead = () => {
+    let command = _decodeServerBoundValuesBuffer()[0];
+
+    let CMD_HEAD_SET_TITLE = 1;
+    let CMD_HEAD_ADD_STYLE = 2;
+    let CMD_HEAD_ADD_LINK = 3;
+    let CMD_HEAD_ADD_SCRIPT = 4;
+    let CMD_HEAD_ADD_META = 5;
+    let CMD_HEAD_REMOVE = 6;
+
+    switch (command.type) {
+      case CMD_HEAD_SET_TITLE:
+        _document.title = command.value;
+        break;
+      case CMD_HEAD_ADD_STYLE:
+        let styleEl = createElement('style');
+        styleEl.innerText = command.text;
+
+        headElementsMap.set(command.id, styleEl);
+        head.appendChild(styleEl);
+        break;
+      case CMD_HEAD_ADD_LINK:
+        let linkEl = createElement('link');
+        let attributes = command.attributes;
+
+        Object.keys(attributes).forEach(key => {
+          let value = attributes[key];
+
+          if (value) {
+            linkEl.setAttribute(key, attributes[key]);
+          }
+        });
+
+        headElementsMap.set(command.id, linkEl);
+        head.appendChild(linkEl);
+
+        break;
+      case CMD_HEAD_ADD_META:
+        let metaEl = createElement('meta');
+        let metaAttributes = command.attributes;
+
+        Object.keys(metaAttributes).forEach(key => {
+          let value = metaAttributes[key];
+
+          if (value) {
+            metaEl.setAttribute(key, metaAttributes[key]);
+          }
+        });
+
+        headElementsMap.set(command.id, metaEl);
+        head.appendChild(metaEl);
+
+        break;
+      case CMD_HEAD_ADD_SCRIPT:
+        let el = createElement('script');
+        el.src = command.attributes.src;
+
+        let onLoad = command.onLoad;
+        let onError = command.onError;
+
+        if (onLoad) {
+          el.onload = () => onLoad();
+        }
+
+        if (onError) {
+          el.onerror = () => onError();
+        }
+
+        headElementsMap.set(command.id, el);
+        head.appendChild(el);
+
+        break;
+
+      case CMD_HEAD_REMOVE:
+        let elToRemove = headElementsMap.get(command.id);
+        elToRemove.remove();
+        headElementsMap.delete(command.id);
+        break;
+    }
+  }
+
   let CMD_PING = 0;
   let CMD_INSTALL_TEMPLATE = 1;
   let CMD_INIT_WINDOW = 2;
@@ -855,6 +947,8 @@
   let CMD_APPEND_TOKENLIST = 12;
   let CMD_INIT_SEQUENCE = 13;
   let CMD_MODIFY_SEQUENCE = 14;
+  let CMD_PAGE_READY = 15;
+  let CMD_MODIFY_HEAD = 16;
 
   // fill out the 0-index to make it easier for templating to do 1-indexing
   let GlobalTokenList = [''];
@@ -875,10 +969,8 @@
     [CMD_PING]: onPingArrival,
     [CMD_INIT_WINDOW]: () => {
       windowId = getString(21);
-
-      // head = 1, body = 2
-      _blocksMap.set(1, initializeRootBlockWithElement(head));
-      _blocksMap.set(2, initializeRootBlockWithElement(_document.body));
+      let body = _document.body;
+      _blocksMap.set(1, new Block(body, [], [{ el: body }]));
     },
     [CMD_INIT_BLOCK]: _initBlock,
     [CMD_INIT_SEQUENCE]: _initSequence,
@@ -917,7 +1009,8 @@
       while (length = getUint8()) {
         GlobalTokenList.push(getString(length));
       }
-    }
+    },
+    [CMD_MODIFY_HEAD]: _modifyHead
   }
 
   let _apply3 = (message) => {
@@ -984,49 +1077,6 @@
     for (let i = 0; i < length; ++i) {
       if ((i + offset >= buf.length) || (i >= encodedString.length)) break
       buf[i + offset] = encodedString[i]
-    }
-  }
-
-  window.loadStyle = (url) => {
-    // Create new link Element
-    var link = _document.createElement('link');
-
-    // set the attributes for link element
-    link.rel = 'stylesheet';
-    link.href = url;
-
-    // Get HTML head element to append
-    // link element to it
-    head.appendChild(link);
-  }
-
-  // logic taken from npm package load-script
-  window.loadScript = (src, cb, opts) => {
-    var script = _document.createElement('script');
-    opts = opts || {};
-    cb = cb || function () { };
-
-    //script.type = opts.type || 'text/javascript';
-    //script.charset = opts.charset || 'utf8';
-    script.async = true;//'async' in opts ? !!opts.async : true;
-    script.src = src
-
-    stdOnEnd(script, cb);
-
-    head.appendChild(script);
-
-    function stdOnEnd(script, cb) {
-      script.onload = function () {
-        this.onerror = this.onload = null
-        cb(null, script)
-      }
-
-      script.onerror = function () {
-        // this.onload = null here is necessary
-        // because even IE9 works not like others
-        this.onerror = this.onload = null
-        cb(new Error('Failed to load ' + this.src), script)
-      }
     }
   }
 }

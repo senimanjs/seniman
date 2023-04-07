@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "0.0.90",
+  "version": "0.0.91",
   "description": "",
   "main": "./dist/index.js",
   "type": "module",
@@ -11,7 +11,9 @@
     ".": "./dist/index.js",
     "./router": "./dist/router/index.js",
     "./express": "./dist/express/index.js",
-    "./server": "./dist/server/index.js"
+    "./server": "./dist/server/index.js",
+    "./head": "./dist/head.js",
+    "./html": "./dist/html.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
