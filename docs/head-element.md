@@ -1,6 +1,6 @@
 # Head Element
 
-The `<head>` element in HTML contains important metadata about the page. In Seniman, you can use import various built-in components from the `seniman/head` package to add elements to the `<head>` section of your application:
+The `<head>` element in HTML contains important metadata about the page. In Seniman, you can import various built-in components from the `seniman/head` package to add elements to the `<head>` section of your application:
 
 - `<Title>`: Sets the title of the page
 - `<Meta>`: Sets the meta tags of the page
@@ -8,7 +8,7 @@ The `<head>` element in HTML contains important metadata about the page. In Seni
 - `<Style>`: Sets the style tags of the page
 - `<Script>`: Sets the script tags of the page
 
-You can mount these components anywhere in your component tree, giving you the flexibility to set the `<head>` elements based on already-existing state of your application. They will take care to inject the elements to the `<head>` section of your application.
+You can mount these components anywhere in your component tree, giving you the flexibility to set the `<head>` elements based on already-existing state of your components. They will take care to inject the elements to the `<head>` element of the HTML document in the client.
 
 ## Title
 

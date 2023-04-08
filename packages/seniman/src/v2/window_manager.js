@@ -1,8 +1,10 @@
 import process from 'node:process';
 import { FastRateLimit } from 'fast-ratelimit';
+import { WebSocketServer } from 'ws';
 import { nanoid } from 'nanoid';
 import { Window } from './window.js';
-import { HtmlRenderer } from '../html.js';
+import { CrawlerRenderer } from '../crawler/index.js';
+import { build } from '../build.js';
 
 import {
   RSS_LOW_MEMORY_THRESHOLD,
@@ -10,7 +12,8 @@ import {
   RATELIMIT_WINDOW_INPUT_THRESHOLD,
   RATELIMIT_WINDOW_INPUT_TTL_SECONDS,
   RATELIMIT_WINDOW_CREATION_THRESHOLD,
-  RATELIMIT_WINDOW_CREATION_TTL_SECONDS
+  RATELIMIT_WINDOW_CREATION_TTL_SECONDS,
+  ENABLE_CRAWLER_RENDERER
 } from '../config.js';
 
 function getMemoryUsage() {
@@ -45,6 +48,9 @@ class WindowManager {
 
   constructor() {
     this.windowMap = new Map();
+
+    this.crawlerRenderingEnabled = ENABLE_CRAWLER_RENDERER;
+    this.crawlerRenderer = ENABLE_CRAWLER_RENDERER ? new CrawlerRenderer() : null;
 
     this._runWindowsLifecycleManagement();
 
@@ -280,6 +286,76 @@ class WindowManager {
     });
   }
 
+  setServer(server) {
+    const wsServer = new WebSocketServer({ noServer: true });
+
+    server.on('upgrade', (request, socket, head) => {
+      wsServer.handleUpgrade(request, socket, head, ws => {
+        this.applyNewConnection(ws, request);
+      });
+    });
+  }
+
+  async getResponse(req) {
+    let ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+
+    let isUnderRateLimit = this.windowCreationLimiter.consumeSync(ipAddress);
+
+    if (!isUnderRateLimit) {
+      return {
+        statusCode: 429,
+        headers: {
+          'Content-Type': 'text/plain',
+          'Cache-Control': 'no-store',
+        },
+        body: 'Too many requests'
+      }
+    }
+
+    let headers = {
+      'Content-Type': 'text/html',
+      'Vary': 'Accept',
+      'Cache-Control': 'no-store',
+    };
+
+    if (this.crawlerRenderingEnabled && this.crawlerRenderer.shouldUseRenderer(req)) {
+      // TODO: check if we have a cached response for this request
+      let html = await this.renderHtml(req);
+      headers['Content-Length'] = Buffer.byteLength(html);
+
+      return {
+        headers,
+        body: html
+      };
+    }
+
+    let htmlBuffers = build.htmlBuffers;
+    let acceptEncoding = req.headers['accept-encoding'] || '';
+    let algo;
+    let html;
+
+    if (acceptEncoding.indexOf('br') > -1) {
+      algo = 'br';
+      html = htmlBuffers.br;
+    } else if (acceptEncoding.indexOf('gzip') > -1) {
+      algo = 'gzip';
+      html = htmlBuffers.gzip;
+    } else {
+      html = htmlBuffers.uncompressed;
+    }
+
+    headers['Content-Length'] = Buffer.byteLength(html);
+
+    if (algo) {
+      headers['Content-Encoding'] = algo;
+    }
+
+    return {
+      headers,
+      body: html
+    };
+  }
+
   async renderHtml(req) {
     let windowId = nanoid();
     let cookieString = req.headers.cookie || '';
@@ -295,10 +371,10 @@ class WindowManager {
       cookieString
     };
 
-    let htmlRenderer = new HtmlRenderer();
+    let htmlRenderContext = this.crawlerRenderer.createHtmlRenderingContext();
 
     let bufferPushFn = (buf) => {
-      htmlRenderer.feedBuffer(buf);
+      htmlRenderContext.feedBuffer(buf);
     };
 
     let window = new Window(bufferPushFn, pageParams, this.Body);
@@ -312,12 +388,12 @@ class WindowManager {
     });
 
     return new Promise((resolve, reject) => {
-      htmlRenderer.onRenderComplete((html) => {
+      htmlRenderContext.onRenderComplete((html) => {
         window.destroy();
         resolve(html);
       });
 
-      htmlRenderer.onRenderError((err) => {
+      htmlRenderContext.onRenderError((err) => {
         window.destroy();
         reject(err);
       });

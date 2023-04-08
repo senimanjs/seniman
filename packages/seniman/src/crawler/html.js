@@ -441,7 +441,7 @@ function createElement(tagName) {
   return new Element(tagName);
 }
 
-export class HtmlRenderer {
+export class HtmlRenderingContext {
 
   constructor() {
     this.templateDefinitionMap = new Map();
@@ -874,7 +874,6 @@ export class HtmlRenderer {
     }
 
     let headElementsMap = new Map();
-
     let _modifyHead = () => {
       let command = _decodeServerBoundValuesBuffer()[0];
 
@@ -885,65 +884,58 @@ export class HtmlRenderer {
       let CMD_HEAD_ADD_META = 5;
       let CMD_HEAD_REMOVE = 6;
 
-      switch (command.type) {
-        case CMD_HEAD_SET_TITLE:
-          let titleElement = createElement('title');
-          titleElement.appendChild(new TextNode(command.value));
-          head.appendChild(titleElement);
-          break;
-        case CMD_HEAD_ADD_STYLE:
-          let styleEl = createElement('style');
-          styleEl.appendChild(new TextNode(command.text));
+      let cmdType = command.type;
 
-          headElementsMap.set(command.id, styleEl);
-          head.appendChild(styleEl);
-          break;
-        case CMD_HEAD_ADD_LINK:
-          let linkEl = createElement('link');
-          let attributes = command.attributes;
+      if (cmdType == CMD_HEAD_SET_TITLE) {
+        let titleElement = createElement('title');
+        titleElement.appendChild(new TextNode(command.value));
+        head.appendChild(titleElement);
 
-          Object.keys(attributes).forEach(key => {
-            let value = metaAttributes[key];
 
-            if (value) {
-              metaEl.setAttribute(key, metaAttributes[key]);
-            }
-          });
 
-          headElementsMap.set(command.id, linkEl);
-          head.appendChild(linkEl);
+      } else if (cmdType == CMD_HEAD_REMOVE) {
+        let elToRemove = headElementsMap.get(command.id);
+        elToRemove.remove();
+        headElementsMap.delete(command.id);
+      } else {
+        let elMap = {
+          [CMD_HEAD_ADD_STYLE]: 'style',
+          [CMD_HEAD_ADD_LINK]: 'link',
+          [CMD_HEAD_ADD_SCRIPT]: 'script',
+          [CMD_HEAD_ADD_META]: 'meta'
+        };
 
-          break;
+        let elType = elMap[cmdType];
+        let el = createElement(elType);
+        let attributes = command.attributes;
 
-        case CMD_HEAD_ADD_META:
-          let metaEl = createElement('meta');
-          let metaAttributes = command.attributes;
+        Object.keys(attributes).forEach(key => {
+          let value = attributes[key];
 
-          Object.keys(metaAttributes).forEach(key => {
-            let value = metaAttributes[key];
+          if (value) {
+            el.setAttribute(key, attributes[key]);
+          }
+        });
 
-            if (value) {
-              metaEl.setAttribute(key, metaAttributes[key]);
-            }
-          });
+        if (command.text) {
+          el.appendChild(new TextNode(command.text));
+        }
 
-          headElementsMap.set(command.id, metaEl);
-          head.appendChild(metaEl);
+        let onLoad = command.onLoad;
+        let onError = command.onError;
 
-          break;
-        case CMD_HEAD_ADD_SCRIPT:
-          let el = createElement('script');
-          el.setAttribute('src', command.attributes.src);
+        if (onLoad) {
+          // TODO: check if onload needs to be nullified after the first call
+          // since some browsers will call it multiple times
+          el.onload = () => onLoad();
+        }
 
-          headElementsMap.set(command.id, el);
-          head.appendChild(el);
+        if (onError) {
+          el.onerror = () => onError();
+        }
 
-          break;
-        case CMD_HEAD_REMOVE:
-          let elToRemove = headElementsMap.get(command.id);
-          elToRemove.remove();
-          headElementsMap.delete(command.id);
-          break;
+        headElementsMap.set(command.id, el);
+        head.appendChild(el);
       }
     }
 

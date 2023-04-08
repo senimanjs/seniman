@@ -863,74 +863,53 @@
     let CMD_HEAD_ADD_META = 5;
     let CMD_HEAD_REMOVE = 6;
 
-    switch (command.type) {
-      case CMD_HEAD_SET_TITLE:
-        _document.title = command.value;
-        break;
-      case CMD_HEAD_ADD_STYLE:
-        let styleEl = createElement('style');
-        styleEl.innerText = command.text;
+    let cmdType = command.type;
 
-        headElementsMap.set(command.id, styleEl);
-        head.appendChild(styleEl);
-        break;
-      case CMD_HEAD_ADD_LINK:
-        let linkEl = createElement('link');
-        let attributes = command.attributes;
+    if (cmdType == CMD_HEAD_SET_TITLE) {
+      _document.title = command.value;
+    } else if (cmdType == CMD_HEAD_REMOVE) {
+      let elToRemove = headElementsMap.get(command.id);
+      elToRemove.remove();
+      headElementsMap.delete(command.id);
+    } else {
+      let elMap = {
+        [CMD_HEAD_ADD_STYLE]: 'style',
+        [CMD_HEAD_ADD_LINK]: 'link',
+        [CMD_HEAD_ADD_SCRIPT]: 'script',
+        [CMD_HEAD_ADD_META]: 'meta'
+      };
 
-        Object.keys(attributes).forEach(key => {
-          let value = attributes[key];
+      let elType = elMap[cmdType];
+      let el = createElement(elType);
+      let attributes = command.attributes;
 
-          if (value) {
-            linkEl.setAttribute(key, attributes[key]);
-          }
-        });
+      Object.keys(attributes).forEach(key => {
+        let value = attributes[key];
 
-        headElementsMap.set(command.id, linkEl);
-        head.appendChild(linkEl);
-
-        break;
-      case CMD_HEAD_ADD_META:
-        let metaEl = createElement('meta');
-        let metaAttributes = command.attributes;
-
-        Object.keys(metaAttributes).forEach(key => {
-          let value = metaAttributes[key];
-
-          if (value) {
-            metaEl.setAttribute(key, metaAttributes[key]);
-          }
-        });
-
-        headElementsMap.set(command.id, metaEl);
-        head.appendChild(metaEl);
-
-        break;
-      case CMD_HEAD_ADD_SCRIPT:
-        let el = createElement('script');
-        el.src = command.attributes.src;
-
-        let onLoad = command.onLoad;
-        let onError = command.onError;
-
-        if (onLoad) {
-          el.onload = () => onLoad();
+        if (value) {
+          el.setAttribute(key, attributes[key]);
         }
+      });
 
-        if (onError) {
-          el.onerror = () => onError();
-        }
+      if (command.text) {
+        el.innerText = command.text;
+      }
 
-        headElementsMap.set(command.id, el);
-        head.appendChild(el);
+      let onLoad = command.onLoad;
+      let onError = command.onError;
 
-        break;
+      if (onLoad) {
+        // TODO: check if onload needs to be nullified after the first call
+        // since some browsers will call it multiple times
+        el.onload = () => onLoad();
+      }
 
-      case CMD_HEAD_REMOVE:
-        let elToRemove = headElementsMap.get(command.id);
-        elToRemove.remove();
-        headElementsMap.delete(command.id);
-        break;
+      if (onError) {
+        el.onerror = () => onError();
+      }
+
+      headElementsMap.set(command.id, el);
+      head.appendChild(el);
     }
   }
 

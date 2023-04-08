@@ -4,6 +4,8 @@ import { build } from '../build.js';
 import { windowManager } from '../v2/window_manager.js';
 
 
+// TODO: apply new rendering code path to this vanilla server
+
 export function createServer(options) {
 
   windowManager.registerEntrypoint(options);
@@ -15,7 +17,7 @@ export function createServer(options) {
     // handle favicon.ico request specially
     // TODO: add option to load custom favicon
     if (req.url === '/favicon.ico') {
-      res.writeHead(200, { 'Content-Type': 'image/x-icon' });
+      res.writeHead(204, { 'Content-Type': 'image/x-icon' });
       res.end();
       return;
     }

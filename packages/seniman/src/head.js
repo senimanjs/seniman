@@ -186,6 +186,7 @@ export function Script(props) {
   });
 
   // TODO: enable reactivity
+  // TODO: support textual script
   let id = head.addScript(untrack(() => props.src), onLoadHandler);
 
   onDispose(() => {
