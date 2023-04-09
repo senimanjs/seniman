@@ -4,7 +4,6 @@ import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declar
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
 import { windowManager } from './window_manager.js';
 import { ErrorHandler } from './errors.js';
-import { MAX_INPUT_EVENT_BUFFER_SIZE } from '../config.js';
 import { HeadContext, createHeadContextValue } from '../head.js';
 
 const ClientContext = createContext(null);
@@ -415,12 +414,13 @@ export class Window {
     this.lastPongTime = Date.now();
     this.connected = true;
 
-    let readOffset = pongBuffer.readUInt32LE(1);
+    let readOffset = senimanDecode(pongBuffer.subarray(2))[0];
     this.registerReadOffset(readOffset);
   }
 
   registerReadOffset(readOffset) {
 
+    // TODO: check against writeOffset to make sure we're not reading ahead
     if (readOffset < this.global_readOffset) {
       throw new Error(`Invalid offset: ${readOffset} : ${this.global_readOffset}`);
     }
@@ -515,28 +515,16 @@ export class Window {
   }
 
   _onMessage(buffer) {
+    let txPortId = buffer.readUint16LE(0);
 
-    if (buffer.length > MAX_INPUT_EVENT_BUFFER_SIZE) {
+    if (!this.eventHandlers.has(txPortId)) {
       return;
     }
 
-    let handlerId = buffer.readUint16LE(1);
+    let handler = this.eventHandlers.get(txPortId);
+    let argsList = senimanDecode(buffer.subarray(2));
 
-    if (!this.eventHandlers.has(handlerId)) {
-      return;
-    }
-
-    let handler = this.eventHandlers.get(handlerId);
-    let dataLength = buffer.readUint16LE(3);
-    let data;
-
-    if (dataLength > 0) {
-      data = JSON.parse(buffer.subarray(5, 5 + dataLength).toString());
-    } else {
-      data = '';
-    }
-
-    handler(data);
+    handler.apply(null, argsList);
   }
 
   onDestroy(fn) {
@@ -1394,4 +1382,111 @@ export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffec
 
 export function createHandler(fn) {
   return getActiveWindow()._allocateHandler(fn);
+}
+
+let textDecoder = new TextDecoder();
+
+const MARKERS_STRING = 1;
+const MARKERS_NUMBER_INT16 = 3;
+const MARKERS_NUMBER_INT32 = 4;
+const MARKERS_NUMBER_FLOAT64 = 5;
+const MARKERS_BOOLEAN = 6;
+const MARKERS_ARRAY = 8;
+const MARKERS_OBJECT = 9;
+const MARKERS_ARRAY_BUFFER = 10;
+
+function senimanDecode(buffer) {
+  let stringBufferLength = buffer.readUint16LE(0);
+  let stringBuffer;
+
+  if (stringBufferLength > 0) {
+    stringBuffer = textDecoder.decode(buffer.subarray(2, 2 + stringBufferLength));
+  }
+
+  let position = 2 + stringBufferLength;
+
+  function decodeValue() {
+    let marker = buffer[position++];
+
+    switch (marker) {
+      case MARKERS_ARRAY: {
+        let length = buffer[position++];
+
+        // create array of a certain length
+        let arr = new Array(length);
+
+        for (let i = 0; i < length; i++) {
+          arr[i] = decodeValue();
+        }
+        return arr;
+      }
+      case MARKERS_STRING: {
+        // read the offset of the string in the string buffer
+        let offset = buffer.readUint16LE(position);
+        position += 2;
+
+        // read the length of the string
+        let length = buffer.readUint16LE(position);
+        position += 2;
+
+        // read the string from the string buffer
+        return stringBuffer.slice(offset, offset + length);
+      }
+      case MARKERS_NUMBER_INT16: {
+        // read uint8
+        let value = buffer.readInt16LE(position);
+        position += 2;
+        return value;
+      }
+
+      case MARKERS_NUMBER_INT32: {
+        let value = buffer.readInt32LE(position);
+        position += 4;
+        return value;
+      }
+
+      case MARKERS_NUMBER_FLOAT64: {
+        let value = buffer.readDoubleLE(position);
+        position += 8;
+        return value;
+      }
+      case MARKERS_BOOLEAN: {
+        return !!buffer[position++];
+      }
+      case MARKERS_OBJECT: {
+        let length = buffer[position++];
+        let obj = {};
+
+        for (let i = 0; i < length; i++) {
+          // read the offset of the string in the string buffer
+          let offset = buffer.readUint16LE(position);
+          position += 2;
+
+          // read the length of the string
+          let length = buffer.readUint16LE(position);
+          position += 2;
+
+          // read the string from the string buffer
+          let key = stringBuffer.slice(offset, offset + length);
+
+          obj[key] = decodeValue();
+        }
+        return obj;
+      }
+      case MARKERS_ARRAY_BUFFER: {
+        // read the length of the array buffer
+        let length = buffer.readUint16LE(position);
+        position += 2;
+
+        let value = buffer.subarray(position, position + length);
+        position += length;
+
+        return value;
+      }
+      default:
+        throw new Error("Unknown marker");
+    }
+  }
+
+  return decodeValue();
 }

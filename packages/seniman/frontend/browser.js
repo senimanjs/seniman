@@ -12,14 +12,12 @@
     el.addEventListener(eventType, fn);
   }
   let now = () => Date.now();
-  let createBuffer = (size) => new Uint8Array(size);
   let createElement = (tagName) => _document.createElement(tagName);
 
   let setElementDisplay = (el, shouldDisplay) => {
     el.style.display = shouldDisplay ? 'block' : 'none';
   }
 
-  let _socketSend = (buffer) => socket.send(buffer)
   let getBlock = (id) => _blocksMap.get(id);
 
   {
@@ -198,9 +196,7 @@
       switch (getUint8()) {
         case ARGTYPE_HANDLER:
           let id = getUint16();
-          return (data) => {
-            _sendEvent(id, data);
-          }
+          return _portSend.bind({ id });
         case ARGTYPE_STRING:
           let stringLength = getUint16();
           return getString(stringLength);
@@ -263,30 +259,6 @@
     }
   }
 
-  let _sendEvent = (handlerId, data) => {
-    let dataLength;
-    let encodedString;
-
-    if (data) {
-      encodedString = encoder.encode(JSON.stringify(data));
-      dataLength = encodedString.byteLength;
-    } else {
-      dataLength = 0;
-    }
-
-    let buf = createBuffer(5 + dataLength);
-    let EVENT_COMMAND = 1;
-
-    writeUint8(buf, EVENT_COMMAND, 0);
-    writeUint16LE(buf, handlerId, 1);
-    writeUint16LE(buf, dataLength, 3);
-
-    if (dataLength) {
-      writeString(buf, encodedString, 5);
-    }
-
-    _socketSend(buf);
-  }
 
   let textDecoder = new TextDecoder();
   let processOffset = 0;
@@ -932,20 +904,10 @@
   // fill out the 0-index to make it easier for templating to do 1-indexing
   let GlobalTokenList = [''];
 
-  let pongBuffer = createBuffer(5);
-
-  let onPingArrival = () => {
-    writeUint8(pongBuffer, 0, 0);
-
-    // update buffer
-    writeUInt32LE(pongBuffer, readOffset, 1);
-
-    //console.log('pong read offset', readOffset);
-    _socketSend(pongBuffer);
-  }
+  let sendPong = _portSend.bind({ id: 0 });
 
   let _processMap = {
-    [CMD_PING]: onPingArrival,
+    [CMD_PING]: () => sendPong(readOffset),
     [CMD_INIT_WINDOW]: () => {
       windowId = getString(21);
       let body = _document.body;
@@ -1032,13 +994,23 @@
 
   _addEventListener(_document, "click", eventHandler);
 
-  let writeUint8 = (buf, value, offset) => {
-    buf[offset] = (value & 0xff);
+  //////////////////// WRITER ////////////////////
+
+  let encoder = new TextEncoder();
+
+  let writeUint8 = (value) => {
+    contentDv.setUint8(contentBufferOffset, value);
+    contentBufferOffset += 1;
   }
 
-  let writeUint16LE = (buf, value, offset) => {
-    buf[offset] = (value & 0xff)
-    buf[offset + 1] = (value >>> 8)
+  let writeUint16LE = (value) => {
+    contentDv.setUint16(contentBufferOffset, value, true);
+    contentBufferOffset += 2;
+  }
+
+  let writeInt16LE = (value) => {
+    contentDv.setInt16(contentBufferOffset, value, true);
+    contentBufferOffset += 2;
   }
 
   let writeUInt32LE = (buf, value, offset) => {
@@ -1048,14 +1020,149 @@
     buf[offset] = (value & 0xff);
   }
 
-  let encoder = new TextEncoder();
+  let writeInt32LE = (value) => {
+    contentDv.setInt32(contentBufferOffset, value, true);
+    contentBufferOffset += 4;
+  }
 
-  let writeString = (buf, encodedString, offset) => {
-    let length = encodedString.byteLength;
+  let writeFloat64LE = (value) => {
+    contentDv.setFloat64(contentBufferOffset, value, true);
+    contentBufferOffset += 8;
+  }
 
-    for (let i = 0; i < length; ++i) {
-      if ((i + offset >= buf.length) || (i >= encodedString.length)) break
-      buf[i + offset] = encodedString[i]
+  let createBuffer = (size) => new Uint8Array(size);
+
+  // TODO: initialize sizes from window initialization parameters
+  let writeBuffer = createBuffer(65536);
+  let writeDv = new DataView(writeBuffer.buffer);
+  let contentBuffer = createBuffer(4096);
+  let contentDv = new DataView(contentBuffer.buffer);
+  let contentBufferOffset = 0;
+  let stringBufferMap = new Map();
+
+  function _portSend(...args) {
+    // the encoding of the message is:
+    // 2 bytes for the port id
+    // 2 bytes for the length of the string buffer
+    // N bytes for the string buffer
+    // M bytes for the content buffer
+
+    // senimanEncode the argument list
+    let [stringBufferLength, contentBufferLength] = senimanEncode(args);
+
+    writeDv.setUint16(0, this.id, true);
+    writeDv.setUint16(2, stringBufferLength, true);
+
+    // NOTE: we don't need to copy the string buffer since we're direct-writing to the writeBuffer in senimanEncode
+
+    // copy contentBuffer into buf at offset 4 + stringBufferOffset for length contentBufferOffset
+    writeBuffer.set(contentBuffer, 4 + stringBufferLength);
+
+    let finalLength = 2 + 2 + stringBufferLength + contentBufferLength;
+    socket.send(writeBuffer.slice(0, finalLength));
+  }
+
+  function senimanEncode(value) {
+    stringBufferMap.clear();
+    contentBufferOffset = 0;
+
+    const MARKERS_STRING = 1;
+    const MARKERS_NUMBER_INT16 = 3;
+    const MARKERS_NUMBER_INT32 = 4;
+    const MARKERS_NUMBER_FLOAT64 = 5;
+    const MARKERS_BOOLEAN = 6;
+    const MARKERS_ARRAY = 8;
+    const MARKERS_OBJECT = 9;
+    const MARKERS_ARRAY_BUFFER = 10;
+
+    let stringBufferRawOffset = 0;
+    // utf-8-ed string buffer offset, which is shorter than the raw string buffer offset due to utf-8 encoding
+    let stringBufferOffset = 0;
+
+    function assignStringBufferOffset(value, useMap) {
+      if (useMap && stringBufferMap.has(value)) {
+        return stringBufferMap.get(value);
+      }
+
+      let encodedString = encoder.encode(value);
+      let encodedStringByteLength = encodedString.byteLength;
+
+      // write the string into the string buffer
+      // + 4 since we are directly writing to the final buffer with 4 bytes of prefix (port id + string buffer length)
+      //writeStringWithLength(writeBuffer, encodedString, stringBufferRawOffset + 4);
+      writeBuffer.set(encodedString, stringBufferRawOffset + 4);
+
+      stringBufferRawOffset += encodedStringByteLength;
+
+      let stringEncodedLength = value.length;
+      let entry = [stringBufferOffset, stringEncodedLength];
+
+      stringBufferMap.set(value, entry);
+
+      // make sure to increment the stringBufferOffset by the length of the encoded string, not the raw string byteLength
+      stringBufferOffset += stringEncodedLength;
+
+      return entry;
     }
+
+    function encodeValue(value) {
+      if (Array.isArray(value)) {
+        writeUint8(MARKERS_ARRAY);
+        writeUint8(value.length);
+        value.forEach(encodeValue);
+      } else if (typeof value === "string") {
+        writeUint8(MARKERS_STRING);
+
+        let [stringBufferOffset, encodedStringLength] = assignStringBufferOffset(value, false);
+
+        // write the offset of the string in the string buffer
+        writeUint16LE(stringBufferOffset);
+        writeUint16LE(encodedStringLength);
+      } else if (typeof value === "number") {
+        let isInt = Number.isInteger(value);
+
+        // TODO: revisit whether this division is reasonable
+        if (isInt && Math.abs(value) < 32768) {
+          writeUint8(MARKERS_NUMBER_INT16);
+          writeInt16LE(value);
+        } else if (isInt) {
+          writeUint8(MARKERS_NUMBER_INT32);
+          writeInt32LE(value);
+        } else {
+          writeUint8(MARKERS_NUMBER_FLOAT64);
+          writeFloat64LE(value);
+        }
+      } else if (typeof value === "boolean") {
+        writeUint8(MARKERS_BOOLEAN);
+        writeUint8(value ? 1 : 0);
+      } else if (value instanceof ArrayBuffer) {
+        writeUint8(MARKERS_ARRAY_BUFFER);
+
+        let arrayBufferLength = value.byteLength;
+
+        // write the length of the array buffer
+        writeUint16LE(arrayBufferLength);
+
+        // copy the array buffer into the content buffer
+        contentBuffer.set(new Uint8Array(value), contentBufferOffset);
+        contentBufferOffset += arrayBufferLength;
+      } else if (typeof value === "object") {
+        let keys = Object.keys(value);
+        writeUint8(MARKERS_OBJECT);
+        writeUint8(keys.length);
+
+        keys.forEach(key => {
+          let [stringBufferOffset, encodedStringLength] = assignStringBufferOffset(key, true);
+          writeUint16LE(stringBufferOffset);
+          writeUint16LE(encodedStringLength);
+
+          encodeValue(value[key]);
+        });
+      }
+    }
+
+    encodeValue(value);
+
+    return [stringBufferRawOffset, contentBufferOffset];
   }
 }

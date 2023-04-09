@@ -13,7 +13,8 @@ import {
   RATELIMIT_WINDOW_INPUT_TTL_SECONDS,
   RATELIMIT_WINDOW_CREATION_THRESHOLD,
   RATELIMIT_WINDOW_CREATION_TTL_SECONDS,
-  ENABLE_CRAWLER_RENDERER
+  ENABLE_CRAWLER_RENDERER,
+  MAX_INPUT_EVENT_BUFFER_SIZE
 } from '../config.js';
 
 function getMemoryUsage() {
@@ -75,6 +76,15 @@ class WindowManager {
       ttl: RATELIMIT_WINDOW_CREATION_TTL_SECONDS
     });
 
+    this.droppedMessagesCount = 0;
+
+    setInterval(() => {
+      if (this.droppedMessagesCount > 0) {
+        console.log('Dropped messages: ' + this.droppedMessagesCount);
+        this.droppedMessagesCount = 0;
+      }
+    }, 2000);
+
     this._runLoop();
   }
 
@@ -134,15 +144,26 @@ class WindowManager {
 
   _enqueueMessage(window, message) {
 
-    let isUnderLimit = this.messageLimiter.consumeSync(window.id);
+    // apply global limit
+    // TODO: move the length check to the websocket server's max message size
+    // do this once we set up client-side rate limiting
+    let isUnderLimit =
+      this.messageLimiter.consumeSync(window.id) &&
+      message.length < MAX_INPUT_EVENT_BUFFER_SIZE;
 
+    // TODO: print on a regular interval the amount of messages that are being dropped
     if (!isUnderLimit) {
+      this.droppedMessagesCount++;
       return;
     }
 
-    let buffer = Buffer.from(message);
+    // TODO: apply window & handler specific limits
 
-    if (buffer.readUint8(0) == PONG_COMMAND) {
+    let buffer = Buffer.from(message);
+    let txPortId = buffer.readUint16LE(0);
+
+    // portId of 0 is reserved for the pong command
+    if (txPortId == 0) {
       window.registerPong(buffer);
       return;
     }
