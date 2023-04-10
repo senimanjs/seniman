@@ -930,11 +930,11 @@
     },
     [CMD_INSTALL_CLIENT_FUNCTION]: () => {
       let clientFunctionId = getUint16();
-      let functionJsonStringLength = getUint16();
-      let clientFunction = JSON.parse(getString(functionJsonStringLength));
+      let serverBoundValues = _decodeServerBoundValuesBuffer();
+      let [argNames, body] = serverBoundValues;
 
       // create a dynamic function using the function body and the dynamic argument names
-      let fn = new Function(clientFunction.argNames, clientFunction.body);
+      let fn = new Function(argNames, body);
 
       clientFunctionsMap.set(clientFunctionId, fn);
     },

@@ -802,14 +802,14 @@ export class Window {
 
   _streamFunctionInstallCommand(functionId) {
 
-    if (functionId > 1 && !this.clientFunctionInstallationSet.has(functionId)) {
-      let clientFnString = JSON.stringify(clientFunctionDefinitions.get(functionId));
-      let buf = this._allocCommandBuffer(1 + 2 + 2 + clientFnString.length);
+    if (!this.clientFunctionInstallationSet.has(functionId)) {
+      let cfDef = clientFunctionDefinitions.get(functionId);
+      let sbvBuffer = this._encodeServerBoundValues([cfDef.argNames, cfDef.body]);
+      let buf = this._allocCommandBuffer(1 + 2 + sbvBuffer.length);
 
       buf.writeUInt8(CMD_INSTALL_CLIENT_FUNCTION, 0);
       buf.writeUInt16BE(functionId, 1);
-      buf.writeUInt16BE(clientFnString.length, 3);
-      buf.write(clientFnString, 5);
+      sbvBuffer.copy(buf, 3);
 
       this.clientFunctionInstallationSet.add(functionId);
     }
