@@ -41,6 +41,8 @@ async function buildClientScaffolding(config) {
   await fs.promises.writeFile(frontendBundlePath + '/index.html', htmlBuffer);
 }
 
+// copy README.md to dist
+await fs.promises.copyFile(process.cwd() + '/../../README.md', process.cwd() + '/dist/README.md');
 
 await buildClientScaffolding({
   targetDirectory: process.cwd() + '/dist'
