@@ -43,8 +43,6 @@ class ExternalPromise {
   }
 }
 
-let PONG_COMMAND = 0;
-
 class WindowManager {
 
   constructor() {
@@ -52,8 +50,6 @@ class WindowManager {
 
     this.crawlerRenderingEnabled = ENABLE_CRAWLER_RENDERER;
     this.crawlerRenderer = ENABLE_CRAWLER_RENDERER ? new CrawlerRenderer() : null;
-
-    this._runWindowsLifecycleManagement();
 
     this.loopAwaiting = true;
     this.loopWaitPromise = new ExternalPromise();
@@ -84,6 +80,26 @@ class WindowManager {
         this.droppedMessagesCount = 0;
       }
     }, 2000);
+
+    this.lowMemoryMode = false;
+
+    if (RSS_LOW_MEMORY_THRESHOLD_ENABLED) {
+      // low memory checker loop
+      setInterval(() => {
+        // get RSS memory usage
+        let rss = process.memoryUsage().rss / 1024 / 1024;
+
+        let isLowMemory = rss > RSS_LOW_MEMORY_THRESHOLD;
+
+        if (isLowMemory) {
+          console.log('Low memory detected, RSS:', rss);
+          this.lowMemoryMode = true;
+        } else {
+          this.lowMemoryMode = false;
+        }
+
+      }, 5000);
+    }
 
     this._runLoop();
   }
@@ -198,43 +214,6 @@ class WindowManager {
     }
   }
 
-  _runWindowsLifecycleManagement() {
-
-    this.pingInterval = setInterval(() => {
-      let now = Date.now();
-
-      // get RSS memory usage
-      let rss = process.memoryUsage().rss / 1024 / 1024;
-
-      let isLowMemory = RSS_LOW_MEMORY_THRESHOLD_ENABLED && rss > RSS_LOW_MEMORY_THRESHOLD;
-
-      if (isLowMemory) {
-        console.log('Low memory detected, RSS:', rss);
-      }
-
-      for (let window of this.windowMap.values()) {
-        let pongDiff = now - window.lastPongTime;
-
-        if (pongDiff >= 6000) {
-          window.connected = false;
-        }
-
-        if (!window.connected) {
-          let destroyTimeout = 60000;
-
-          if (isLowMemory || pongDiff >= destroyTimeout) {
-            window.destroy();
-            continue;
-          }
-        }
-
-        window.sendPing();
-
-        // TODO: move this inside the window class
-        window.flushBlockDeleteQueue();
-      }
-    }, 2500);
-  }
 
   applyNewConnection(ws, req) {
 
@@ -291,7 +270,7 @@ class WindowManager {
     };
 
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
-    let window = new Window(bufferPushFn, pageParams, this.Body);
+    let window = new Window(this, bufferPushFn, pageParams, this.Body);
     this.windowMap.set(windowId, window);
 
     this._setupWs(ws, window);
@@ -398,11 +377,9 @@ class WindowManager {
       htmlRenderContext.feedBuffer(buf);
     };
 
-    let window = new Window(bufferPushFn, pageParams, this.Body);
+    let window = new Window(this, bufferPushFn, pageParams, this.Body);
 
     window.onDestroy(() => {
-      this.windowMap.delete(windowId);
-
       if (this.windowDestroyCallback) {
         this.windowDestroyCallback(windowId);
       }

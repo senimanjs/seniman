@@ -2,7 +2,6 @@ import { Buffer } from 'node:buffer';
 import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue, getActiveNode, runInNode, useCallback } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
-import { windowManager } from './window_manager.js';
 import { ErrorHandler } from './errors.js';
 import { HeadContext, createHeadContextValue } from '../head.js';
 
@@ -155,7 +154,7 @@ function BackButtonListener(props) {
 
 function WindowResizeListener(props) {
   let client = useClient();
-  let onResize = createHandler(([width, height]) => {
+  let onResize = createHandler((width, height) => {
     props.onResize(width, height);
   });
 
@@ -183,7 +182,7 @@ function WindowResizeListener(props) {
     }
 
     window.addEventListener('resize', throttle(() => {
-      $s(onResize)([window.innerWidth, window.innerHeight]);
+      $s(onResize)(window.innerWidth, window.innerHeight);
     }, 500));
   }));
 }
@@ -207,7 +206,8 @@ const scratchBuffer = Buffer.alloc(32768);
 
 export class Window {
 
-  constructor(bufferFn, pageParams, RootComponent) {
+  constructor(windowManager, bufferFn, pageParams, RootComponent) {
+    this.windowManager = windowManager;
 
     let { windowId,
       currentPath,
@@ -348,6 +348,27 @@ export class Window {
         setShouldSendPostScript(true);
       }, 2000);
     }, null, this);
+
+    this.lifecycleInterval = setInterval(() => {
+      let pongDiff = Date.now() - this.lastPongTime;
+
+      if (pongDiff >= 6000) {
+        this.connected = false;
+      }
+
+      if (!this.connected) {
+        let destroyTimeout = 60000;
+        let lowMemoryMode = this.windowManager.lowMemoryMode;
+
+        if (lowMemoryMode || pongDiff >= destroyTimeout) {
+          this.destroy();
+          return;
+        }
+      }
+
+      this.sendPing();
+      this.flushBlockDeleteQueue();
+    }, 2500);
   }
 
   onBuffer(bufferFn) {
@@ -358,7 +379,7 @@ export class Window {
     this.workQueue.add(node);
 
     if (!this.hasPendingWork) {
-      windowManager.requestExecution(this);
+      this.windowManager.requestExecution(this);
       this.hasPendingWork = true;
     }
   }
@@ -534,6 +555,8 @@ export class Window {
   destroy() {
     this.rootDisposer();
     this.destroyFnCallback();
+
+    clearInterval(this.lifecycleInterval);
 
     // return active pages' buffers to the pool
     this.pages.forEach(page => {
