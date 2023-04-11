@@ -1,10 +1,12 @@
 import express from 'express';
-import { onCleanup, useWindow, useEffect, useState, useMemo } from 'seniman';
+
+import { Style, Title } from 'seniman/head';
+import { onCleanup, useWindow, createHandler, useState, useMemo } from 'seniman';
 import { wrapExpress } from 'seniman/express';
 import produce from 'immer';
 
 const app = express();
-wrapExpress(app, { Head, Body });
+wrapExpress(app, { Body });
 
 const port = process.env.PORT || 3002;
 app.listen(port);
@@ -52,10 +54,6 @@ function Body() {
 
   let window = useWindow();
 
-  useEffect(() => {
-    window.setPageTitle(`${fullName()} has ${todoList().length} tasks`);
-  });
-
   let [todoList, setTodoList] = useState([
     { text: "Learn Seniman" },
     { text: "Build a Todo App" },
@@ -64,9 +62,9 @@ function Body() {
 
   let newTaskDraft = '';
 
-  let onBlur = (value) => {
+  let onBlur = createHandler((value) => {
     newTaskDraft = value;
-  }
+  });
 
   let addTask = (taskText) => {
     if (!taskText) {
@@ -98,20 +96,24 @@ function Body() {
     clearInterval(interval);
   });
 
-  return <div style={{ padding: "20px" }}>
-    <div style={{ fontSize: "24px", marginBottom: "10px" }}>{fullName}'s Todo List</div>
-    <div style={{ paddingTop: "10px", marginTop: "10px", borderTop: "1px solid #ccc" }}>
-      {todoList().map(task => {
-        return <div class="todo-item">
-          {task.text}
-          <button onClick={() => deleteTask(task)} style={{ float: "right" }}>Delete</button>
-        </div>;
-      })}
+  return <div>
+    <Style text={cssText} />
+    <Title text={`${fullName()} has ${todoList().length} tasks`} />
+    <div style={{ padding: "20px" }}>
+      <div style={{ fontSize: "24px", marginBottom: "10px" }}>{fullName}'s Todo List</div>
+      <div style={{ paddingTop: "10px", marginTop: "10px", borderTop: "1px solid #ccc" }}>
+        {todoList().map(task => {
+          return <div class="todo-item">
+            {task.text}
+            <button onClick={() => deleteTask(task)} style={{ float: "right" }}>Delete</button>
+          </div>;
+        })}
+      </div>
+      <div>
+        <input type="text" onBlur={onBlurClientHandler} />
+        <button onClick={() => addTask(newTaskDraft)}>+ Task</button>
+      </div>
+      <div style={{ fontSize: "10px" }}>Elapsed Window Time: {realtimeCount}</div>
     </div>
-    <div>
-      <input type="text" onBlur={onBlurClientHandler} />
-      <button onClick={() => addTask(newTaskDraft)}>+ Task</button>
-    </div>
-    <div style={{ fontSize: "10px" }}>Elapsed Window Time: {realtimeCount}</div>
   </div>;
 }

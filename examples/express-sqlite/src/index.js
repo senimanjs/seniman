@@ -1,11 +1,12 @@
 import express from 'express';
 import { useState, withValue } from 'seniman';
+import { Style } from 'seniman/head';
 import { wrapExpress } from 'seniman/express';
 import { Database } from 'sqlite-async';
 
 let app = express();
 
-wrapExpress(app, { Head, Body });
+wrapExpress(app, { Body });
 
 app.listen(process.env.PORT || 3002);
 
@@ -44,11 +45,6 @@ const cssText = `
   body { padding: 10px; background:#444; }
 `;
 
-function Head() {
-  return <>
-    <style>{cssText}</style>
-  </>;
-}
 
 function Body() {
   let [getTasks, setTasks] = useState([]);
@@ -80,12 +76,15 @@ function Body() {
   };
 
   return <div>
-    {getTasks().map(task => {
-      return <div style={{ width: "300px", background: "#eee", padding: "5px" }}>
-        {task.text}
-        <button onClick={() => deleteTask(task.id)} style={{ float: "right" }}>Delete</button>
-      </div>
-    })}
+    <Style text={cssText} />
+    <div>
+      {getTasks().map(task => {
+        return <div style={{ width: "300px", background: "#eee", padding: "5px" }}>
+          {task.text}
+          <button onClick={() => deleteTask(task.id)} style={{ float: "right" }}>Delete</button>
+        </div>
+      })}
+    </div>
     <div>
       <input
         type="text"

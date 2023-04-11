@@ -1,8 +1,9 @@
 import express from 'express';
 import { wrapExpress } from 'seniman/express';
+import { Style } from 'seniman/head';
 
 let app = express();
-wrapExpress(app, { Head, Body });
+wrapExpress(app, { Body });
 
 let port = process.env.PORT || 3002;
 app.listen(port);
@@ -10,8 +11,7 @@ app.listen(port);
 console.log('Listening on port', port);
 
 const cssText = `
-body,
-* {
+body {
   padding: 0;
   margin: 0;
   font-family: sans-serif;
@@ -19,12 +19,9 @@ body,
 }
 `;
 
-function Head() {
-  return <>
-    <style>{cssText}</style>
-  </>;
-}
-
 function Body() {
-  return <div>Hello World</div>;
+  return <div>
+    <Style text={cssText} />
+    <div>Hello World</div>
+  </div>;
 }

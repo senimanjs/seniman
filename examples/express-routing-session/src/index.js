@@ -1,5 +1,6 @@
 import express from 'express';
-import { useState, useEffect } from 'seniman';
+import { useState, useEffect, createHandler, withValue } from 'seniman';
+import { Style } from 'seniman/head';
 import { createRouting, Link, RouterRoot } from "seniman/router";
 import { wrapExpress } from 'seniman/express';
 import { db } from './db.js';
@@ -7,10 +8,9 @@ import { SessionProvider, useSession } from './session.js';
 
 let app = express();
 
-wrapExpress(app, { Head, Body });
+wrapExpress(app, { Body });
 
 app.listen(process.env.PORT || 3002);
-
 
 const cssText = `
   body, * {
@@ -19,12 +19,6 @@ const cssText = `
     font-family: sans-serif;
   }
 `;
-
-function Head() {
-  return <>
-    <style>{cssText}</style>
-  </>;
-}
 
 // Replace this with your own authentication logic
 async function authenticate(email, password) {
@@ -40,17 +34,20 @@ async function authenticate(email, password) {
 }
 
 function Body() {
-  return <SessionProvider>
-    {() => {
-      let session = useSession();
+  return <div>
+    <Style text={cssText} />
+    <SessionProvider>
+      {() => {
+        let session = useSession();
 
-      if (session.loggedIn()) {
-        return <RouterRoot routing={routing} />;
-      } else {
-        return <LoginPage />;
-      }
-    }}
-  </SessionProvider>;
+        if (session.loggedIn()) {
+          return <RouterRoot routing={routing} />;
+        } else {
+          return <LoginPage />;
+        }
+      }}
+    </SessionProvider>
+  </div>;
 }
 
 function LoginPage() {
@@ -77,8 +74,8 @@ function LoginPage() {
   return <div style={{ padding: "10px" }}>
     <div>Example App Login</div>
     <div style={{ marginTop: "10px" }}>
-      <input type="text" placeholder="Email" onBlur={$c(e => $s(setEmail)(e.target.value))} />
-      <input type="password" placeholder="Password" onBlur={$c(e => $s(setPassword)(e.target.value))} />
+      <input type="text" placeholder="Email" onBlur={withValue(setEmail)} />
+      <input type="password" placeholder="Password" onBlur={withValue(setPassword)} />
       <button onClick={onLoginClick}>Login</button>
     </div>
   </div>
@@ -142,9 +139,9 @@ routing.on('/todo', 'todo', () => {
 
   let newTaskDraft = '';
 
-  let onBlur = (value) => {
+  let onBlur = createHandler((value) => {
     newTaskDraft = value;
-  }
+  });
 
   let onBlurClientHandler = $c(e => {
     $s(onBlur)(e.target.value);

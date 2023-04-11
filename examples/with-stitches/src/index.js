@@ -1,4 +1,6 @@
 import { onCleanup, useState } from "seniman";
+
+import { Style } from 'seniman/head';
 import { createServer } from "seniman/server";
 import fs from "fs";
 import { css, getCssText } from "./stitches.config.js";
@@ -7,6 +9,75 @@ let normalizeCssText = fs.readFileSync(
   "./node_modules/normalize.css/normalize.css",
   "utf8"
 );
+
+
+function Body() {
+  let cssText = useStitchesCss();
+
+  let [getCount, setCount] = useState(0);
+  let onAddClick = () => setCount((count) => count + 1);
+  let onSubtractClick = () => setCount((count) => count - 1);
+
+  return (
+    <div>
+      <Style text={normalizeCssText} />
+      <Style text={cssText()} />
+      <div class={containerStyle()}>
+        <div>
+          <span class={textStyle()}>Count: {getCount()}</span>
+        </div>
+        <button class={buttonStyle()} onClick={onAddClick}>
+          +
+        </button>
+        <button
+          class={buttonStyle({ variant: "secondary" })}
+          onClick={onSubtractClick}
+        >
+          -
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// create a central place to store the stitches output,
+// and check for changes every 500ms -- since it will change as users / developer interacts with the app
+let lastCssText = getCssText();
+let subscribers = new Set();
+let timeInterval = process.env.TIME_INTERVAL || 200;
+
+setInterval(() => {
+  // time perf
+  let currentCssText = getCssText();
+  if (currentCssText !== lastCssText) {
+    lastCssText = currentCssText;
+    // notify subscribers
+    subscribers.forEach((subscriber) => subscriber(currentCssText));
+  }
+}, timeInterval);
+
+function subscribeForCssText(fn) {
+  fn(lastCssText);
+  subscribers.add(fn);
+
+  // unsubscribe
+  return () => {
+    if (subscribers.remove) {
+      subscribers = subscribers.remove(fn);
+    }
+  };
+}
+
+function useStitchesCss() {
+  let [stitchesCss, setStitchesCss] = useState(getCssText());
+  let unsubscribe = subscribeForCssText((cssText) => setStitchesCss(cssText));
+
+  onCleanup(() => {
+    unsubscribe();
+  });
+
+  return stitchesCss;
+}
 
 let buttonStyle = css({
   lineHeight: "1.2",
@@ -63,79 +134,6 @@ let textStyle = css({
   fontSize: "$md",
 });
 
-function Body() {
-  let [getCount, setCount] = useState(0);
-
-  let onAddClick = () => setCount((count) => count + 1);
-  let onSubtractClick = () => setCount((count) => count - 1);
-
-  return (
-    <div class={containerStyle()}>
-      <div>
-        <span class={textStyle()}>Count: {getCount()}</span>
-      </div>
-      <button class={buttonStyle()} onClick={onAddClick}>
-        +
-      </button>
-      <button
-        class={buttonStyle({ variant: "secondary" })}
-        onClick={onSubtractClick}
-      >
-        -
-      </button>
-    </div>
-  );
-}
-
-// create a central place to store the stitches output,
-// and check for changes every 500ms -- since it will change as users / developer interacts with the app
-let lastCssText = getCssText();
-let subscribers = new Set();
-let timeInterval = process.env.TIME_INTERVAL || 200;
-
-setInterval(() => {
-  // time perf
-  let currentCssText = getCssText();
-  if (currentCssText !== lastCssText) {
-    lastCssText = currentCssText;
-    // notify subscribers
-    subscribers.forEach((subscriber) => subscriber(currentCssText));
-  }
-}, timeInterval);
-
-function subscribeForCssText(fn) {
-  fn(lastCssText);
-  subscribers.add(fn);
-
-  // unsubscribe
-  return () => {
-    if (subscribers.remove) {
-      subscribers = subscribers.remove(fn);
-    }
-  };
-}
-
-function useStitchesCss() {
-  let [stitchesCss, setStitchesCss] = useState(getCssText());
-  let unsubscribe = subscribeForCssText((cssText) => setStitchesCss(cssText));
-
-  onCleanup(() => {
-    unsubscribe();
-  });
-
-  return stitchesCss;
-}
-
-function Head() {
-  let cssText = useStitchesCss();
-  return (
-    <>
-      <style>{normalizeCssText}</style>
-      <style>{cssText()}</style>
-    </>
-  );
-}
-
-let server = createServer({ Body, Head });
+let server = createServer({ Body });
 
 server.listen(3002);
