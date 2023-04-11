@@ -55,7 +55,7 @@ Let's move on to the next lines:
 ```js
 let app = express();
 
-wrapExpress(app, { Head, Body });
+wrapExpress(app, { Body });
 
 app.listen(process.env.PORT || 3002);
 ```
@@ -95,34 +95,19 @@ try {
 
 Here, we create a table called `tasks` and insert two tasks into it to start with. 
 
-Let's now go through the `Head` and `Body` components:
+Let's now go through the `Body` component:
 
-```js
-const cssText = `
-  body, * {
-    padding: 0;
-    margin: 0;
-    font-family: sans-serif;
-  }
-  body { padding: 10px; background:#444; }
-`;
-
-function Head() {
-  return <>
-    <style>{cssText}</style>
-  </>;
-}
-```
-
-The `Head` component's pretty standard; tags that you usually put in the `<head>` element of the HTML document, you can put here. You can see there's a single `style` already there to set minimum styling for the application.
 
 ```js
 function Body(props) {
-  return <TodoList />;
+  return <div>
+    <Style text={cssText} />
+    <TodoList />
+  </div>;
 }
 ```
 
-The `Body` component is where you put the main content of your application. You can see we have a `TodoList` component inside it. 
+The `Body` component is where you put the main content of your application. You can see we have a `TodoList` component inside it, which hosts the main logic of the todo list application, and also the `Style` tag, which is built-in component from the `seniman/head` component that helps you add a `<style>` tag to the `<head>` of the page containing the CSS you supply to the component.
 
 Now, we'll go through the `TodoList` component part-by-part:
 
