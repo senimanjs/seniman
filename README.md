@@ -2,7 +2,8 @@
 
 Seniman is a JavaScript server-driven UI framework that runs your JSX components on the server, enabling your UI to operate without downloading your component & business logic code to the client. 
 
-Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~3KB browser runtime, allowing fast-loading, low-latency user interfaces. 
+Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~3KB browser runtime, allowing fast-loading, low-latency user interfaces. Try the live demo at our docs site at https://senimanjs.org.
+
 
 ```js
 import { useState } from "seniman";
@@ -33,9 +34,9 @@ At a high-level, the Seniman runtime is divided into the server and client-side 
 
 ![Seniman Architecture](images/architecture.png)
 
-On the server-side, Seniman includes a custom runtime to build and maintain your UI component tree, track state changes across components, and manage connections to concurrently-connected browser windows. The server-side runtime is also responsible for generating UI update commands to make sure the browser is able to render the latest UI state. Event system is also implemented on the server-side -- allowing your server-side code to respond to events triggered by the client.
+Seniman's server-side includes a custom runtime that manages the lifecycle of your JSX component tree, tracks state changes, and handles connections to multiple browser windows. It generates UI update commands to ensure the latest state is rendered in the browser, and also implements a remote event system to allow server-side code to react to client-triggered events.
 
-In order to achieve network efficiency, Seniman server communicates with the client by sending commands using a custom binary protocol over WebSocket, which are then interpreted into actual DOM operations by a ~3kb browser runtime. The result is a low-latency, fast-loading, remotely-driven user interface that feels local over a normal 4G connection.
+To optimize network efficiency, Seniman's server communicates with clients using a custom binary protocol over WebSocket. A lightweight (~3kb) browser runtime interprets these commands into actual DOM operations. The result is a low-latency, quick-loading, remotely-driven user interface that feels local even on a standard 4G connection.
 
 ## Installation
 
