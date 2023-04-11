@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "0.0.93",
+  "version": "0.0.94",
   "description": "",
   "main": "./dist/index.js",
   "type": "module",
@@ -13,7 +13,8 @@
     "./express": "./dist/express/index.js",
     "./server": "./dist/server/index.js",
     "./head": "./dist/head.js",
-    "./html": "./dist/html.js"
+    "./html": "./dist/html.js",
+    "./babel": "./dist/babel/index.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -38,8 +39,10 @@
   "homepage": "https://github.com/senimanjs/seniman#readme",
   "devDependencies": {
     "@babel/cli": "^7.20.7",
-    "@babel/core": "^7.20.12",
     "babel-plugin-seniman": "^0.0.9",
+    "@babel/generator": "^7.20.14",
+    "@babel/plugin-syntax-jsx": "^7.18.6",
+    "@babel/traverse": "^7.20.13",
     "execa": "^7.0.0",
     "uglify-js": "^3.17.4"
   }

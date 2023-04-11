@@ -44,6 +44,13 @@ async function buildClientScaffolding(config) {
 // copy README.md to dist
 await fs.promises.copyFile(process.cwd() + '/../../README.md', process.cwd() + '/dist/README.md');
 
+// copy babel plugin folder to dist
+let babelFolderPath = process.cwd() + '/babel';
+let babelFolderDistPath = process.cwd() + '/dist';
+
+await fs.promises.mkdir(babelFolderDistPath, { recursive: true });
+await execa('cp', ['-r', babelFolderPath, babelFolderDistPath]);
+
 await buildClientScaffolding({
   targetDirectory: process.cwd() + '/dist'
 });
