@@ -1,10 +1,11 @@
 import express from 'express';
-import { useState, onCleanup, useStream, useCallback, useWindow, wrapPromise } from 'seniman';
+import { Style } from 'seniman/head';
+import { useState, onCleanup, useStream, createHandler, useClient, wrapPromise } from 'seniman';
 import { wrapExpress } from 'seniman/express';
 import { chatService } from './chat-service.js';
 
 let app = express();
-wrapExpress(app, { Head, Body });
+wrapExpress(app, { Body });
 
 let port = process.env.PORT || 3014;
 app.listen(port);
@@ -23,12 +24,6 @@ body {
   padding: 10px;
 }
 `;
-
-function Head() {
-  return <>
-    <style>{cssText}</style>
-  </>;
-}
 
 function Message(props) {
   let id = props.id;
@@ -49,7 +44,8 @@ function Message(props) {
 }
 
 function ChatStream() {
-  let window = useWindow();
+  //let window = useWindow();
+  let client = useClient();
   let [startOffset, setStartOffset] = useState(0);
   let [getUsername, setUsername] = useState('User2');
 
@@ -92,11 +88,11 @@ function ChatStream() {
     messageIdStream.remove(index, 1);
   }
 
-  let onSubmit = useCallback(async (value) => {
+  let onSubmit = createHandler(async (value) => {
     await chatService.submitMessage(getUsername(), value);
 
     // scroll to bottom
-    window.clientExec(scrollToBottomClientFn);
+    client.exec(scrollToBottomClientFn);
   });
 
   let scrollToBottomClientFn = $c(() => {
@@ -106,7 +102,7 @@ function ChatStream() {
     }, 70);
   });
 
-  window.clientExec(scrollToBottomClientFn);
+  client.exec(scrollToBottomClientFn);
 
   return <div style={{ width: "300px" }}>
     <div id="stream" style={{ height: "300px", overflow: "scroll", border: "1px solid #ccc", padding: '10px' }}>
@@ -139,6 +135,7 @@ function ChatStream() {
 
 function Body() {
   return <div>
+    <Style text={cssText} />
     <div style={{ marginBottom: "10px", fontWeight: "bold" }}>SenimanChat</div>
     <ChatStream />
   </div>;
