@@ -50,7 +50,7 @@ npm install seniman
 And the following for the Babel packages:
 
 ```sh
-npm install --save-dev @babel/cli babel-plugin-seniman 
+npm install --save-dev @babel/cli @babel/plugin-syntax-jsx
 ```
 
 ##### Note: Seniman supports Node.JS v16 or above.
@@ -89,7 +89,7 @@ To set up Seniman, you need to configure Babel to use the Seniman plugin. You ca
 
 ```json
 {
-  "plugins": ["seniman"]
+  "plugins": ["seniman/babel"]
 }
 ```
 
