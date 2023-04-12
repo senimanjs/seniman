@@ -1196,8 +1196,8 @@ export class Window {
         case Array:
           this._attachListV2(blockId, anchorIndex, nodeResult);
           break;
-        case StreamView:
-          this._attachStreamView(blockId, anchorIndex, nodeResult);
+        case CollectionView:
+          this._attachCollectionView(blockId, anchorIndex, nodeResult);
           break;
         /*
        case Promise:
@@ -1229,7 +1229,7 @@ export class Window {
     }
   }
 
-  _attachStreamView(blockId, anchorIndex, streamView) {
+  _attachCollectionView(blockId, anchorIndex, collectionView) {
     let disposeFns = [];
     let itemIds = [];
     let _lastItemId = 0;
@@ -1258,7 +1258,7 @@ export class Window {
         let disposeFn = useDisposableEffect(() => {
           let currentIndexForItemId = getIndexForItemId(itemId);
 
-          this._attach(_seqId, currentIndexForItemId, streamView.renderNode(currentIndexForItemId));
+          this._attach(_seqId, currentIndexForItemId, collectionView.renderNode(currentIndexForItemId));
         });
 
         // insert the dispose function at the correct index
@@ -1266,7 +1266,7 @@ export class Window {
       }
     }
 
-    streamView.onChange(useCallback(change => {
+    collectionView.onChange(useCallback(change => {
       let startIndex = change.index;
       let count = change.count;
 
@@ -1308,10 +1308,14 @@ const MODIFY_INSERT = 3;
 const MODIFY_REMOVE = 4;
 
 export function useStream(initialItems) {
-  return new Stream(initialItems);
+  return createCollection(initialItems);
 }
 
-class Stream {
+export function createCollection(initialItems) {
+  return new Collection(initialItems);
+}
+
+class Collection {
 
   constructor(items) {
     this.items = items;
@@ -1349,7 +1353,7 @@ class Stream {
   }
 
   view(fn) {
-    let view = new StreamView(index => fn(this.items[index]), this.items.length);
+    let view = new CollectionView(index => fn(this.items[index]), this.items.length);
 
     this.views.push(view);
 
@@ -1362,7 +1366,7 @@ class Stream {
   }
 };
 
-class StreamView {
+class CollectionView {
   constructor(fn, initialCount) {
     this.renderNode = fn;
     this.onChangeFn = null;

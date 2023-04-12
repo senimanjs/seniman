@@ -39,19 +39,8 @@ wrapExpress(app, { Body });
 
 app.listen(process.env.PORT || 3002);
 
-const cssText = `
-  body {
-    padding: 0;
-    margin: 0;
-    font-family: sans-serif;
-    padding: 10px;
-  }
-`;
-
 function Body() {
-  return <div>
-    <div>Hello World</div>
-  </div>;
+  return <div>Hello World</div>;
 }
 ```
 

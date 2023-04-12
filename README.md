@@ -2,8 +2,9 @@
 
 Seniman is a JavaScript server-driven UI framework that runs your JSX components on the server, enabling your UI to operate without downloading your component & business logic code to the client. 
 
-Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~3KB browser runtime, allowing fast-loading, low-latency user interfaces. Try the live demo at our docs site at https://senimanjs.org.
+Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~3KB browser runtime, allowing fast-loading, low-latency user interfaces. 
 
+Try the live demo at our docs site at https://senimanjs.org.
 
 ```js
 import { useState } from "seniman";
@@ -96,10 +97,10 @@ To set up Seniman, you need to configure Babel to use the Seniman plugin. You ca
 Then, you can run the babel compiler-watcher by running `babel` through `npx`:
 
 ```sh
-npx babel src --out-dir dist --watch
+npx babel src --out-dir dist
 ```
 
-This will watch your `src` directory for changes, and compile them to the `dist` directory. You can then run your code using Node.js:
+This will compile the code in `src` to the `dist` directory. You can then run your code using Node.js:
 
 ```sh
 node dist/index.js
