@@ -17,13 +17,13 @@
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
-    "babel-plugin-seniman": "^0.0.6",
+    "@babel/plugin-syntax-jsx": "^7.21.4",
     "concurrently": "^7.6.0",
     "nodemon": "^2.0.21"
   },
   "dependencies": {
     "@stitches/core": "^1.2.8",
     "normalize.css": "^8.0.1",
-    "seniman": "^0.0.93"
+    "seniman": "^0.0.95"
   }
 }

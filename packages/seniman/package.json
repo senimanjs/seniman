@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "0.0.94",
+  "version": "0.0.95",
   "description": "",
   "main": "./dist/index.js",
   "type": "module",
@@ -39,7 +39,6 @@
   "homepage": "https://github.com/senimanjs/seniman#readme",
   "devDependencies": {
     "@babel/cli": "^7.20.7",
-    "babel-plugin-seniman": "^0.0.9",
     "@babel/generator": "^7.20.14",
     "@babel/plugin-syntax-jsx": "^7.18.6",
     "@babel/traverse": "^7.20.13",

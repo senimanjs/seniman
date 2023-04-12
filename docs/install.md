@@ -9,7 +9,7 @@ npm install seniman
 You also need to install the Babel packages for JSX compilation:
   
 ```bash
-npm install --save-dev @babel/cli babel-plugin-seniman
+npm install --save-dev @babel/cli @babel/plugin-syntax-jsx 
 ```  
 
 
@@ -24,7 +24,7 @@ Then, add the following to your `babel.config.json`:
 ```json
 {
   "plugins": [
-    "seniman"
+    "seniman/babel"
   ]
 }
 ```
