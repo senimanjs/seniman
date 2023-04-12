@@ -1234,11 +1234,6 @@ export class Window {
     let itemIds = [];
     let _lastItemId = 0;
 
-    let _seqId = this._createSequence(0);
-
-    // attach the sequence to the anchor
-    this._streamAttachBlockCommand(blockId, anchorIndex, _seqId);
-
     function assignItemId(startIndex) {
       let itemId = ++_lastItemId;
       itemIds.splice(startIndex, 0, itemId);
@@ -1258,7 +1253,7 @@ export class Window {
         let disposeFn = useDisposableEffect(() => {
           let currentIndexForItemId = getIndexForItemId(itemId);
 
-          this._attach(_seqId, currentIndexForItemId, collectionView.renderNode(currentIndexForItemId));
+          this._attach(_seqId, currentIndexForItemId, collectionView.renderFn(currentIndexForItemId));
         });
 
         // insert the dispose function at the correct index
@@ -1266,9 +1261,17 @@ export class Window {
       }
     }
 
+    let _seqId = this._createSequence(collectionView.initialCount);
+    initializeItemComponents(0, collectionView.initialCount);
+
+    // attach the sequence to the anchor
+    this._streamAttachBlockCommand(blockId, anchorIndex, _seqId);
+
     collectionView.onChange(useCallback(change => {
       let startIndex = change.index;
       let count = change.count;
+
+      // TODO: if only one (say a simple one-item append), then create a special command that doesn't take two commands to execute?
 
       // modify the sequence
       this._streamModifySequenceCommand(_seqId, change.type, startIndex, count);
@@ -1367,18 +1370,14 @@ class Collection {
 };
 
 class CollectionView {
-  constructor(fn, initialCount) {
-    this.renderNode = fn;
+  constructor(renderFn, initialCount) {
+    this.renderFn = renderFn;
     this.onChangeFn = null;
     this.initialCount = initialCount;
   }
 
   onChange(fn) {
     this.onChangeFn = fn;
-
-    if (this.initialCount > 0) {
-      this.notifyInsert(0, this.initialCount);
-    }
   }
 
   notifyRemoval(index, count) {
