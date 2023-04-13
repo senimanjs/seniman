@@ -14,11 +14,13 @@ function addFileContentsToStackTraceLine(line) {
   }
 }
 
+const PRODUCTION_MODE = process.env.NODE_ENV == 'production';
+
 export function ErrorViewer(props) {
 
   return <div style={{ padding: '20px' }}>
     {() => {
-      if (process.env.NODE_ENV == 'production') {
+      if (PRODUCTION_MODE) {
         return <div>Error</div>;
       }
 

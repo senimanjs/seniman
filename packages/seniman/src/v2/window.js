@@ -238,6 +238,7 @@ export class Window {
 
     this.lastEventHandlerId = 0;
     this.eventHandlers = new Map();
+    this.lastRefId = 0;
 
     this.tokenList = new Map();
     // fill out the 0 index to make it easier for templating system to do 1-indexing
@@ -642,18 +643,6 @@ export class Window {
     return mg.page.buffer.subarray(currentPageOffset, currentPageOffset + size);
   }
 
-  _allocateEventHandler(handlerFunction) {
-    this.lastEventHandlerId++;
-
-    this.eventHandlers.set(this.lastEventHandlerId, handlerFunction);
-
-    return this.lastEventHandlerId;
-  }
-
-  _deallocateEventHandlers(handlerIds) {
-    handlerIds.forEach(handlerId => this.eventHandlers.delete(handlerId));
-  }
-
   _streamInitWindow() {
     let buf = this._allocCommandBuffer(1 + 21)
     buf.writeUint8(CMD_INIT_WINDOW, 0);
@@ -689,6 +678,7 @@ export class Window {
     const ARGTYPE_HANDLER = 7;
     const ARGTYPE_ARRAY = 8;
     const ARGTYPE_OBJECT = 9;
+    const ARGTYPE_REF = 10;
 
     let argsCount = serverBindFns.length;
 
@@ -746,6 +736,11 @@ export class Window {
         offset++;
       } else if (arg.type == 'handler') {
         buf.writeUint8(ARGTYPE_HANDLER, offset);
+        offset++;
+        buf.writeUInt16BE(arg.id, offset);
+        offset += 2;
+      } else if (arg.type == 'ref') {
+        buf.writeUint8(ARGTYPE_REF, offset);
         offset++;
         buf.writeUInt16BE(arg.id, offset);
         offset += 2;
@@ -984,6 +979,21 @@ export class Window {
     return {
       type: 'handler',
       id: handlerId
+    };
+  }
+
+  _allocateRef() {
+    this.lastRefId++;
+
+    let refId = this.lastRefId;
+
+    onCleanup(() => {
+      //this.refs.delete(refId);
+    });
+
+    return {
+      type: 'ref',
+      id: refId
     };
   }
 
@@ -1408,6 +1418,10 @@ export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffec
 
 export function createHandler(fn) {
   return getActiveWindow()._allocateHandler(fn);
+}
+
+export function createRef() {
+  return getActiveWindow()._allocateRef();
 }
 
 let textDecoder = new TextDecoder();

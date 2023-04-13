@@ -34,7 +34,7 @@
 
       socket.onmessage = (msg) => {
         lastMessageTime = now();
-        _apply3(msg);
+        _applyMessage(msg);
       }
 
       socket.onclose = (event) => {
@@ -141,21 +141,6 @@
   //////////////////////////////////////////////////////////////////////////////
   //// GLOBAL STATE
   //////////////////////////////////////////////////////////////////////////////
-
-  let _clientVarMap = new Map();
-
-  _window.setVar = (varName, varValue) => {
-    _clientVarMap.set(varName, varValue);
-  }
-
-  _window.readVar = (varName) => {
-    return _clientVarMap.get(varName);
-  }
-
-  _window.deleteVar = (varName) => {
-    _clientVarMap.delete(varName);
-  }
-
   let _blocksMap = new Map();
   let templateDefinitionMap = new Map();
   let clientFunctionsMap = new Map();
@@ -191,6 +176,7 @@
     let ARGTYPE_HANDLER = 7;
     let ARGTYPE_ARRAY = 8;
     let ARGTYPE_OBJECT = 9;
+    let ARGTYPE_REF = 10;
 
     let extractValue = () => {
       switch (getUint8()) {
@@ -225,6 +211,9 @@
             object[key] = extractValue();
           }
           return object;
+        case ARGTYPE_REF:
+          let refId = getUint16();
+          return getRefObject(refId);
       }
     }
 
@@ -237,6 +226,25 @@
 
     return values;
   }
+
+  let refObjectMap = new Map();
+
+  let getRefObject = (refId) => {
+    let refObject = refObjectMap.get(refId);
+
+    if (!refObject) {
+      refObject = {
+        value: null,
+        get: () => refObject.value,
+        set: (value) => {
+          refObject.value = value;
+        }
+      };
+      refObjectMap.set(refId, refObject);
+    }
+
+    return refObject;
+  };
 
   let _attachEventHandlerV2 = () => {
     let blockId = getUint16();
@@ -258,7 +266,6 @@
       _addEventListener(targetHandlerElement, eventName, fn);
     }
   }
-
 
   let textDecoder = new TextDecoder();
   let processOffset = 0;
@@ -900,6 +907,7 @@
   let CMD_MODIFY_SEQUENCE = 14;
   let CMD_PAGE_READY = 15;
   let CMD_MODIFY_HEAD = 16;
+  let CMD_CHANNEL_MESSAGE = 17;
 
   // fill out the 0-index to make it easier for templating to do 1-indexing
   let GlobalTokenList = [''];
@@ -951,10 +959,15 @@
         GlobalTokenList.push(getString(length));
       }
     },
-    [CMD_MODIFY_HEAD]: _modifyHead
+    [CMD_MODIFY_HEAD]: _modifyHead,
+    [CMD_PAGE_READY]: () => { },
+    [CMD_CHANNEL_MESSAGE]: () => {
+      let channelId = getUint16();
+      let serverBoundValues = _decodeServerBoundValuesBuffer();
+    }
   }
 
-  let _apply3 = (message) => {
+  let _applyMessage = (message) => {
     processOffset = 0;
     buffer = message.data;
     dv = new DataView(buffer);
@@ -1062,7 +1075,7 @@
     socket.send(writeBuffer.slice(0, finalLength));
   }
 
-  function senimanEncode(value) {
+  let senimanEncode = (value) => {
     stringBufferMap.clear();
     contentBufferOffset = 0;
 
@@ -1079,7 +1092,7 @@
     // utf-8-ed string buffer offset, which is shorter than the raw string buffer offset due to utf-8 encoding
     let stringBufferOffset = 0;
 
-    function assignStringBufferOffset(value, useMap) {
+    let assignStringBufferOffset = (value, useMap) => {
       if (useMap && stringBufferMap.has(value)) {
         return stringBufferMap.get(value);
       }
@@ -1105,7 +1118,7 @@
       return entry;
     }
 
-    function encodeValue(value) {
+    let encodeValue = (value) => {
       if (Array.isArray(value)) {
         writeUint8(MARKERS_ARRAY);
         writeUint8(value.length);
