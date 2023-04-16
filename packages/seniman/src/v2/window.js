@@ -200,6 +200,8 @@ let CMD_RUN_CLIENT_FUNCTION = 11;
 let CMD_INIT_SEQUENCE = 13;
 let CMD_MODIFY_SEQUENCE = 14;
 let CMD_MODIFY_HEAD = 16;
+let CMD_CHANNEL_MESSAGE = 17;
+let CMD_INIT_MODULE = 18;
 
 let pingBuffer = Buffer.from([0]);
 const scratchBuffer = Buffer.alloc(32768);
@@ -235,10 +237,12 @@ export class Window {
 
     this.clientTemplateInstallationSet = new Set();
     this.clientFunctionInstallationSet = new Set();
+    this.clientModuleInstallationSet = new Set();
 
     this.lastEventHandlerId = 0;
     this.eventHandlers = new Map();
     this.lastRefId = 0;
+    this.lastChannelId = 0;
 
     this.tokenList = new Map();
     // fill out the 0 index to make it easier for templating system to do 1-indexing
@@ -304,6 +308,7 @@ export class Window {
           let { clientFnId, serverBindFns } = clientFnSpec;
 
           this._streamFunctionInstallCommand(clientFnId);
+          this._streamModuleInstallCommand(serverBindFns);
 
           let sbvBuffer = this._encodeServerBoundValues(serverBindFns || []);
           let buf = this._allocCommandBuffer(1 + 2 + sbvBuffer.length);
@@ -370,6 +375,34 @@ export class Window {
       this.sendPing();
       this.flushBlockDeleteQueue();
     }, 2500);
+  }
+
+  _streamModuleInstallCommand(serverBoundValues) {
+
+    // look through the server bound values and see if there are any modules that need to be installed
+    let length = (serverBoundValues || []).length;
+
+    for (let i = 0; i < length; i++) {
+      let serverBoundValue = serverBoundValues[i];
+
+      if (serverBoundValue.type === 'module' && !this.clientModuleInstallationSet.has(serverBoundValue.id)) {
+        let moduleId = serverBoundValue.id;
+        this.clientModuleInstallationSet.add(moduleId);
+
+        let clientFn = serverBoundValue.clientFn;
+        this._streamFunctionInstallCommand(clientFn.clientFnId);
+
+        // stream the module install command
+        let sbvBuffer = this._encodeServerBoundValues(clientFn.serverBindFns || []);
+        let buf = this._allocCommandBuffer(1 + 2 + 2 + sbvBuffer.length);
+
+        buf.writeUInt8(CMD_INIT_MODULE, 0);
+        buf.writeUInt16BE(moduleId, 1);
+        buf.writeUint16BE(clientFn.clientFnId, 3);
+
+        sbvBuffer.copy(buf, 5);
+      }
+    }
   }
 
   onBuffer(bufferFn) {
@@ -679,6 +712,8 @@ export class Window {
     const ARGTYPE_ARRAY = 8;
     const ARGTYPE_OBJECT = 9;
     const ARGTYPE_REF = 10;
+    const ARGTYPE_CHANNEL = 11;
+    const ARGTYPE_MODULE = 12;
 
     let argsCount = serverBindFns.length;
 
@@ -741,6 +776,16 @@ export class Window {
         offset += 2;
       } else if (arg.type == 'ref') {
         buf.writeUint8(ARGTYPE_REF, offset);
+        offset++;
+        buf.writeUInt16BE(arg.id, offset);
+        offset += 2;
+      } else if (arg.type == 'channel') {
+        buf.writeUint8(ARGTYPE_CHANNEL, offset);
+        offset++;
+        buf.writeUInt16BE(arg.id, offset);
+        offset += 2;
+      } else if (arg.type == 'module') {
+        buf.writeUint8(ARGTYPE_MODULE, offset);
         offset++;
         buf.writeUInt16BE(arg.id, offset);
         offset += 2;
@@ -962,6 +1007,7 @@ export class Window {
       }
 
       this._streamFunctionInstallCommand(clientFnId);
+      this._streamModuleInstallCommand(serverBindFns);
       this._streamEventInitCommandV2(newBlockId, eventHandler.targetId, eventHandler.type, clientFnId, serverBindFns);
     }
   }
@@ -995,6 +1041,33 @@ export class Window {
       type: 'ref',
       id: refId
     };
+  }
+
+  _createChannel() {
+    this.lastChannelId++;
+
+    let channelId = this.lastChannelId;
+
+    onCleanup(() => {
+      //this.channels.delete(channelId);
+    });
+
+    return {
+      type: 'channel',
+      id: channelId,
+      send: (value) => {
+        this._streamChannelSendMessageCommand(channelId, value);
+      }
+    };
+  }
+
+  _streamChannelSendMessageCommand(channelId, value) {
+    let sbvBuf = this._encodeServerBoundValues([value]);
+    let buf = this._allocCommandBuffer(1 + 2 + sbvBuf.length);
+
+    buf.writeUint8(CMD_CHANNEL_MESSAGE, 0);
+    buf.writeUint16BE(channelId, 1);
+    sbvBuf.copy(buf, 3);
   }
 
   _handleElementEffects(blockId, elementEffects) {
@@ -1339,6 +1412,18 @@ class Collection {
     return this.items.indexOf(item);
   }
 
+  get length() {
+    return this.items.length;
+  }
+
+  findIndex(fn) {
+    return this.items.findIndex(fn);
+  }
+
+  find(fn) {
+    return this.items.find(fn);
+  }
+
   remove(index, count) {
     this.items.splice(index, count);
 
@@ -1363,6 +1448,19 @@ class Collection {
     this.views.forEach(view => {
       view.notifyInsert(index, items.length);
     });
+  }
+
+  splice(index, count, ...items) {
+    this.items.splice(index, count, ...items);
+
+    this.views.forEach(view => {
+      view.notifyRemoval(index, count);
+      view.notifyInsert(index, items.length);
+    });
+  }
+
+  filter(fn) {
+    return this.items.filter(fn);
   }
 
   view(fn) {
@@ -1422,6 +1520,27 @@ export function createHandler(fn) {
 
 export function createRef() {
   return getActiveWindow()._allocateRef();
+}
+
+export function createChannel() {
+  return getActiveWindow()._createChannel();
+}
+
+let moduleId = 10;
+const moduleMap = new Map();
+
+export function createModule(clientFn) {
+  moduleId++;
+
+  let module = {
+    type: "module",
+    id: moduleId,
+    clientFn
+  };
+
+  moduleMap.set(moduleId, module);
+
+  return module;
 }
 
 let textDecoder = new TextDecoder();

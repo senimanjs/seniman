@@ -3,6 +3,7 @@
   let _document = document;
   let _location = location;
   let head = _document.head;
+  let createMap = () => new Map();
 
   let socket;
   let windowId = '';
@@ -141,9 +142,9 @@
   //////////////////////////////////////////////////////////////////////////////
   //// GLOBAL STATE
   //////////////////////////////////////////////////////////////////////////////
-  let _blocksMap = new Map();
-  let templateDefinitionMap = new Map();
-  let clientFunctionsMap = new Map();
+  let _blocksMap = createMap();
+  let templateDefinitionMap = createMap();
+  let clientFunctionsMap = createMap();
 
   // TODO: have this somehow be given by the server -- 
   // the complete list is longer than this and we want this file to be as small as possible
@@ -177,11 +178,17 @@
     let ARGTYPE_ARRAY = 8;
     let ARGTYPE_OBJECT = 9;
     let ARGTYPE_REF = 10;
+    let ARGTYPE_CHANNEL = 11;
+    let ARGTYPE_MODULE = 12;
 
     let extractValue = () => {
       switch (getUint8()) {
         case ARGTYPE_HANDLER:
           let id = getUint16();
+
+          return (...args) => {
+            return _portSend(id, ...args);
+          }
           return _portSend.bind({ id });
         case ARGTYPE_STRING:
           let stringLength = getUint16();
@@ -214,6 +221,12 @@
         case ARGTYPE_REF:
           let refId = getUint16();
           return getRefObject(refId);
+        case ARGTYPE_CHANNEL:
+          let channelId = getUint16();
+          return getChannelObject(channelId);
+        case ARGTYPE_MODULE:
+          let moduleId = getUint16();
+          return moduleMap.get(moduleId);
       }
     }
 
@@ -227,7 +240,7 @@
     return values;
   }
 
-  let refObjectMap = new Map();
+  let refObjectMap = createMap();
 
   let getRefObject = (refId) => {
     let refObject = refObjectMap.get(refId);
@@ -245,6 +258,21 @@
 
     return refObject;
   };
+
+  let channelObjectMap = createMap();
+
+  let getChannelObject = (channelId) => {
+
+    let channelObject = {
+      onValue: (fn) => {
+        channelObject.valueFn = fn;
+      }
+    };
+
+    channelObjectMap.set(channelId, channelObject);
+
+    return channelObject;
+  }
 
   let _attachEventHandlerV2 = () => {
     let blockId = getUint16();
@@ -830,7 +858,7 @@
     }
   }
 
-  let headElementsMap = new Map();
+  let headElementsMap = createMap();
 
   let _modifyHead = () => {
     let command = _decodeServerBoundValuesBuffer()[0];
@@ -908,11 +936,12 @@
   let CMD_PAGE_READY = 15;
   let CMD_MODIFY_HEAD = 16;
   let CMD_CHANNEL_MESSAGE = 17;
+  let CMD_INIT_MODULE = 18;
 
   // fill out the 0-index to make it easier for templating to do 1-indexing
   let GlobalTokenList = [''];
 
-  let sendPong = _portSend.bind({ id: 0 });
+  let sendPong = () => _portSend(0);
 
   let _processMap = {
     [CMD_PING]: () => sendPong(readOffset),
@@ -964,8 +993,22 @@
     [CMD_CHANNEL_MESSAGE]: () => {
       let channelId = getUint16();
       let serverBoundValues = _decodeServerBoundValuesBuffer();
+
+      channelObjectMap.get(channelId).valueFn(serverBoundValues[0]);
+    },
+    [CMD_INIT_MODULE]: () => {
+      let moduleId = getUint16();
+      let clientFunctionId = getUint16();
+      let serverBoundValues = _decodeServerBoundValuesBuffer();
+
+      moduleMap.set(
+        moduleId,
+        clientFunctionsMap.get(clientFunctionId).apply({ serverFunctions: serverBoundValues })
+      );
     }
   }
+
+  let moduleMap = createMap();
 
   let _applyMessage = (message) => {
     processOffset = 0;
@@ -1051,9 +1094,9 @@
   let contentBuffer = createBuffer(4096);
   let contentDv = new DataView(contentBuffer.buffer);
   let contentBufferOffset = 0;
-  let stringBufferMap = new Map();
+  let stringBufferMap = createMap();
 
-  function _portSend(...args) {
+  const _portSend = (id, ...args) => {
     // the encoding of the message is:
     // 2 bytes for the port id
     // 2 bytes for the length of the string buffer
@@ -1063,7 +1106,7 @@
     // senimanEncode the argument list
     let [stringBufferLength, contentBufferLength] = senimanEncode(args);
 
-    writeDv.setUint16(0, this.id, true);
+    writeDv.setUint16(0, id, true);
     writeDv.setUint16(2, stringBufferLength, true);
 
     // NOTE: we don't need to copy the string buffer since we're direct-writing to the writeBuffer in senimanEncode
@@ -1075,7 +1118,7 @@
     socket.send(writeBuffer.slice(0, finalLength));
   }
 
-  let senimanEncode = (value) => {
+  const senimanEncode = (value) => {
     stringBufferMap.clear();
     contentBufferOffset = 0;
 

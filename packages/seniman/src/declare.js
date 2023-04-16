@@ -119,6 +119,5 @@ export function _declareClientFunction(def) {
 
     clientFunctionDefinitions.set(clientFunctionId, def);
 
-
     return clientFunctionId;
 }
