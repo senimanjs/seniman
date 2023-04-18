@@ -714,6 +714,7 @@ export class Window {
     const ARGTYPE_REF = 10;
     const ARGTYPE_CHANNEL = 11;
     const ARGTYPE_MODULE = 12;
+    const ARGTYPE_ARRAY_BUFFER = 13;
 
     let argsCount = serverBindFns.length;
 
@@ -798,6 +799,19 @@ export class Window {
         for (let j = 0; j < arg.length; j++) {
           encodeValue(arg[j]);
         }
+      } else if (arg instanceof Buffer) {
+
+        if (arg.length > 65535) {
+          throw new Error('Maximum length of ArrayBuffer to encode is 65535 bytes');
+        }
+
+        buf.writeUint8(ARGTYPE_ARRAY_BUFFER, offset);
+        offset++;
+        buf.writeUint16BE(arg.length, offset);
+        offset += 2;
+
+        arg.copy(buf, offset);
+        offset += arg.length;
       } else if (typeof arg === 'object') {
         buf.writeUint8(ARGTYPE_OBJECT, offset);
         offset++;

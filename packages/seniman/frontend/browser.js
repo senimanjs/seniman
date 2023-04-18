@@ -180,6 +180,7 @@
     let ARGTYPE_REF = 10;
     let ARGTYPE_CHANNEL = 11;
     let ARGTYPE_MODULE = 12;
+    let ARGTYPE_ARRAY_BUFFER = 13;
 
     let extractValue = () => {
       switch (getUint8()) {
@@ -189,7 +190,6 @@
           return (...args) => {
             return _portSend(id, ...args);
           }
-          return _portSend.bind({ id });
         case ARGTYPE_STRING:
           let stringLength = getUint16();
           return getString(stringLength);
@@ -227,6 +227,13 @@
         case ARGTYPE_MODULE:
           let moduleId = getUint16();
           return moduleMap.get(moduleId);
+        case ARGTYPE_ARRAY_BUFFER:
+          let arrayBufferLength = getUint16();
+          let dstUint8 = new Uint8Array(arrayBufferLength);
+
+          dstUint8.set(getUint8Array(arrayBufferLength));
+
+          return dstUint8.buffer;
       }
     }
 
@@ -297,7 +304,7 @@
 
   let textDecoder = new TextDecoder();
   let processOffset = 0;
-  let buffer;
+  let bufferArray;
   let dv;
 
   let getUint8 = () => {
@@ -323,11 +330,13 @@
     return dv.getFloat64((processOffset += 8) - 8);
   }
 
+  let getUint8Array = (length) => {
+    return bufferArray.subarray(processOffset, processOffset += length);
+  }
+
   let getString = (length) => {
     // Decode the view into a string and return it
-    let str = textDecoder.decode(new Uint8Array(buffer, processOffset, length));
-    processOffset += length;
-    return str;
+    return textDecoder.decode(getUint8Array(length));
   }
 
   let magicSplitUint16 = (key) => {
@@ -435,7 +444,6 @@
         break;
     }
   }
-
   let _compileTemplate = (templateTokenList) => {
 
     let totalElementCount = getUint16();
@@ -1012,7 +1020,9 @@
 
   let _applyMessage = (message) => {
     processOffset = 0;
-    buffer = message.data;
+
+    let buffer = message.data;
+    bufferArray = new Uint8Array(buffer);
     dv = new DataView(buffer);
 
     let totalLength = dv.byteLength;
