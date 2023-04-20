@@ -1446,6 +1446,14 @@ class Collection {
     });
   }
 
+  splice(index, count) {
+    this.items.splice(index, count);
+
+    this.views.forEach(view => {
+      view.notifyRemoval(index, count);
+    });
+  }
+
   unshift(...items) {
     this.items.unshift(...items);
 
