@@ -3,7 +3,7 @@ import { useClient } from './window.js';
 
 export const CoreNetworkModule = createInternalModule(1);
 
-export let NetworkStatusModule = createModule($c(() => {
+export let NetworkManagerModule = createModule($c(() => {
   let coreNetwork = $s(CoreNetworkModule);
   let requestReopen = false;
 
@@ -99,7 +99,7 @@ export function DefaultNetworkStatusView() {
   setTimeout(() => {
 
     client.exec($c(() => {
-      let networkStatus = $s(NetworkStatusModule);
+      let networkStatus = $s(NetworkManagerModule);
 
       let reconn = document.getElementById('reconn');
       let disconn = document.getElementById('disconn');
