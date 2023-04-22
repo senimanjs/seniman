@@ -50,18 +50,6 @@ export function ErrorViewer(props) {
   </div >
 }
 
-function DisconnectionPrompt() {
-  return <div id='disconn' style={{ display: 'none', position: 'fixed', bottom: '10%', padding: '10px', 'font-size': '15px', background: '#eee', border: '1px solid #ccc', left: 'calc(50% - 60px)' }}>
-    Disconnected <button onclick="location.reload();">Reload</button>
-  </div>;
-}
-
-function ReconnectionPrompt() {
-  return <div id='reconn' style={{ display: 'none', position: 'fixed', bottom: '10%', padding: '10px', 'font-size': '15px', background: '#eee', border: '1px solid #ccc', left: 'calc(50% - 60px)' }}>
-    Reconnecting...
-  </div>;
-}
-
 export function ErrorHandler(props) {
   let [runtimeError, set_runtimeError] = useState(null);
 
@@ -82,7 +70,5 @@ export function ErrorHandler(props) {
         return props.children;
       }
     }}
-    <DisconnectionPrompt />
-    <ReconnectionPrompt />
   </div>
 }

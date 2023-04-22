@@ -5,36 +5,29 @@
   let head = _document.head;
   let createMap = () => new Map();
 
-  let socket;
+  let moduleMap = createMap();
   let windowId = '';
   let readOffset = 0;
 
   let _addEventListener = (el, eventType, fn) => {
     el.addEventListener(eventType, fn);
   }
-  let now = () => Date.now();
   let createElement = (tagName) => _document.createElement(tagName);
-
-  let setElementDisplay = (el, shouldDisplay) => {
-    el.style.display = shouldDisplay ? 'block' : 'none';
-  }
 
   let getBlock = (id) => _blocksMap.get(id);
 
-  {
+  let coreNetworkModule = (() => {
+    let socket;
     let lastMessageTime = 0;
-    let requestReopen = false;
 
     let connectSocket = () => {
       socket = new WebSocket(`${_window.origin.replace('http', 'ws')}?wi=${windowId}&ro=${readOffset}&vs=${_window.innerWidth}x${_window.innerHeight}&lo=${encodeURIComponent(_location.pathname + _location.search)}`);
       socket.binaryType = "arraybuffer";
 
-      socket.onopen = (e) => {
-
-      };
+      socket.onopen = (e) => { };
 
       socket.onmessage = (msg) => {
-        lastMessageTime = now();
+        lastMessageTime = Date.now();
         _applyMessage(msg);
       }
 
@@ -42,29 +35,21 @@
         let code = event.code;
 
         if (code == 3001) {
+          // 3001 is the code for "no such window" 
+          // the client will reload and re-initialize for a new window
           _location.reload();
         } else if (code == 3010) {
           // excessive window creation error
           // TODO: do nothing for now
         } else {
-          requestReopen = true;
+          callbacks.close.forEach(cb => cb(event));
         }
       }
 
       socket.onerror = (error) => {
-        requestReopen = true;
+        // requestReopen = true;
+        callbacks.error.forEach(cb => cb(error));
       };
-    }
-
-    connectSocket();
-
-    let showDisconnectionNotice = () => {
-      shouldShowReconnectionNotice(false);
-      setElementDisplay(_window.disconn, true);
-    }
-
-    let shouldShowReconnectionNotice = (shouldDisplay) => {
-      setElementDisplay(_window.reconn, shouldDisplay);
     }
 
     let deactivateSocket = (socket) => {
@@ -73,71 +58,39 @@
       socket.onerror = null;
     }
 
-    let stopConnection = () => {
-      deactivateSocket(socket);
-      showDisconnectionNotice();
-      clearInterval(intv);
-    }
+    let callbacks = {
+      close: [],
+      error: [],
+    };
 
-    let lastIntervalTime = now();
-    let pingWaitCounter = 0;
+    connectSocket();
 
-    let setIntervalFn = () => setInterval(() => {
-      let _now = now();
-      let pingLate = (_now - lastMessageTime) > 4000;
-      let intervalTimeDiff = (_now - lastIntervalTime);
+    return {
+      lastMessageTime: () => lastMessageTime,
+      send: (msg) => {
+        socket.send(msg);
+      },
 
-      lastIntervalTime = _now;
+      onClose: (callback) => {
+        callbacks.close.push(callback);
+      },
 
-      if (lastMessageTime > 0 && !pingLate && !requestReopen) {
-        if (pingWaitCounter > 0) {
-          pingWaitCounter = 0;
-          shouldShowReconnectionNotice(false);
-        }
+      onError: (callback) => {
+        callbacks.error.push(callback);
+      },
 
-        return;
-      }
+      close: () => {
+        deactivateSocket(socket);
+      },
 
-      // TODO: do different things based on if sleep is longer than the window-destroy timeout on the server side?
-      // i.e. if we reconnect to a new window (because existing window has been destroyed), we might want to confirm to 
-      // the user that we'll refresh the content.
-      // if we're reconnecting to an existing window, content should change naturally and no user prompting is needed.
-      let postPageSleepExecution = intervalTimeDiff > 10000;
-
-      // when the page wakes from sleep, give it another chance from clean slate.
-      if (postPageSleepExecution) {
-        pingWaitCounter = 0;
-      }
-
-      pingWaitCounter++;
-
-      let shouldRecreateSocket = postPageSleepExecution || requestReopen || pingWaitCounter % 3 == 0;
-
-      if (shouldRecreateSocket) {
-        requestReopen = false;
-        lastMessageTime = 0;
+      reconnect: () => {
         deactivateSocket(socket);
         connectSocket();
-        shouldShowReconnectionNotice(true);
       }
+    };
+  })();
 
-      if (pingWaitCounter == 20) {
-        stopConnection();
-      }
-    }, 500);
-
-    // pingchecker
-    let intv = setIntervalFn();
-
-    _addEventListener(_document, "visibilitychange", () => {
-      if (_document.visibilityState == 'visible') {
-        // TODO: should run this immediately
-        intv = setIntervalFn();
-      } else {
-        clearInterval(intv);
-      }
-    });
-  }
+  moduleMap.set(1, coreNetworkModule);
 
   //////////////////////////////////////////////////////////////////////////////
   //// GLOBAL STATE
@@ -1016,8 +969,6 @@
     }
   }
 
-  let moduleMap = createMap();
-
   let _applyMessage = (message) => {
     processOffset = 0;
 
@@ -1125,7 +1076,7 @@
     writeBuffer.set(contentBuffer, 4 + stringBufferLength);
 
     let finalLength = 2 + 2 + stringBufferLength + contentBufferLength;
-    socket.send(writeBuffer.slice(0, finalLength));
+    coreNetworkModule.send(writeBuffer.slice(0, finalLength));
   }
 
   const senimanEncode = (value) => {

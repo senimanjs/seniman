@@ -4,6 +4,7 @@ import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declar
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
 import { ErrorHandler } from './errors.js';
 import { HeadContext, createHeadContextValue } from '../head.js';
+import { DefaultNetworkStatusView } from './network.js';
 
 const ClientContext = createContext(null);
 
@@ -347,6 +348,7 @@ export class Window {
           <RootComponent />
           <BackButtonListener onBackButton={onBackButton} />
           {shouldSendPostScript() ? <WindowResizeListener onResize={onResize} /> : null}
+          {shouldSendPostScript() ? <DefaultNetworkStatusView /> : null}
         </ErrorHandler>
       );
 
@@ -385,22 +387,27 @@ export class Window {
     for (let i = 0; i < length; i++) {
       let serverBoundValue = serverBoundValues[i];
 
-      if (serverBoundValue.type === 'module' && !this.clientModuleInstallationSet.has(serverBoundValue.id)) {
+      if (serverBoundValue.type === 'module') {
         let moduleId = serverBoundValue.id;
-        this.clientModuleInstallationSet.add(moduleId);
 
-        let clientFn = serverBoundValue.clientFn;
-        this._streamFunctionInstallCommand(clientFn.clientFnId);
+        // check if the module is not an internal module (moduleId >= 10) and if it has not been installed yet
+        if (moduleId >= 10 && !this.clientModuleInstallationSet.has(moduleId)) {
+          let moduleId = serverBoundValue.id;
+          this.clientModuleInstallationSet.add(moduleId);
 
-        // stream the module install command
-        let sbvBuffer = this._encodeServerBoundValues(clientFn.serverBindFns || []);
-        let buf = this._allocCommandBuffer(1 + 2 + 2 + sbvBuffer.length);
+          let clientFn = serverBoundValue.clientFn;
+          this._streamFunctionInstallCommand(clientFn.clientFnId);
 
-        buf.writeUInt8(CMD_INIT_MODULE, 0);
-        buf.writeUInt16BE(moduleId, 1);
-        buf.writeUint16BE(clientFn.clientFnId, 3);
+          // stream the module install command
+          let sbvBuffer = this._encodeServerBoundValues(clientFn.serverBindFns || []);
+          let buf = this._allocCommandBuffer(1 + 2 + 2 + sbvBuffer.length);
 
-        sbvBuffer.copy(buf, 5);
+          buf.writeUInt8(CMD_INIT_MODULE, 0);
+          buf.writeUInt16BE(moduleId, 1);
+          buf.writeUint16BE(clientFn.clientFnId, 3);
+
+          sbvBuffer.copy(buf, 5);
+        }
       }
     }
   }
@@ -1439,14 +1446,6 @@ class Collection {
   }
 
   remove(index, count) {
-    this.items.splice(index, count);
-
-    this.views.forEach(view => {
-      view.notifyRemoval(index, count);
-    });
-  }
-
-  splice(index, count) {
     this.items.splice(index, count);
 
     this.views.forEach(view => {
