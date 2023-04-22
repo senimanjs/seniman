@@ -100,7 +100,6 @@ export function DefaultNetworkStatusView() {
 
     client.exec($c(() => {
       let networkStatus = $s(NetworkManagerModule);
-
       let reconn = document.getElementById('reconn');
       let disconn = document.getElementById('disconn');
 

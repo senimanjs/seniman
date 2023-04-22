@@ -1547,23 +1547,6 @@ export function createChannel() {
   return getActiveWindow()._createChannel();
 }
 
-let moduleId = 10;
-const moduleMap = new Map();
-
-export function createModule(clientFn) {
-  moduleId++;
-
-  let module = {
-    type: "module",
-    id: moduleId,
-    clientFn
-  };
-
-  moduleMap.set(moduleId, module);
-
-  return module;
-}
-
 let textDecoder = new TextDecoder();
 
 const MARKERS_STRING = 1;
