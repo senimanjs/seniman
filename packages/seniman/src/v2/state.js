@@ -74,6 +74,10 @@ export function getActiveNode() {
   return ActiveNode;
 }
 
+export function getActiveCell() {
+  return ActiveNode;
+}
+
 export function setActiveWindow(window) {
   ActiveWindow = window;
 }
@@ -85,6 +89,10 @@ export function runInNode(node, fn) {
   ActiveNode = oldNode;
 }
 
+
+export function runInCell(cell, fn) {
+  runInNode(cell, fn);
+}
 /*
 
 The wrapPromise makes sure that the activeNode that was active before the promise resolves is the same after the promise resolves.

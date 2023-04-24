@@ -125,7 +125,8 @@ export function DefaultNetworkStatusView() {
       Reconnecting...
     </div>
     <div id='disconn' style={{ display: 'none', position: 'fixed', bottom: '10%', padding: '10px', 'font-size': '15px', background: '#eee', border: '1px solid #ccc', left: 'calc(50% - 60px)' }}>
-      Disconnected <button onclick="location.reload();">Reload</button>
+      Disconnected
+      <button onclick="location.reload();">Reload</button>
     </div>
   </div>
 }

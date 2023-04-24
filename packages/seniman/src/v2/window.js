@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue, getActiveNode, runInNode, useCallback } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue, getActiveNode, runInNode, useCallback, getActiveCell, runInCell } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
 import { ErrorHandler } from './errors.js';
@@ -354,7 +354,7 @@ export class Window {
 
       setTimeout(() => {
         setShouldSendPostScript(true);
-      }, 2000);
+      }, 1000);
     }, null, this);
 
     this.lifecycleInterval = setInterval(() => {
@@ -1300,8 +1300,8 @@ export class Window {
         case Array:
           this._attachListV2(blockId, anchorIndex, nodeResult);
           break;
-        case CollectionView:
-          this._attachCollectionView(blockId, anchorIndex, nodeResult);
+        case Sequence:
+          this._attachSequence(blockId, anchorIndex, nodeResult);
           break;
         /*
        case Promise:
@@ -1333,64 +1333,31 @@ export class Window {
     }
   }
 
-  _attachCollectionView(blockId, anchorIndex, collectionView) {
-    let disposeFns = [];
-    let itemIds = [];
-    let _lastItemId = 0;
+  _attachSequence(blockId, anchorIndex, sequence) {
 
-    function assignItemId(startIndex) {
-      let itemId = ++_lastItemId;
-      itemIds.splice(startIndex, 0, itemId);
-      return itemId;
-    }
-
-    function getIndexForItemId(itemId) {
-      // use better data structure for this
-      return itemIds.indexOf(itemId);
-    }
-
-    let initializeItemComponents = (startIndex, itemCount) => {
-      // attach initial items
-      for (let i = 0; i < itemCount; i++) {
-        let itemId = assignItemId(startIndex + i);
-
-        let disposeFn = useDisposableEffect(() => {
-          let currentIndexForItemId = getIndexForItemId(itemId);
-
-          this._attach(_seqId, currentIndexForItemId, collectionView.renderFn(currentIndexForItemId));
-        });
-
-        // insert the dispose function at the correct index
-        disposeFns.splice(startIndex + i, 0, disposeFn);
-      }
-    }
-
-    let _seqId = this._createSequence(collectionView.initialCount);
-    initializeItemComponents(0, collectionView.initialCount);
+    let _seqId = this._createSequence(0);
 
     // attach the sequence to the anchor
     this._streamAttachBlockCommand(blockId, anchorIndex, _seqId);
 
-    collectionView.onChange(useCallback(change => {
+    sequence.onChange(useCallback(change => {
       let startIndex = change.index;
       let count = change.count;
 
       // TODO: if only one (say a simple one-item append), then create a special command that doesn't take two commands to execute?
 
-      // modify the sequence
-      this._streamModifySequenceCommand(_seqId, change.type, startIndex, count);
+      if (change.type == MODIFY_REMOVE || change.type == MODIFY_INSERT) {
+        // modify the sequence
+        this._streamModifySequenceCommand(_seqId, change.type, startIndex, count);
+      }
 
       if (change.type == MODIFY_REMOVE) {
-        // dispose the nodes
-        for (let i = 0; i < count; i++) {
-          disposeFns[startIndex + i]();
-        }
+        return;
+      }
 
-        // remove the dispose functions
-        disposeFns.splice(startIndex, count);
-
-      } else { // if (change.type == MODIFY_INSERT) 
-        initializeItemComponents(startIndex, count);
+      // attach the new nodes to the new sequence indexes if it's an insert
+      for (let i = 0; i < count; i++) {
+        this._attach(_seqId, startIndex + i, sequence.nodes[startIndex + i]);
       }
     }));
   }
@@ -1413,6 +1380,7 @@ export class Window {
 
 const MODIFY_INSERT = 3;
 const MODIFY_REMOVE = 4;
+const MODIFY_REPLACE = 5;
 
 export function useStream(initialItems) {
   return createCollection(initialItems);
@@ -1427,6 +1395,10 @@ class Collection {
   constructor(items) {
     this.items = items;
     this.views = [];
+
+    this.itemIds = [];
+    this.disposeFns = [];
+    this._lastItemId = 0;
   }
 
   indexOf(item) {
@@ -1449,7 +1421,7 @@ class Collection {
     this.items.splice(index, count);
 
     this.views.forEach(view => {
-      view.notifyRemoval(index, count);
+      this.notifyViewRemoval(view, index, count);
     });
   }
 
@@ -1457,7 +1429,7 @@ class Collection {
     this.items.unshift(...items);
 
     this.views.forEach(view => {
-      view.notifyInsert(0, items.length);
+      this.notifyViewInsert(view, 0, items.length);
     });
   }
 
@@ -1467,7 +1439,7 @@ class Collection {
     this.items.push(...items);
 
     this.views.forEach(view => {
-      view.notifyInsert(index, items.length);
+      this.notifyViewInsert(view, index, items.length);
     });
   }
 
@@ -1475,8 +1447,8 @@ class Collection {
     this.items.splice(index, count, ...items);
 
     this.views.forEach(view => {
-      view.notifyRemoval(index, count);
-      view.notifyInsert(index, items.length);
+      this.notifyViewRemoval(view, index, count);
+      this.notifyViewInsert(view, index, items.length);
     });
   }
 
@@ -1484,8 +1456,94 @@ class Collection {
     return this.items.filter(fn);
   }
 
+  notifyViewInsert(view, startIndex, count) {
+
+    let assignItemId = (startIndex) => {
+      let itemId = ++this._lastItemId;
+      this.itemIds.splice(startIndex, 0, itemId);
+      return itemId;
+    }
+
+    let nodes = [];
+    let readyCount = 0;
+
+    let onInitial = (node) => {
+      nodes.push(node);
+
+      readyCount++;
+
+      if (readyCount == count) {
+        view.sequence.insert(startIndex, nodes);
+      }
+    }
+
+    let onChange = (index, node) => {
+      view.sequence.replace(index, node);
+    }
+
+    // attach items initially
+    for (let i = 0; i < count; i++) {
+      let itemId = assignItemId(startIndex + i);
+      let disposeFn = this._initNode(view, itemId, onInitial, onChange);
+
+      // insert the dispose function at the correct index
+      this.disposeFns.splice(startIndex + i, 0, disposeFn);
+    }
+  }
+
+  notifyViewRemoval(view, index, count) {
+    // run the dispose functions
+    for (let i = 0; i < count; i++) {
+      this.disposeFns[index + i]();
+    }
+
+    // remove the dispose functions
+    this.disposeFns.splice(index, count);
+
+    // remove from the sequence
+    view.sequence.remove(index, count);
+  }
+
+  _getIndexForItemId(itemId) {
+    // use better data structure for this
+    return this.itemIds.indexOf(itemId);
+  }
+
+  _initNode(view, itemId, onInitial, onChange) {
+    let isInitial = true;
+    let initialNode = null;
+    let disposeFn = null;
+
+    runInCell(view.cell, () => {
+      disposeFn = useDisposableEffect(() => {
+        let currentIndexForItemId = this._getIndexForItemId(itemId);
+        let nodeResult = view.renderFn(this.items[currentIndexForItemId]);
+
+        if (isInitial) {
+          isInitial = false;
+          initialNode = nodeResult;
+          onInitial(nodeResult);
+        } else {
+          onChange(currentIndexForItemId, nodeResult);
+        }
+      }, null, view.window);
+    });
+
+    return disposeFn;
+  }
+
   view(fn) {
-    let view = new CollectionView(index => fn(this.items[index]), this.items.length);
+    return this.map(fn);
+  }
+
+  map(fn) {
+
+    let view = {
+      renderFn: fn,
+      cell: getActiveCell(),
+      window: getActiveWindow(),
+      sequence: new Sequence()
+    };
 
     this.views.push(view);
 
@@ -1494,27 +1552,41 @@ class Collection {
       this.views.splice(index, 1);
     });
 
-    return view;
+    return view.sequence;
   }
 };
 
-class CollectionView {
-  constructor(renderFn, initialCount) {
-    this.renderFn = renderFn;
+class Sequence {
+
+  constructor() {
+    this.nodes = [];
     this.onChangeFn = null;
-    this.initialCount = initialCount;
   }
 
   onChange(fn) {
     this.onChangeFn = fn;
+
+    if (this.nodes.length > 0) {
+      fn({ type: MODIFY_INSERT, index: 0, count: this.nodes.length });
+    }
   }
 
-  notifyRemoval(index, count) {
+  remove(index, count) {
+    this.nodes.splice(index, count);
+
     this.onChangeFn({ type: MODIFY_REMOVE, index, count });
   }
 
-  notifyInsert(index, count) {
-    this.onChangeFn({ type: MODIFY_INSERT, index, count });
+  insert(index, items) {
+    this.nodes.splice(index, 0, ...items);
+
+    this.onChangeFn({ type: MODIFY_INSERT, index, count: items.length });
+  }
+
+  replace(index, items) {
+    this.nodes.splice(index, items.length, ...items);
+
+    this.onChangeFn({ type: MODIFY_REPLACE, index, count: items.length });
   }
 }
 

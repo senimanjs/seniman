@@ -292,6 +292,7 @@
     return textDecoder.decode(getUint8Array(length));
   }
 
+  // divides a 16-bit value into a single bit and 15-bit value: [key_highestOrderBit, keyBytes]
   let magicSplitUint16 = (key) => {
     return [key & (1 << 15), key & 0x7FFF];
   }
