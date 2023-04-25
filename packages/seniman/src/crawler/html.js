@@ -13,6 +13,8 @@ let CMD_INIT_SEQUENCE = 13;
 let CMD_MODIFY_SEQUENCE = 14;
 let CMD_PAGE_READY = 15;
 let CMD_MODIFY_HEAD = 16;
+let CMD_CHANNEL_MESSAGE = 17;
+let CMD_INIT_MODULE = 18;
 
 let selfClosingTagSet = new Set(['br', 'hr', 'img', 'input', 'link']);
 
@@ -962,9 +964,7 @@ export class HtmlRenderingContext {
       },
       [CMD_INSTALL_CLIENT_FUNCTION]: () => {
         let clientFunctionId = getUint16();
-        let functionJsonStringLength = getUint16();
-
-        getString(functionJsonStringLength);
+        let serverBoundValues = _decodeServerBoundValuesBuffer();
       },
       [CMD_RUN_CLIENT_FUNCTION]: () => {
         let clientFunctionId = getUint16();
@@ -977,7 +977,17 @@ export class HtmlRenderingContext {
           GlobalTokenList.push(getString(length));
         }
       },
-      [CMD_MODIFY_HEAD]: _modifyHead
+      [CMD_MODIFY_HEAD]: _modifyHead,
+      [CMD_PAGE_READY]: () => { },
+      [CMD_CHANNEL_MESSAGE]: () => {
+        let channelId = getUint16();
+        let serverBoundValues = _decodeServerBoundValuesBuffer();
+      },
+      [CMD_INIT_MODULE]: () => {
+        let moduleId = getUint16();
+        let clientFunctionId = getUint16();
+        let serverBoundValues = _decodeServerBoundValuesBuffer();
+      }
     };
 
     this.onBufferFn = (_buffer) => {
