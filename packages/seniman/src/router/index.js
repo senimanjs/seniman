@@ -1,4 +1,4 @@
-import { useContext, createContext, useState, useWindow, useEffect, useMemo, untrack, createHandler } from "../index.js";
+import { useContext, createContext, useState, useClient, useEffect, useMemo, untrack, createHandler } from "../index.js";
 
 /**
  *
@@ -49,11 +49,11 @@ function on(deps, fn, options) {
 // TODO: move this to seniman
 class Router {
 
-  constructor(routes, window, startPath) {
+  constructor(routes, client, startPath) {
 
     this.routes = routes.validRoutes;
     this.notFoundRoute = routes.notFoundRoute;
-    this.window = window;
+    this.client = client;
 
     let startRoute = this.resolve(startPath);
 
@@ -66,7 +66,7 @@ class Router {
     this.queryString = useMemo(() => new URLSearchParams(queryString()));
 
     // use `on` to defer the effect so it is not called on the first render
-    useEffect(on(window.path, (path) => {
+    useEffect(on(client.path, (path) => {
       let route = this.resolve(path);
 
       setActiveComponent(() => route.component);
@@ -136,17 +136,17 @@ class Router {
   }
 
   back() {
-    this.window.clientExec($c(() => window.history.back()));
+    this.client.exec($c(() => window.history.back()));
   }
 
   pushTo(href) {
-    this.window.navigate(href);
+    this.client.navigate(href);
   }
 
   push(routeName, params, queryString) {
     let href = this.generatePath(routeName, params, queryString);
 
-    this.window.navigate(href);
+    this.client.navigate(href);
   }
 }
 
@@ -192,8 +192,8 @@ export function createRouting() {
 let RouterContext = createContext(null);
 
 export let RouterProvider = (props) => {
-  let window = useWindow();
-  let router = new Router(props.routing, window, window.path());
+  let client = useClient();
+  let router = new Router(props.routing, client, untrack(() => client.path()));
 
   return <RouterContext.Provider value={router}>
     {props.children}
