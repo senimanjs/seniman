@@ -659,17 +659,10 @@ function parse$CDefinition(functionNode) {
       if (path.node.callee.type == 'Identifier' && path.node.callee.name == '$s') {
         serverBindNodes.push(path.node.arguments[0]);
 
-        // replace it with a sf[id] call
+        // replace it with a _$s<id> call
         path.replaceWith({
-          type: 'MemberExpression',
-          object: {
-            type: 'Identifier',
-            name: 'sf'
-          },
-          property: {
-            type: 'NumericLiteral',
-            value: serverBindNodes.length - 1
-          }
+          type: 'Identifier',
+          name: '_$s' + (serverBindNodes.length - 1)
         });
       }
     },
@@ -696,16 +689,19 @@ function parse$CDefinition(functionNode) {
     }
   }
 
-  // add a let sf = this.serverFunctions; 
-  // to the top of the function to remove dependency on the `this` context
   functionNodeAst.body.unshift({
     type: 'VariableDeclaration',
     kind: 'let',
     declarations: [{
       type: 'VariableDeclarator',
       id: {
-        type: 'Identifier',
-        name: 'sf'
+        type: 'ArrayPattern',
+        elements: serverBindNodes.map((node, index) => {
+          return {
+            type: 'Identifier',
+            name: '_$s' + index
+          }
+        })
       },
       init: {
         type: 'MemberExpression',
