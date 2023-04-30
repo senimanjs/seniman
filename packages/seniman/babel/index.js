@@ -689,36 +689,41 @@ function parse$CDefinition(functionNode) {
     }
   }
 
-  functionNodeAst.body.unshift({
-    type: 'VariableDeclaration',
-    kind: 'let',
-    declarations: [{
-      type: 'VariableDeclarator',
-      id: {
-        type: 'ArrayPattern',
-        elements: serverBindNodes.map((node, index) => {
-          return {
-            type: 'Identifier',
-            name: '_$s' + index
-          }
-        })
-      },
-      init: {
-        type: 'MemberExpression',
-        object: {
-          type: 'ThisExpression'
-        },
-        property: {
-          type: 'Identifier',
-          name: 'serverFunctions'
-        }
-      }
-    }]
-  });
+  if (serverBindNodes.length > 0) {
 
+    functionNodeAst.body.unshift({
+      type: 'VariableDeclaration',
+      kind: 'let',
+      declarations: [{
+        type: 'VariableDeclarator',
+        id: {
+          type: 'ArrayPattern',
+          elements: serverBindNodes.map((node, index) => {
+            return {
+              type: 'Identifier',
+              name: '_$s' + index
+            }
+          })
+        },
+        init: {
+          type: 'MemberExpression',
+          object: {
+            type: 'ThisExpression'
+          },
+          property: {
+            type: 'Identifier',
+            name: 'serverFunctions'
+          }
+        }
+      }]
+    });
+  }
+
+  // generate without spaces and newlines and comments
   let newFunctionBodyString = generate(functionNodeAst, {
     minified: true,
     compact: true,
+    comments: false,
   }).code;
 
   return {
