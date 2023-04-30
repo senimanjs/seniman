@@ -34,9 +34,10 @@ import Title from 'seniman/head';
 function Body(props) {
   let [getProduct, setProduct] = useState(null);
 
-  useEffect(() => {
+  useEffect(async () => {
     // ... fetch the product
-  }, []);
+    setProduct(await getProductFromDb(...));
+  });
 
   return <div>
     <Title text={getProduct() ? getProduct().name : 'Loading...'} />
