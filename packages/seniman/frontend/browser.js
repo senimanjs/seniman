@@ -675,24 +675,31 @@
 
     _modify() {
       // modify code
-      // 3: insert, 4: remove
+      // 3: insert, 4: remove, 5: replace
+
+      let MODIFY_INSERT = 3;
+      let MODIFY_REMOVE = 4;
+      let MODIFY_REPLACE = 5;
+
       let modifyCode = getUint8();
       let index = getUint16();
       let count = getUint16();
 
       switch (modifyCode) {
-        case 3: // INSERT 
+        case MODIFY_INSERT: // INSERT 
           for (let i = 0; i < count; i++) {
             this.items.splice(index + i, 0, new SequenceItem(this));
           }
           break;
-        case 4:  // REMOVE
+        case MODIFY_REMOVE:  // REMOVE
           for (let i = 0; i < count; i++) {
             this.items[index + i].node.remove();
           }
 
           this.items.splice(index, count);
           break;
+
+        // TODO: handle REPLACE 
       }
     }
 

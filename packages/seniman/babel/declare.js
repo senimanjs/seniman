@@ -195,10 +195,7 @@ export function createDeclareClientFunctionExpression(clientFunction) {
 
 function getTemplateStringInit(block, variables2) {
 
-  //console.log('======================');
   let buffer = getTemplateBuffer(block.rootElement, variables2);
-
-  //console.log('getTemplateString2 buffer len', buffer.length);
 
   return {
     "type": "ObjectProperty",
@@ -213,8 +210,6 @@ function getTemplateStringInit(block, variables2) {
   };
 }
 
-
-let selfClosingTagSet = new Set(['hr', 'img', 'input']);
 
 /*
 
@@ -405,9 +400,6 @@ function getTemplateBuffer(rootElement, variables2) {
 
   dig([rootElement]);
 
-  //console.log('totalElementCount', totalElementCount);
-  //console.log('offset BUFFERTEMPLATE', offset);
-
   let elementCountBuffer = Buffer.alloc(2);
 
   elementCountBuffer.writeUint16BE(totalElementCount);
@@ -521,14 +513,6 @@ function getElscriptBuffer(block) {
 
   _buildElScript(block.rootElement, 255);
 
-
-  let lengthBeforePrune = _els.length;
-
-  /*
-  console.log('els', _els);
-  console.log('anchors', _anchors);
-  console.log('targets', _targets);
-  */
   function prune() {
 
     for (let i = _els.length - 1; i >= 0; i--) {
@@ -568,14 +552,12 @@ function getElscriptBuffer(block) {
       _els.splice(i, 1);
 
       for (let j = i; j < _els.length; j++) {
-
         let _el = _els[j];
 
         if (_el.relRefId < 255 && _el.relRefId > i) {
           _el.relRefId -= 1;
         }
       }
-
 
       for (let j = 0; j < _anchors.length; j++) {
 
@@ -603,42 +585,10 @@ function getElscriptBuffer(block) {
     }
   }
 
-  //console.time('prune');
   prune();
-  //console.timeEnd('prune');
-
-  /*
-  if (lengthBeforePrune != _els.length) {
-      console.log('PRUNING WORKS!', lengthBeforePrune, _els.length);
-
-      console.log('els', _els);
-      console.log('anchors', _anchors);
-      console.log('targets', _targets);
-      console.log('=======================')
-  }
-  */
-
 
   return _createElScriptBuffer(_els, _anchors, _targets);
-
-  //console.log('createElScriptBuffer lenght', buffer.length);
-
-  return {
-    "type": "ObjectProperty",
-    "key": {
-      "type": "Identifier",
-      "name": "elScriptBuffer"
-    },
-    "value": {
-      "type": "StringLiteral",
-      "value": encode(buffer)
-    }
-  };
-
 }
-
-
-
 
 function _createElScriptBuffer(els, anchors, targets) {
 
@@ -685,9 +635,6 @@ function _createElScriptBuffer(els, anchors, targets) {
   }
 
   offset += targetElementCount;
-
-  // console.log('offset', offset);
-  //console.log('targetElementCount', targetElementCount)
 
   return buf;
 }

@@ -27,24 +27,6 @@ const eventNames = Object.keys(eventTypeIdMap);
 const eventNamesSet = new Set(eventNames);
 const styleAttributeNames = ['classList', 'style', 'class'];
 
-/*
-
-function inverse(obj) {
-    var retobj = {};
-    for (var key in obj) {
-        retobj[obj[key]] = key;
-    }
-    return retobj;
-}
-export function getDecodeCompressionMap() {
-    let encodeCompressionMap = getEncodeCompressionMap();
-    return {
-        typeIdMapping: inverse(encodeCompressionMap.typeIdMapping),
-        staticAttributeMap: inverse(encodeCompressionMap.staticAttributeMap),
-    };
-}
-*/
-
 function getAttribute(node, name) {
   let index = node.openingElement.attributes.findIndex(attrNode => attrNode.name.name == name);
   return index > -1 ? node.openingElement.attributes[index].value : null;
@@ -1231,7 +1213,11 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
         } else 
         
         */
-        if (propExpression.type == 'ArrowFunctionExpression') {
+
+        let propExpressionType = propExpression.type;
+        let isStaticExpression = propExpressionType == 'Identifier' || propExpressionType == 'StringLiteral' || propExpressionType == 'NumericLiteral';
+
+        if (isStaticExpression || propExpressionType == 'ArrowFunctionExpression') {
           return {
             "type": "ObjectProperty",
             "key": {
@@ -1410,21 +1396,6 @@ function _cleanChildren(children) {
 
     return true;
   });
-
-
-  /*
-  if (filtered.length == 1) {
-      filtered[0].value == '';
-  }
-  */
-
-  //console.log();
-
-  /*
-  if (filtered.length == 1 && filtered[0].type == 'JSXText') {
-      console.log(JSON.stringify(filtered[0].value));
-  }
-  */
 
   return filtered.length == 1 && filtered[0].value == '' ? [] : filtered;
 }

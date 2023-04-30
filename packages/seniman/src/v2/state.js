@@ -17,8 +17,16 @@ const EXEC_PROMISE = 3;
 const MEMO = 5;
 const EFFECT = 6;
 
+export function getActiveWindow() {
+  return ActiveWindow;
+}
+
+export function setActiveWindow(window) {
+  ActiveWindow = window;
+}
+
 export function processWorkQueue(window, workQueue) {
-  setActiveWindow(window);
+  ActiveWindow = window;
 
   let i = 0;
 
@@ -34,7 +42,7 @@ export function processWorkQueue(window, workQueue) {
     i++;
   }
 
-  setActiveWindow(null);
+  ActiveWindow = null;
 }
 
 function executeNode(window, node) {
@@ -66,10 +74,6 @@ function executeNode(window, node) {
   }
 }
 
-export function getActiveWindow() {
-  return ActiveWindow;
-}
-
 export function getActiveNode() {
   return ActiveNode;
 }
@@ -78,15 +82,15 @@ export function getActiveCell() {
   return ActiveNode;
 }
 
-export function setActiveWindow(window) {
-  ActiveWindow = window;
-}
-
 export function runInNode(node, fn) {
   let oldNode = ActiveNode;
+  let oldWindow = ActiveWindow;
+
   ActiveNode = node;
+  ActiveWindow = node.window;
   fn();
   ActiveNode = oldNode;
+  ActiveWindow = oldWindow;
 }
 
 
@@ -165,7 +169,9 @@ export function useState(initialValue) {
     return state.value;
   }
 
-  let _activeWindow = ActiveWindow;
+  let _nodeWindow = ActiveWindow;
+
+  //console.log("useState window", !!_nodeWindow);
 
   function setState(newValue) {
 
@@ -173,7 +179,7 @@ export function useState(initialValue) {
       newValue = newValue(state.value);
     }
 
-    writeState(_activeWindow, state, newValue);
+    writeState(_nodeWindow, state, newValue);
   }
 
   return [getState, setState];
@@ -303,6 +309,7 @@ function createEffect(fn, value) {
     value: value,
     fn,
     depth: !ActiveNode ? 0 : ActiveNode.depth + 1,
+    window: ActiveWindow,
 
     updateState: NODE_FRESH,
     updatedAt: null,
@@ -356,7 +363,7 @@ export function useMemo(fn) {
     value: null,
     fn,
     depth: !ActiveNode ? 0 : ActiveNode.depth + 1,
-    //window: ActiveNode.window,
+    window: ActiveNode.window,
 
     parent: ActiveNode,
 

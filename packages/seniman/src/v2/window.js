@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveWindow, setActiveWindow, processWorkQueue, getActiveNode, runInNode, useCallback, getActiveCell, runInCell } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, processWorkQueue, getActiveNode, runInNode, getActiveWindow, setActiveWindow, useCallback, getActiveCell, runInCell } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
 import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
 import { ErrorHandler } from './errors.js';
@@ -1526,7 +1526,7 @@ class Collection {
         } else {
           onChange(currentIndexForItemId, nodeResult);
         }
-      }, null, view.window);
+      });
     });
 
     return disposeFn;
@@ -1541,7 +1541,6 @@ class Collection {
     let view = {
       renderFn: fn,
       cell: getActiveCell(),
-      window: getActiveWindow(),
       sequence: new Sequence()
     };
 
@@ -1556,7 +1555,7 @@ class Collection {
   }
 };
 
-class Sequence {
+export class Sequence {
 
   constructor() {
     this.nodes = [];
