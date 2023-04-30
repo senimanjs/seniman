@@ -1526,7 +1526,7 @@ class Collection {
         } else {
           onChange(currentIndexForItemId, nodeResult);
         }
-      }, null, view.window);
+      });
     });
 
     return disposeFn;
@@ -1541,7 +1541,6 @@ class Collection {
     let view = {
       renderFn: fn,
       cell: getActiveCell(),
-      window: getActiveWindow(),
       sequence: new Sequence()
     };
 
@@ -1556,7 +1555,7 @@ class Collection {
   }
 };
 
-class Sequence {
+export class Sequence {
 
   constructor() {
     this.nodes = [];
