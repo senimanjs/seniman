@@ -131,6 +131,7 @@ function processProgram(path) {
 
   let gatheredUIBlocks = [];
   let gatheredClientFunctions = [];
+  let componentExistsInModule = false;
 
   let moduleLevelLastBlockId = 0;
   let moduleLevelLastClientFunctionId = 0;
@@ -224,6 +225,8 @@ function processProgram(path) {
         }
 
       } else { // is user component
+
+        componentExistsInModule = true;
 
         let props = {};
 
@@ -434,7 +437,7 @@ function processProgram(path) {
         node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareClientFunctionExpression(clientFunction));
       });
 
-      if (gatheredUIBlocks.length > 0 || gatheredClientFunctions.length > 0) {
+      if (componentExistsInModule || gatheredUIBlocks.length > 0 || gatheredClientFunctions.length > 0) {
         node.body.splice(0, 0, createCompilerInternalImportsExpression());
       }
 
