@@ -192,6 +192,7 @@ function WindowResizeListener(props) {
 //let CMD_INSTALL_TEMPLATE = 1;
 let CMD_INIT_WINDOW = 2;
 let CMD_ATTACH_ANCHOR = 3;
+let CMD_ATTACH_REF = 4;
 let CMD_ATTACH_EVENT_V2 = 5;
 let CMD_ELEMENT_UPDATE = 7;
 let CMD_INIT_BLOCK = 8;
@@ -963,7 +964,7 @@ export class Window {
     buf2.writeUint16BE(blockId |= (1 << 15), 5);
   }
 
-  _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects) {
+  _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects, elementRefs) {
 
     let newBlockId = this._createBlockId();
 
@@ -972,12 +973,32 @@ export class Window {
 
     eventHandlers && this._handleBlockEventHandlers(newBlockId, eventHandlers);
     elementEffects && this._handleElementEffects(newBlockId, elementEffects);
+    elementRefs && this._handleRefs(newBlockId, elementRefs);
 
     anchors && anchors.map((anchorNodeResult, anchorIndex) => {
       this._attach(newBlockId, anchorIndex, anchorNodeResult);
     });
 
     return new Block(newBlockId);
+  }
+
+  _handleRefs(blockId, elementRefs) {
+    let refsCount = elementRefs.length;
+
+    for (let i = 0; i < refsCount; i++) {
+      let { ref, targetId } = elementRefs[i];
+
+      this._streamAttachRefCommand(blockId, targetId, ref.id);
+    }
+  }
+
+  _streamAttachRefCommand(blockId, targetId, refId) {
+    let buf = this._allocCommandBuffer(1 + 2 + 2 + 2);
+
+    buf.writeUInt8(CMD_ATTACH_REF, 0);
+    buf.writeUInt16BE(blockId, 1);
+    buf.writeUInt16BE(targetId, 3);
+    buf.writeUInt16BE(refId, 5);
   }
 
   _handleBlockEventHandlers(newBlockId, eventHandlers) {
@@ -1602,8 +1623,8 @@ export function _createComponent(componentFunction, props) {
   return new Component(componentFunction, props);
 }
 
-export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffects) {
-  return getActiveWindow()._createBlock3(blockTemplateId, anchors, eventHandlers, styleEffects);
+export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffects, refs) {
+  return getActiveWindow()._createBlock3(blockTemplateId, anchors, eventHandlers, styleEffects, refs);
 }
 
 export function createHandler(fn) {

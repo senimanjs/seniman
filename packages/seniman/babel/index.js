@@ -159,6 +159,7 @@ function processProgram(path) {
         let attributeNames = getAttributeNames(node);
         let hasAttributes = attributeNames.size > 0;
         let hasEventHandlers = hasAttributes && eventNameInAttributeNames(attributeNames);
+        let hasRef = attributeNames.has('ref');
         //let hasStyling = hasAttributes && stylingAttributeInAttributeNames(attributeNames);
 
         let element = {
@@ -179,7 +180,8 @@ function processProgram(path) {
             anchors: [],
             targetElementCount: 0,
             eventHandlers: [],
-            styleEffects: []
+            styleEffects: [],
+            refs: []
           };
           gatheredUIBlocks.push(contextBlock);
 
@@ -192,7 +194,7 @@ function processProgram(path) {
           let hasDynamicAttribute = nodeHasDynamicAttribute(node);
 
           // Allocate a target entry to this element.
-          element.isTarget = hasEventHandlers || hasDynamicAttribute;
+          element.isTarget = hasEventHandlers || hasDynamicAttribute || hasRef;
 
           if (element.isTarget) {
             targetId = contextBlock.targetElementCount;
@@ -205,6 +207,10 @@ function processProgram(path) {
         }
 
         handleCreateElementEffectsEntryExpression(contextBlock, targetId, node, element);
+
+        if (hasRef) {
+          handleCreateElementRefsExpression(contextBlock, targetId, node);
+        }
 
         //console.log('-------------');
         if (node.children.length > 0) {
@@ -306,7 +312,8 @@ function processProgram(path) {
           anchors: [],
           targetElementCount: 0,
           eventHandlers: [],
-          styleEffects: []
+          styleEffects: [],
+          refs: []
         };
 
         gatheredUIBlocks.push(contextBlock);
@@ -749,6 +756,38 @@ function handleCreateBlockEventsExpression(contextBlock, targetId, node, process
   });
 }
 
+function handleCreateElementRefsExpression(contextBlock, targetId, node) {
+
+  // get the ref attribute expression
+  let refAttribute = getAttribute(node, 'ref');
+
+  contextBlock.refs.push({
+    type: 'ObjectExpression',
+    properties: [
+      {
+        type: 'ObjectProperty',
+        key: {
+          type: 'Identifier',
+          name: 'ref'
+        },
+        value: refAttribute.expression
+      },
+
+      {
+        type: 'ObjectProperty',
+        key: {
+          type: 'Identifier',
+          name: 'targetId'
+        },
+        value: {
+          type: 'NumericLiteral',
+          value: targetId
+        }
+      }
+    ]
+  });
+}
+
 function _buildStyleConditionKeyExpression(cond) {
   return { type: "StringLiteral", value: cond.key };
 
@@ -957,7 +996,8 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
     let attr = attributes[i];
     let attrName = attr.name.name;
 
-    if (eventNamesSet.has(attrName)) {
+    // skip known attributes
+    if (eventNamesSet.has(attrName) || attrName == 'ref') {
       continue;
     }
 
@@ -1126,6 +1166,11 @@ function createCallBlockExpression(block) {
   arguments_.push(block.styleEffects.length > 0 ? {
     "type": "ArrayExpression",
     "elements": block.styleEffects
+  } : { type: "NullLiteral" });
+
+  arguments_.push(block.refs.length > 0 ? {
+    "type": "ArrayExpression",
+    "elements": block.refs
   } : { type: "NullLiteral" });
 
   return {

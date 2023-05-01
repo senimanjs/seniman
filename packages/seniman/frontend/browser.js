@@ -905,8 +905,15 @@
     },
     // 3: CMD_ATTACH_ANCHOR
     _attachAtAnchorV2,
-    // 4: null
-    null,
+    // 4: CMD_ATTACH_REF
+    () => {
+      let blockId = getUint16();
+      let targetElIndex = getUint16();
+      let refId = getUint16();
+      let el = _getBlockTargetElement(blockId, targetElIndex);
+
+      getRefObject(refId).set(el);
+    },
     // 5: CMD_ATTACH_EVENT
     _attachEventHandlerV2,
     // 6: null
