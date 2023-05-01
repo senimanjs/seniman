@@ -69,7 +69,7 @@ export function createCompilerInternalImportsExpression(options) {
     "specifiers": specifiers,
     "source": {
       "type": "StringLiteral",
-      "value": "seniman"
+      "value": "seniman/_autogen/v1"
     }
   };
 
