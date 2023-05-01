@@ -86,7 +86,7 @@ server.listen(3002);
 
 ```
 
-To set up Seniman, you need to configure Babel to use the Seniman plugin. You can do this by adding the following to your `babel.config.json` file:
+To set up Seniman, you need to configure Babel to use Seniman's internal Babel plugin. You can do this by adding the following to your `babel.config.json` file:
 
 ```json
 {
