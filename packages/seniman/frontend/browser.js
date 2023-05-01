@@ -889,44 +889,34 @@
     }
   }
 
-  let CMD_PING = 0;
-  let CMD_INSTALL_TEMPLATE = 1;
-  let CMD_INIT_WINDOW = 2;
-  let CMD_ATTACH_ANCHOR = 3;
-  let CMD_ATTACH_EVENT_V2 = 5;
-  let CMD_ELEMENT_UPDATE = 7;
-  let CMD_INIT_BLOCK = 8;
-  let CMD_REMOVE_BLOCKS = 9;
-  let CMD_INSTALL_CLIENT_FUNCTION = 10;
-  let CMD_RUN_CLIENT_FUNCTION = 11;
-  let CMD_APPEND_TOKENLIST = 12;
-  let CMD_INIT_SEQUENCE = 13;
-  let CMD_MODIFY_SEQUENCE = 14;
-  let CMD_PAGE_READY = 15;
-  let CMD_MODIFY_HEAD = 16;
-  let CMD_CHANNEL_MESSAGE = 17;
-  let CMD_INIT_MODULE = 18;
-
   // fill out the 0-index to make it easier for templating to do 1-indexing
   let GlobalTokenList = [''];
 
-  let sendPong = () => _portSend(0);
-
-  let _processMap = {
-    [CMD_PING]: () => sendPong(readOffset),
-    [CMD_INIT_WINDOW]: () => {
+  let _opcodeFnMap = [
+    // 0: CMD_PING
+    () => _portSend(0, readOffset),
+    // 1: CMD_INSTALL_TEMPLATE
+    _installTemplate2,
+    // 2: CMD_INIT_WINDOW
+    () => {
       windowId = getString(21);
       let body = _document.body;
       _blocksMap.set(1, new Block(body, [], [{ el: body }]));
     },
-    [CMD_INIT_BLOCK]: _initBlock,
-    [CMD_INIT_SEQUENCE]: _initSequence,
-    [CMD_MODIFY_SEQUENCE]: _modifySequence,
-    [CMD_INSTALL_TEMPLATE]: _installTemplate2,
-    [CMD_ATTACH_ANCHOR]: _attachAtAnchorV2,
-    [CMD_ATTACH_EVENT_V2]: _attachEventHandlerV2,
-    [CMD_ELEMENT_UPDATE]: _elementUpdate,
-    [CMD_REMOVE_BLOCKS]: () => {
+    // 3: CMD_ATTACH_ANCHOR
+    _attachAtAnchorV2,
+    // 4: null
+    null,
+    // 5: CMD_ATTACH_EVENT
+    _attachEventHandlerV2,
+    // 6: null
+    null,
+    // 7: CMD_ELEMENT_UPDATE
+    _elementUpdate,
+    // 8: CMD_INIT_BLOCK
+    _initBlock,
+    // 9: CMD_REMOVE_BLOCKS
+    () => {
       let blockId;
 
       while (blockId = getUint16()) {
@@ -934,7 +924,8 @@
         _blocksMap.delete(blockId);
       }
     },
-    [CMD_INSTALL_CLIENT_FUNCTION]: () => {
+    // 10: CMD_INSTALL_CLIENT_FUNCTION
+    () => {
       let clientFunctionId = getUint16();
       let serverBoundValues = _decodeServerBoundValuesBuffer();
       let [argNames, body] = serverBoundValues;
@@ -944,28 +935,38 @@
 
       clientFunctionsMap.set(clientFunctionId, fn);
     },
-    [CMD_RUN_CLIENT_FUNCTION]: () => {
+    // 11: CMD_RUN_CLIENT_FUNCTION
+    () => {
       let clientFunctionId = getUint16();
       let serverBoundValues = _decodeServerBoundValuesBuffer();
 
       clientFunctionsMap.get(clientFunctionId).apply({ serverFunctions: serverBoundValues });
     },
-    [CMD_APPEND_TOKENLIST]: () => {
+    // 12: CMD_APPEND_TOKENLIST
+    () => {
       let length;
 
       while (length = getUint8()) {
         GlobalTokenList.push(getString(length));
       }
     },
-    [CMD_MODIFY_HEAD]: _modifyHead,
-    [CMD_PAGE_READY]: () => { },
-    [CMD_CHANNEL_MESSAGE]: () => {
+    // 13: CMD_INIT_SEQUENCE
+    _initSequence,
+    // 14: CMD_MODIFY_SEQUENCE
+    _modifySequence,
+    // 15: null
+    null,
+    // 16: CMD_MODIFY_HEAD
+    _modifyHead,
+    // 17: CMD_CHANNEL_MESSAGE
+    () => {
       let channelId = getUint16();
       let serverBoundValues = _decodeServerBoundValuesBuffer();
 
       channelObjectMap.get(channelId).valueFn(serverBoundValues[0]);
     },
-    [CMD_INIT_MODULE]: () => {
+    // 18: CMD_INIT_MODULE
+    () => {
       let moduleId = getUint16();
       let clientFunctionId = getUint16();
       let serverBoundValues = _decodeServerBoundValuesBuffer();
@@ -975,7 +976,7 @@
         clientFunctionsMap.get(clientFunctionId).apply({ serverFunctions: serverBoundValues })
       );
     }
-  }
+  ];
 
   let _applyMessage = (message) => {
     processOffset = 0;
@@ -988,7 +989,7 @@
 
     while (processOffset < totalLength) {
       let opcode = getUint8();
-      let fn = _processMap[opcode];
+      let fn = _opcodeFnMap[opcode];
 
       if (fn) {
         fn();
