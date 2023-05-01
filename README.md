@@ -4,7 +4,7 @@ Seniman is a JavaScript server-driven UI framework that runs your JSX components
 
 Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~3KB browser runtime, allowing fast-loading, low-latency user interfaces. 
 
-Try the live demo at our docs site at https://senimanjs.org.
+Try the live demo at our docs site built completely with Seniman at https://senimanjs.org.
 
 ```js
 import { useState } from "seniman";
@@ -126,7 +126,7 @@ When a server goes down, the client will similarly automatically reconnect to a 
 
 Seniman can be deployed like any other Node.JS application. You can use a process manager like PM2 to manage your Seniman processes, and a reverse proxy like Nginx to horizontally-scale your Seniman app instances.
 
-In order for your users to have better experience during network reconnection, however, it is recommended to set up client-IP sticky sessions in your reverse proxy. This will help ensure that a client that has disconnected, will reconnect to the same server instance when it comes back online, allowing the client to resume its session without losing any state.
+In order for your users to have better experience during network reconnection, however, it is helpful to set up client-IP sticky sessions in your reverse proxy. This will help ensure that a client that has disconnected will reconnect to the same server instance when it comes back online, allowing the client to resume its session without losing any state, leading to a smoother user experience.
 
 ### Is my actual component code downloaded to the client?
 
@@ -145,4 +145,4 @@ Yes -- the documentation site for Seniman is built using Seniman itself! You can
 Some early users are using TypeScript to build with Seniman -- official support coming soon!
 
 ### How about SEO support?
-We'll soon be adding a separate HTML renderer that can be activated specifically for crawler requests, rendering the same JSX tree.
+There is a separate HTML renderer that can be activated specifically when a request is coming from a search engine crawler. This will allow you to implement SEO support for your Seniman app. We're already using this for our docs site at senimanjs.org -- documentation will also be coming soon!
