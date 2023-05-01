@@ -1,4 +1,4 @@
-import { windowManager } from '../v2/window_manager.js';
+import { windowManager } from '../window_manager.js';
 
 export function wrapExpress(app, options) {
 

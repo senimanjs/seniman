@@ -1,7 +1,7 @@
 import { createServer as httpCreateServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { build } from '../build.js';
-import { windowManager } from '../v2/window_manager.js';
+import { windowManager } from '../window_manager.js';
 
 
 // TODO: apply new rendering code path to this vanilla server

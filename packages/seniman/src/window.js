@@ -1,9 +1,9 @@
 import { Buffer } from 'node:buffer';
 import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, processWorkQueue, getActiveNode, runInNode, getActiveWindow, setActiveWindow, useCallback, getActiveCell, runInCell } from './state.js';
-import { clientFunctionDefinitions, streamBlockTemplateInstall } from '../declare.js';
-import { bufferPool, PAGE_SIZE } from '../buffer-pool.js';
+import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
+import { bufferPool, PAGE_SIZE } from './buffer-pool.js';
 import { ErrorHandler } from './errors.js';
-import { HeadContext, createHeadContextValue } from '../head.js';
+import { HeadContext, createHeadContextValue } from './head.js';
 import { DefaultNetworkStatusView } from './network.js';
 
 const ClientContext = createContext(null);

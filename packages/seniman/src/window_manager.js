@@ -3,8 +3,8 @@ import { FastRateLimit } from 'fast-ratelimit';
 import { WebSocketServer } from 'ws';
 import { nanoid } from 'nanoid';
 import { Window } from './window.js';
-import { CrawlerRenderer } from '../crawler/index.js';
-import { build } from '../build.js';
+import { CrawlerRenderer } from './crawler/index.js';
+import { build } from './build.js';
 
 import {
   RSS_LOW_MEMORY_THRESHOLD,
@@ -15,7 +15,7 @@ import {
   RATELIMIT_WINDOW_CREATION_TTL_SECONDS,
   ENABLE_CRAWLER_RENDERER,
   MAX_INPUT_EVENT_BUFFER_SIZE
-} from '../config.js';
+} from './config.js';
 
 function getMemoryUsage() {
   const used = process.memoryUsage();

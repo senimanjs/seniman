@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import { execa } from 'execa';
 import uglifyjs from 'uglify-js';
 import zlib from 'zlib';
@@ -41,8 +42,11 @@ async function buildClientScaffolding(config) {
   await fs.promises.writeFile(frontendBundlePath + '/index.html', htmlBuffer);
 }
 
+// mkdir dist if it doesn't exist
+await fs.promises.mkdir(process.cwd() + '/dist', { recursive: true });
+
 // copy README.md to dist
-await fs.promises.copyFile(process.cwd() + '/../../README.md', process.cwd() + '/dist/README.md');
+await fs.promises.copyFile(path.normalize(process.cwd() + '/../../README.md'), process.cwd() + '/dist/README.md');
 
 // copy babel plugin folder to dist
 let babelFolderPath = process.cwd() + '/babel';
