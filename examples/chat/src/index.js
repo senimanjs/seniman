@@ -1,6 +1,6 @@
 import express from 'express';
 import { Style } from 'seniman/head';
-import { useState, onCleanup, useStream, createHandler, useClient, wrapPromise } from 'seniman';
+import { useState, onCleanup, createCollection, createHandler, useClient, wrapPromise } from 'seniman';
 import { wrapExpress } from 'seniman/express';
 import { chatService } from './chat-service.js';
 
@@ -49,19 +49,19 @@ function ChatStream() {
   let [startOffset, setStartOffset] = useState(0);
   let [getUsername, setUsername] = useState('User2');
 
-  let messageIdStream = useStream([]);
+  let messageIdCollection = createCollection([]);
 
   // load last 10 messages
   chatService
     .loadLastNMessageIds(10)
     .then((ids) => {
       setStartOffset(ids[0]);
-      messageIdStream.push(...ids);
+      messageIdCollection.push(...ids);
     });
 
   // listen to incoming new message ids
   const unsubNewMessageId = chatService.listenNewMessageId((id) => {
-    messageIdStream.push(id);
+    messageIdCollection.push(id);
   });
 
   // make sure to unsubscribe when client disconnects
@@ -77,15 +77,15 @@ function ChatStream() {
       .loadMessageIdsFromOffset(_updatedStartOffset, _startOffset)
       .then((ids) => {
         setStartOffset(_updatedStartOffset);
-        messageIdStream.unshift(...ids);
+        messageIdCollection.unshift(...ids);
       });
   }
 
   let onDeleteClick = async (item) => {
     await wrapPromise(chatService.deleteMessage(item));
 
-    let index = messageIdStream.indexOf(item);
-    messageIdStream.remove(index, 1);
+    let index = messageIdCollection.indexOf(item);
+    messageIdCollection.remove(index, 1);
   }
 
   let onSubmit = createHandler(async (value) => {
@@ -111,7 +111,7 @@ function ChatStream() {
         null
       }
       <div>
-        {messageIdStream.view(id => <Message id={id} onDeleteClick={onDeleteClick} />)}
+        {messageIdCollection.view(id => <Message id={id} onDeleteClick={onDeleteClick} />)}
       </div>
     </div>
     <div style={{ padding: '10px', background: '#f7f7f7', }}>
