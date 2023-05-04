@@ -1,0 +1,23 @@
+{
+  "name": "seniman-twitter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "PORT=3050 npx concurrently \"npx babel src --out-dir dist --watch\" \"npx nodemon --delay 5ms dist/index.js\"",
+    "build": "npx babel src --out-dir dist",
+    "start": "node dist/index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "immer": "^10.0.1",
+    "seniman": "^0.0.109"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.21.0",
+    "@babel/plugin-syntax-jsx": "^7.21.4"
+  }
+}
