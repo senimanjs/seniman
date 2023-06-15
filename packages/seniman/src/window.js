@@ -1567,6 +1567,11 @@ class Collection {
 
     this.views.push(view);
 
+    // handle the case where the collection already has items
+    if (this.items.length > 0) {
+      this.notifyViewInsert(view, 0, this.items.length);
+    }
+
     onCleanup(() => {
       let index = this.views.indexOf(view);
       this.views.splice(index, 1);
