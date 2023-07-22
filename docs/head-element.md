@@ -15,7 +15,7 @@ You can mount these components anywhere in your component tree, giving you the f
 The `<Title>` component sets the title of the page.
 
 ```js
-import Title from 'seniman/head';
+import { Title } from 'seniman/head';
 
 function Body(props) {
   return <div>
@@ -29,7 +29,7 @@ A common use case is to set the title of the page based on the current state of 
 
 ```js
 
-import Title from 'seniman/head';
+import { Title } from 'seniman/head';
 
 function Body(props) {
   let [getProduct, setProduct] = useState(null);
@@ -53,7 +53,7 @@ The runtime will take care to update the title of the page whenever the state ch
 The `<Meta>` component sets the meta tags of the page.
 
 ```js
-import Meta from 'seniman/head';
+import { Meta } from 'seniman/head';
 
 function Body(props) {
   return <div>
@@ -69,7 +69,7 @@ The `<Link>` component sets the link tags of the page.
 
 ```js
 
-import Link from 'seniman/head';
+import { Link } from 'seniman/head';
 
 function Body(props) {
   return <div>
@@ -85,7 +85,7 @@ The `<Style>` component sets the style tags of the page.
 
 ```js
 
-import Style from 'seniman/head';
+import { Style } from 'seniman/head';
 
 function Body(props) {
   return <div>
@@ -108,7 +108,7 @@ The `<Script>` component sets the script tags of the page.
 
 ```js
 
-import Script from 'seniman/head';
+import { Script } from 'seniman/head';
 
 function Body(props) {
   return <div>
@@ -122,7 +122,7 @@ You can also pass a function to the `onLoad` attribute, which will be called whe
 
 ```js
 
-import Script from 'seniman/head';
+import { Script } from 'seniman/head';
 
 function Body(props) {
 
