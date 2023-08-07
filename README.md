@@ -6,6 +6,7 @@ Seniman synchronizes the latest UI server state with the browser using custom bi
 
 Try the live demo at our docs site built completely with Seniman at https://senimanjs.org.
 
+
 ```js
 import { useState } from "seniman";
 
@@ -19,7 +20,7 @@ function Counter(props) {
   </div>;
 }
 ```
-Seniman runs on Node.JS and uses familiar JSX syntax & state management APIs, so you can hit the ground running.
+The entire `Counter` component -- including the `onClick` handler -- runs on the server. Seniman runs on Node.JS and uses familiar JSX syntax & state management APIs, so you can hit the ground running.
 
 ##### Note: Seniman is alpha software. The API is unstable and may change in the future. Please use with caution.
 
