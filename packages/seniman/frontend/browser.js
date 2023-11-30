@@ -220,12 +220,34 @@
   };
 
   let channelObjectMap = createMap();
+  let bufferedChannelMessages = createMap();
 
   let getChannelObject = (channelId) => {
 
+    if (channelObjectMap.has(channelId)) {
+      return channelObjectMap.get(channelId);
+    }
+
     let channelObject = {
       onValue: (fn) => {
-        channelObject.valueFn = fn;
+
+        if (channelObject.valueFns) {
+          channelObject.valueFns.push(fn);
+          return;
+        }
+
+        channelObject.valueFns = [fn];
+
+        // The first time onValue is called, we offload the buffered messages to the callback
+        let bufferedMessages = bufferedChannelMessages.get(channelId);
+
+        if (bufferedMessages) {
+          for (let i = 0; i < bufferedMessages.length; i++) {
+            fn(bufferedMessages[i]);
+          }
+        }
+
+        bufferedChannelMessages.delete(channelId);
       }
     };
 
@@ -969,8 +991,19 @@
     () => {
       let channelId = getUint16();
       let serverBoundValues = _decodeServerBoundValuesBuffer();
+      let channelObject = channelObjectMap.get(channelId);
+      let value = serverBoundValues[0];
 
-      channelObjectMap.get(channelId).valueFn(serverBoundValues[0]);
+      if (channelObject) {
+        channelObject.valueFns.forEach(fn => fn(value));
+      } else {
+
+        if (!bufferedChannelMessages.has(channelId)) {
+          bufferedChannelMessages.set(channelId, []);
+        }
+
+        bufferedChannelMessages.get(channelId).push(value);
+      }
     },
     // 18: CMD_INIT_MODULE
     () => {
@@ -1066,9 +1099,12 @@
   let createBuffer = (size) => new Uint8Array(size);
 
   // TODO: initialize sizes from window initialization parameters
-  let writeBuffer = createBuffer(65536);
+  let writeBuffer = createBuffer(2 ** 16 * 2);
   let writeDv = new DataView(writeBuffer.buffer);
-  let contentBuffer = createBuffer(4096);
+
+  // TODO: decide on a better logic on sizing of the content buffer
+  let contentBuffer = createBuffer(2 ** 16);
+
   let contentDv = new DataView(contentBuffer.buffer);
   let contentBufferOffset = 0;
   let stringBufferMap = createMap();

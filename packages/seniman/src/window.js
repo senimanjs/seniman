@@ -399,6 +399,10 @@ export class Window {
           let clientFn = serverBoundValue.clientFn;
           this._streamFunctionInstallCommand(clientFn.clientFnId);
 
+          // recursively stream the module install command (module can have other module dependencies)
+          // TODO: handle circular dependencies & max depth?
+          this._streamModuleInstallCommand(clientFn.serverBindFns);
+
           // stream the module install command
           let sbvBuffer = this._encodeServerBoundValues(clientFn.serverBindFns || []);
           let buf = this._allocCommandBuffer(1 + 2 + 2 + sbvBuffer.length);
@@ -817,6 +821,8 @@ export class Window {
         offset++;
         buf.writeUint16BE(arg.length, offset);
         offset += 2;
+
+        //console.log('buffer length', arg.length);
 
         arg.copy(buf, offset);
         offset += arg.length;
