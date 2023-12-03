@@ -138,7 +138,7 @@ No, only the resulting DOM operations are sent to the client -- your component c
 
 ### I have some logic I need running on the client. How do I do that?
 
-While most UI patterns are entirely implementable server-side with Seniman, Seniman also supports running custom logic on the client. Things that naturally need to run on the client like Google Single Sign-On, or custom analytics can be implemented using the `$c` and `$s` syntax.
+While most UI patterns are entirely implementable server-side with Seniman, Seniman also supports running custom logic on the client. Things that naturally need to run on the client like Google Single Sign-On, or custom analytics can be implemented using the `$c` and `$s` syntax -- explained in [this](https://senimanjs.org/docs/client-functions) docs page.
 
 ### Any example of this framework running somewhere? I want to see how a remotely-driven UI feels like.
 
