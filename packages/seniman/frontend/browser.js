@@ -109,16 +109,7 @@
     return targetId == 255 ? block.rootEl : block.targetEls[targetId];
   }
 
-  let EventMap = {
-    2: 'focus',
-    3: 'blur',
-    4: 'input',
-    5: 'scroll',
-    6: 'keydown',
-    7: 'keyup',
-    8: 'mouseenter',
-    9: 'mouseleave'
-  };
+  let EventMap = {};
 
   let _decodeServerBoundValuesBuffer = () => {
     let ARGTYPE_STRING = 1;
@@ -938,8 +929,13 @@
     },
     // 5: CMD_ATTACH_EVENT
     _attachEventHandlerV2,
-    // 6: null
-    null,
+    // 6: CMD_INSTALL_EVENT_TYPE
+    () => {
+      let eventType = getUint8();
+      let eventName = getString(getUint8());
+
+      EventMap[eventType] = eventName;
+    },
     // 7: CMD_ELEMENT_UPDATE
     _elementUpdate,
     // 8: CMD_INIT_BLOCK

@@ -18,6 +18,19 @@ export function useClient() {
 
 const camelCaseToKebabCaseRegex = /([a-z0-9])([A-Z])/g;
 
+// TODO: have the compiler refer to this map
+const eventTypeNameMap = {
+  1: 'click',
+  2: 'focus',
+  3: 'blur',
+  4: 'change',
+  5: 'scroll',
+  6: 'keydown',
+  7: 'keyup',
+  8: 'mouseenter',
+  9: 'mouseleave'
+}
+
 // TODO: use a LRU cache
 const camelCache = new Map();
 
@@ -190,20 +203,22 @@ function WindowResizeListener(props) {
 
 //let CMD_PING = 0;
 //let CMD_INSTALL_TEMPLATE = 1;
-let CMD_INIT_WINDOW = 2;
-let CMD_ATTACH_ANCHOR = 3;
-let CMD_ATTACH_REF = 4;
-let CMD_ATTACH_EVENT_V2 = 5;
-let CMD_ELEMENT_UPDATE = 7;
-let CMD_INIT_BLOCK = 8;
-let CMD_REMOVE_BLOCKS = 9;
-let CMD_INSTALL_CLIENT_FUNCTION = 10;
-let CMD_RUN_CLIENT_FUNCTION = 11;
-let CMD_INIT_SEQUENCE = 13;
-let CMD_MODIFY_SEQUENCE = 14;
-let CMD_MODIFY_HEAD = 16;
-let CMD_CHANNEL_MESSAGE = 17;
-let CMD_INIT_MODULE = 18;
+
+const CMD_INIT_WINDOW = 2;
+const CMD_ATTACH_ANCHOR = 3;
+const CMD_ATTACH_REF = 4;
+const CMD_ATTACH_EVENT_V2 = 5;
+const CMD_INSTALL_EVENT_TYPE = 6;
+const CMD_ELEMENT_UPDATE = 7;
+const CMD_INIT_BLOCK = 8;
+const CMD_REMOVE_BLOCKS = 9;
+const CMD_INSTALL_CLIENT_FUNCTION = 10;
+const CMD_RUN_CLIENT_FUNCTION = 11;
+const CMD_INIT_SEQUENCE = 13;
+const CMD_MODIFY_SEQUENCE = 14;
+const CMD_MODIFY_HEAD = 16;
+const CMD_CHANNEL_MESSAGE = 17;
+const CMD_INIT_MODULE = 18;
 
 let pingBuffer = Buffer.from([0]);
 const scratchBuffer = Buffer.alloc(32768);
@@ -239,6 +254,7 @@ export class Window {
 
     this.clientTemplateInstallationSet = new Set();
     this.clientFunctionInstallationSet = new Set();
+    this.clientEventTypeInstallationSet = new Set();
     this.clientModuleInstallationSet = new Set();
 
     this.lastEventHandlerId = 0;
@@ -694,7 +710,26 @@ export class Window {
     buf.write(this.id, 1, 21);
   }
 
+  _streamInstallEventTypeCommand(eventType) {
+    // translate the eventType int to a string
+    let eventName = eventTypeNameMap[eventType];
+    let buf = this._allocCommandBuffer(1 + 1 + 1 + eventName.length);
+
+    buf.writeUint8(CMD_INSTALL_EVENT_TYPE, 0);
+    buf.writeUint8(eventType, 1);
+    buf.writeUint8(eventName.length, 2);
+    buf.write(eventName, 3, eventName.length);
+
+    this.clientEventTypeInstallationSet.add(eventType);
+  }
+
   _streamEventInitCommandV2(blockId, targetId, eventType, clientFnId, serverBindFns) {
+
+    // Ignore click (eventType = 1) since client handling is special
+    if (eventType > 1 && !this.clientEventTypeInstallationSet.has(eventType)) {
+      this._streamInstallEventTypeCommand(eventType);
+    }
+
     let sbvBuffer = this._encodeServerBoundValues(serverBindFns);
 
     let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + sbvBuffer.length);
