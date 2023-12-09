@@ -34,10 +34,10 @@ async function buildClientScaffolding(config) {
   await fs.promises.mkdir(frontendBundlePath, { recursive: true });
 
   let brotliBuffer = zlib.brotliCompressSync(htmlBuffer);
-  await fs.promises.writeFile(frontendBundlePath + '/index.html.brotli', brotliBuffer);
+  await fs.promises.writeFile(frontendBundlePath + '/index.html.brotli.bin', brotliBuffer);
 
   let gzipBuffer = zlib.gzipSync(htmlBuffer);
-  await fs.promises.writeFile(frontendBundlePath + '/index.html.gz', gzipBuffer);
+  await fs.promises.writeFile(frontendBundlePath + '/index.html.gz.bin', gzipBuffer);
 
   await fs.promises.writeFile(frontendBundlePath + '/index.html', htmlBuffer);
 }

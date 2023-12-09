@@ -220,12 +220,12 @@ const CMD_MODIFY_HEAD = 16;
 const CMD_CHANNEL_MESSAGE = 17;
 const CMD_INIT_MODULE = 18;
 
-let pingBuffer = Buffer.from([0]);
+const pingBuffer = Buffer.from([0]);
 const scratchBuffer = Buffer.alloc(32768);
 
 export class Window {
 
-  constructor(windowManager, bufferFn, pageParams, RootComponent) {
+  constructor(windowManager, pageParams, RootComponent) {
     this.windowManager = windowManager;
 
     let { windowId,
@@ -242,7 +242,7 @@ export class Window {
     this.global_writeOffset = 0;
     this.mutationGroup = null;
 
-    this.bufferFn = bufferFn;
+    this.bufferFn = null;
 
     this._streamInitWindow();
 
@@ -373,6 +373,16 @@ export class Window {
         setShouldSendPostScript(true);
       }, 1000);
     }, null, this);
+  }
+
+  resetLifecycleInterval() {
+
+    if (this.lifecycleInterval) {
+      clearInterval(this.lifecycleInterval);
+    }
+
+    // send ping right away -- resets client's ping wait counter as soon as possible
+    this.sendPing();
 
     this.lifecycleInterval = setInterval(() => {
       let pongDiff = Date.now() - this.lastPongTime;
@@ -425,7 +435,7 @@ export class Window {
 
           buf.writeUInt8(CMD_INIT_MODULE, 0);
           buf.writeUInt16BE(moduleId, 1);
-          buf.writeUint16BE(clientFn.clientFnId, 3);
+          buf.writeUInt16BE(clientFn.clientFnId, 3);
 
           sbvBuffer.copy(buf, 5);
         }
@@ -472,7 +482,7 @@ export class Window {
       this.flushBlockDeleteQueue();
     }
 
-    this.deleteBlockCommandBuffer.writeUint16BE(blockId, this.deleteBlockCount * 2);
+    this.deleteBlockCommandBuffer.writeUInt16BE(blockId, this.deleteBlockCount * 2);
     this.deleteBlockCount++;
   }
 
@@ -481,13 +491,13 @@ export class Window {
     if (this.deleteBlockCount > 0) {
       let buf = this._allocCommandBuffer(1 + 2 * this.deleteBlockCount + 2);
 
-      buf.writeUint8(CMD_REMOVE_BLOCKS, 0);
+      buf.writeUInt8(CMD_REMOVE_BLOCKS, 0);
 
       // copy over the block ids
       this.deleteBlockCommandBuffer.copy(buf, 1, 0, this.deleteBlockCount * 2);
 
       // write the end marker
-      buf.writeUint16BE(0, 1 + 2 * this.deleteBlockCount);
+      buf.writeUInt16BE(0, 1 + 2 * this.deleteBlockCount);
 
       this.deleteBlockCount = 0;
     }
@@ -598,7 +608,7 @@ export class Window {
   }
 
   _onMessage(buffer) {
-    let txPortId = buffer.readUint16LE(0);
+    let txPortId = buffer.readUInt16LE(0);
 
     if (!this.eventHandlers.has(txPortId)) {
       return;
@@ -673,9 +683,9 @@ export class Window {
         pageStartOffset: this.global_writeOffset,
       };
 
-      setImmediate(() => {
+      setTimeout(() => {
         this._flushMutationGroup();
-      });
+      }, 0);
     }
 
     let mg = this.mutationGroup;
@@ -706,7 +716,7 @@ export class Window {
 
   _streamInitWindow() {
     let buf = this._allocCommandBuffer(1 + 21)
-    buf.writeUint8(CMD_INIT_WINDOW, 0);
+    buf.writeUInt8(CMD_INIT_WINDOW, 0);
     buf.write(this.id, 1, 21);
   }
 
@@ -715,9 +725,9 @@ export class Window {
     let eventName = eventTypeNameMap[eventType];
     let buf = this._allocCommandBuffer(1 + 1 + 1 + eventName.length);
 
-    buf.writeUint8(CMD_INSTALL_EVENT_TYPE, 0);
-    buf.writeUint8(eventType, 1);
-    buf.writeUint8(eventName.length, 2);
+    buf.writeUInt8(CMD_INSTALL_EVENT_TYPE, 0);
+    buf.writeUInt8(eventType, 1);
+    buf.writeUInt8(eventName.length, 2);
     buf.write(eventName, 3, eventName.length);
 
     this.clientEventTypeInstallationSet.add(eventType);
@@ -734,11 +744,11 @@ export class Window {
 
     let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + sbvBuffer.length);
 
-    buf.writeUint8(CMD_ATTACH_EVENT_V2, 0);
-    buf.writeUint16BE(blockId, 1);
-    buf.writeUint8(targetId, 3);
-    buf.writeUint8(eventType, 4);
-    buf.writeUint16BE(clientFnId, 5);
+    buf.writeUInt8(CMD_ATTACH_EVENT_V2, 0);
+    buf.writeUInt16BE(blockId, 1);
+    buf.writeUInt8(targetId, 3);
+    buf.writeUInt8(eventType, 4);
+    buf.writeUInt16BE(clientFnId, 5);
 
     sbvBuffer.copy(buf, 7);
   }
@@ -765,7 +775,7 @@ export class Window {
 
     let argsCount = serverBindFns.length;
 
-    buf.writeUint8(argsCount, offset);
+    buf.writeUInt8(argsCount, offset);
     offset++;
 
     function encodeValue(arg) {
@@ -777,7 +787,7 @@ export class Window {
 
       // check if arg is string, number, boolean, object, null, a callback, or a channel
       if (typeof arg === 'string') {
-        buf.writeUint8(ARGTYPE_STRING, offset);
+        buf.writeUInt8(ARGTYPE_STRING, offset);
         offset++;
 
         let str = arg;
@@ -791,56 +801,56 @@ export class Window {
         let isInt = Number.isInteger(arg);
 
         if (isInt && Math.abs(arg) < 32768) {
-          buf.writeUint8(ARGTYPE_INT16, offset);
+          buf.writeUInt8(ARGTYPE_INT16, offset);
           offset++;
 
           buf.writeInt16BE(arg, offset);
           offset += 2;
         } else if (isInt) {
-          buf.writeUint8(ARGTYPE_INT32, offset);
+          buf.writeUInt8(ARGTYPE_INT32, offset);
           offset++;
 
           buf.writeInt32BE(arg, offset);
           offset += 4;
         } else {
-          buf.writeUint8(ARGTYPE_FLOAT64, offset);
+          buf.writeUInt8(ARGTYPE_FLOAT64, offset);
           offset++;
 
           buf.writeDoubleBE(arg, offset);
           offset += 8;
         }
       } else if (typeof arg === 'boolean') {
-        buf.writeUint8(ARGTYPE_BOOLEAN, offset);
+        buf.writeUInt8(ARGTYPE_BOOLEAN, offset);
         offset++;
-        buf.writeUint8(arg ? 1 : 0, offset);
+        buf.writeUInt8(arg ? 1 : 0, offset);
         offset++;
       } else if (arg === null || arg === undefined) {
-        buf.writeUint8(ARGTYPE_NULL, offset);
+        buf.writeUInt8(ARGTYPE_NULL, offset);
         offset++;
       } else if (arg.type == 'handler') {
-        buf.writeUint8(ARGTYPE_HANDLER, offset);
+        buf.writeUInt8(ARGTYPE_HANDLER, offset);
         offset++;
         buf.writeUInt16BE(arg.id, offset);
         offset += 2;
       } else if (arg.type == 'ref') {
-        buf.writeUint8(ARGTYPE_REF, offset);
+        buf.writeUInt8(ARGTYPE_REF, offset);
         offset++;
         buf.writeUInt16BE(arg.id, offset);
         offset += 2;
       } else if (arg.type == 'channel') {
-        buf.writeUint8(ARGTYPE_CHANNEL, offset);
+        buf.writeUInt8(ARGTYPE_CHANNEL, offset);
         offset++;
         buf.writeUInt16BE(arg.id, offset);
         offset += 2;
       } else if (arg.type == 'module') {
-        buf.writeUint8(ARGTYPE_MODULE, offset);
+        buf.writeUInt8(ARGTYPE_MODULE, offset);
         offset++;
         buf.writeUInt16BE(arg.id, offset);
         offset += 2;
       } else if (Array.isArray(arg)) {
-        buf.writeUint8(ARGTYPE_ARRAY, offset);
+        buf.writeUInt8(ARGTYPE_ARRAY, offset);
         offset++;
-        buf.writeUint16BE(arg.length, offset);
+        buf.writeUInt16BE(arg.length, offset);
         offset += 2;
 
         for (let j = 0; j < arg.length; j++) {
@@ -852,9 +862,9 @@ export class Window {
           throw new Error('Maximum length of ArrayBuffer to encode is 65535 bytes');
         }
 
-        buf.writeUint8(ARGTYPE_ARRAY_BUFFER, offset);
+        buf.writeUInt8(ARGTYPE_ARRAY_BUFFER, offset);
         offset++;
-        buf.writeUint16BE(arg.length, offset);
+        buf.writeUInt16BE(arg.length, offset);
         offset += 2;
 
         //console.log('buffer length', arg.length);
@@ -862,18 +872,18 @@ export class Window {
         arg.copy(buf, offset);
         offset += arg.length;
       } else if (typeof arg === 'object') {
-        buf.writeUint8(ARGTYPE_OBJECT, offset);
+        buf.writeUInt8(ARGTYPE_OBJECT, offset);
         offset++;
 
         let keys = Object.keys(arg);
-        buf.writeUint16BE(keys.length, offset);
+        buf.writeUInt16BE(keys.length, offset);
         offset += 2;
 
         for (let j = 0; j < keys.length; j++) {
           let key = keys[j];
           let keyLength = Buffer.byteLength(key);
 
-          buf.writeUint16BE(keyLength, offset);
+          buf.writeUInt16BE(keyLength, offset);
           offset += 2;
 
           buf.write(key, offset);
@@ -927,9 +937,9 @@ export class Window {
   _streamBlockInitCommand2(blockId, blockTemplateIds) {
     let buf = this._allocCommandBuffer(1 + 2 + 2);
 
-    buf.writeUint8(CMD_INIT_BLOCK, 0);
-    buf.writeUint16BE(blockId, 1);
-    buf.writeUint16BE(blockTemplateIds, 3);
+    buf.writeUInt8(CMD_INIT_BLOCK, 0);
+    buf.writeUInt16BE(blockId, 1);
+    buf.writeUInt16BE(blockTemplateIds, 3);
   }
 
   _createSequence(listLength) {
@@ -982,27 +992,27 @@ export class Window {
     // TODO: handle string length longer than 32K
     let buf2 = this._allocCommandBuffer(1 + 2 + 2 + 2 + textLength);
 
-    buf2.writeUint8(CMD_ATTACH_ANCHOR, 0);
-    buf2.writeUint16BE(blockId, 1);
+    buf2.writeUInt8(CMD_ATTACH_ANCHOR, 0);
+    buf2.writeUInt16BE(blockId, 1);
 
-    buf2.writeUint16BE(anchorIndex, 3);
+    buf2.writeUInt16BE(anchorIndex, 3);
 
     if (textLength > 32677) {
       throw new Error();
     }
 
-    buf2.writeUint16BE(textLength, 5);
+    buf2.writeUInt16BE(textLength, 5);
     textBuffer.copy(buf2, 7);
   }
 
   _streamAttachBlockCommand(parentBlockId, anchorIndex, blockId) {
     let buf2 = this._allocCommandBuffer(1 + 2 + 2 + 2);
 
-    buf2.writeUint8(CMD_ATTACH_ANCHOR, 0);
-    buf2.writeUint16BE(parentBlockId, 1);
-    buf2.writeUint16BE(anchorIndex, 3);
+    buf2.writeUInt8(CMD_ATTACH_ANCHOR, 0);
+    buf2.writeUInt16BE(parentBlockId, 1);
+    buf2.writeUInt16BE(anchorIndex, 3);
 
-    buf2.writeUint16BE(blockId |= (1 << 15), 5);
+    buf2.writeUInt16BE(blockId |= (1 << 15), 5);
   }
 
   _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects, elementRefs) {
@@ -1148,8 +1158,8 @@ export class Window {
     let sbvBuf = this._encodeServerBoundValues([value]);
     let buf = this._allocCommandBuffer(1 + 2 + sbvBuf.length);
 
-    buf.writeUint8(CMD_CHANNEL_MESSAGE, 0);
-    buf.writeUint16BE(channelId, 1);
+    buf.writeUInt8(CMD_CHANNEL_MESSAGE, 0);
+    buf.writeUInt16BE(channelId, 1);
     sbvBuf.copy(buf, 3);
   }
 
@@ -1171,12 +1181,12 @@ export class Window {
         _staticHelper: (mode, propName, propValue) => {
           let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1 + 2 + propValue.length);
 
-          buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
-          buf.writeUint16BE(blockId, 1);
-          buf.writeUint8(targetId, 3);
-          buf.writeUint8(mode, 4);
+          buf.writeUInt8(CMD_ELEMENT_UPDATE, 0);
+          buf.writeUInt16BE(blockId, 1);
+          buf.writeUInt8(targetId, 3);
+          buf.writeUInt8(mode, 4);
 
-          buf.writeUint8(propName, 5); // propName is in this case a number -- map index.
+          buf.writeUInt8(propName, 5); // propName is in this case a number -- map index.
           let offset = 6;
 
           buf.writeUInt16BE(propValue.length, offset);
@@ -1215,10 +1225,10 @@ export class Window {
 
           let buf2 = scratchBuffer;
 
-          buf2.writeUint8(CMD_ELEMENT_UPDATE, 0);
-          buf2.writeUint16BE(blockId, 1);
-          buf2.writeUint8(targetId, 3);
-          buf2.writeUint8(UPDATE_MODE_MULTI_STYLEPROP, 4);
+          buf2.writeUInt8(CMD_ELEMENT_UPDATE, 0);
+          buf2.writeUInt16BE(blockId, 1);
+          buf2.writeUInt8(targetId, 3);
+          buf2.writeUInt8(UPDATE_MODE_MULTI_STYLEPROP, 4);
 
           let offset = 5;
 
@@ -1234,10 +1244,10 @@ export class Window {
               let keyIndex = this.tokenList.get(key);
               // set 16-th bit to 1 to denote that this is static map compression index
               // (stylePropertyKeyMap on the client)
-              buf2.writeUint16BE(keyIndex |= (1 << 15), offset);
+              buf2.writeUInt16BE(keyIndex |= (1 << 15), offset);
               offset += 2;
             } else {
-              buf2.writeUint16BE(key.length, offset);
+              buf2.writeUInt16BE(key.length, offset);
               offset += 2;
               buf2.write(key, offset, key.length);
               offset += key.length;
@@ -1246,17 +1256,17 @@ export class Window {
             if (this.tokenList.get(value)) {
               //let valueIndex = build.reverseIndexMap.stylePropertyValues[value] + 1;
               let valueIndex = this.tokenList.get(value);
-              buf2.writeUint16BE(valueIndex |= (1 << 15), offset);
+              buf2.writeUInt16BE(valueIndex |= (1 << 15), offset);
               offset += 2;
             } else {
-              buf2.writeUint16BE(value.length, offset);
+              buf2.writeUInt16BE(value.length, offset);
               offset += 2;
               buf2.write(value, offset, value.length);
               offset += value.length;
             }
           }
 
-          buf2.writeUint16BE(0, offset);
+          buf2.writeUInt16BE(0, offset);
           offset += 2;
 
           let buf3 = this._allocCommandBuffer(offset);
@@ -1267,11 +1277,11 @@ export class Window {
         removeAttribute: (propName) => {
           let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1);
 
-          buf.writeUint8(CMD_ELEMENT_UPDATE, 0);
-          buf.writeUint16BE(blockId, 1);
-          buf.writeUint8(targetId, 3);
-          buf.writeUint8(UPDATE_MODE_REMOVE_ATTR, 4);
-          buf.writeUint8(propName, 5); // propName is in this case a number -- map index.
+          buf.writeUInt8(CMD_ELEMENT_UPDATE, 0);
+          buf.writeUInt16BE(blockId, 1);
+          buf.writeUInt8(targetId, 3);
+          buf.writeUInt8(UPDATE_MODE_REMOVE_ATTR, 4);
+          buf.writeUInt8(propName, 5); // propName is in this case a number -- map index.
         },
 
         setAttribute: (propName, propValue) => {
@@ -1330,10 +1340,10 @@ export class Window {
     let tokenLength = Buffer.byteLength(tokenName);
     let buf = this._allocCommandBuffer(1 + 1 + tokenLength + 1);
 
-    buf.writeUint8(CMD_MODIFY_TOKENMAP, 0);
-    buf.writeUint8(tokenLength, 1);
+    buf.writeUInt8(CMD_MODIFY_TOKENMAP, 0);
+    buf.writeUInt8(tokenLength, 1);
     buf.write(tokenName, 2, tokenLength);
-    buf.writeUint8(0, 2 + tokenLength);
+    buf.writeUInt8(0, 2 + tokenLength);
   }
 
   _attach(blockId, anchorIndex, nodeResult) {
@@ -1697,7 +1707,7 @@ const MARKERS_OBJECT = 9;
 const MARKERS_ARRAY_BUFFER = 10;
 
 function senimanDecode(buffer) {
-  let stringBufferLength = buffer.readUint16LE(0);
+  let stringBufferLength = buffer.readUInt16LE(0);
   let stringBuffer;
 
   if (stringBufferLength > 0) {
@@ -1723,11 +1733,11 @@ function senimanDecode(buffer) {
       }
       case MARKERS_STRING: {
         // read the offset of the string in the string buffer
-        let offset = buffer.readUint16LE(position);
+        let offset = buffer.readUInt16LE(position);
         position += 2;
 
         // read the length of the string
-        let length = buffer.readUint16LE(position);
+        let length = buffer.readUInt16LE(position);
         position += 2;
 
         // read the string from the string buffer
@@ -1760,11 +1770,11 @@ function senimanDecode(buffer) {
 
         for (let i = 0; i < length; i++) {
           // read the offset of the string in the string buffer
-          let offset = buffer.readUint16LE(position);
+          let offset = buffer.readUInt16LE(position);
           position += 2;
 
           // read the length of the string
-          let length = buffer.readUint16LE(position);
+          let length = buffer.readUInt16LE(position);
           position += 2;
 
           // read the string from the string buffer
@@ -1776,7 +1786,7 @@ function senimanDecode(buffer) {
       }
       case MARKERS_ARRAY_BUFFER: {
         // read the length of the array buffer
-        let length = buffer.readUint16LE(position);
+        let length = buffer.readUInt16LE(position);
         position += 2;
 
         let value = buffer.subarray(position, position + length);

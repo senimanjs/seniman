@@ -66,7 +66,7 @@ export let NetworkManagerModule = createModule($c(() => {
 
       callbacks.disconnected.forEach(cb => cb());
     }
-  }, 500);
+  }, 1000);
 
   // pingchecker
   let intv = setIntervalFn();

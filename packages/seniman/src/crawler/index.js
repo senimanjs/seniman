@@ -6,8 +6,8 @@ export class CrawlerRenderer {
     this._verifyCrawlerRequest = default_crawlerRequestVerifier;
   }
 
-  shouldUseRenderer(req) {
-    return this._verifyCrawlerRequest(req);
+  shouldUseRenderer(headers) {
+    return this._verifyCrawlerRequest(headers);
   }
 
   createHtmlRenderingContext() {
@@ -15,7 +15,7 @@ export class CrawlerRenderer {
   }
 }
 
-export function default_crawlerRequestVerifier(req) {
+export function default_crawlerRequestVerifier(headers) {
   // TODO:
   // 1. check if the crawler is below the rate limit
   // 2. check validity of crawler IP address 
@@ -27,7 +27,7 @@ export function default_crawlerRequestVerifier(req) {
 
   // for now, just check the user agent and if it contains
   // any of the popular crawler names
-  const userAgent = req.headers['user-agent'] || '';
+  const userAgent = headers.get('user-agent') || '';
   const words = userAgent.split(/[^\w]+/);
   return words.some(word => crawlerTrie.search(word));
 }

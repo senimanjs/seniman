@@ -1,18 +1,34 @@
+import fs from 'node:fs';
 import { createServer as httpCreateServer } from 'http';
 import { WebSocketServer } from 'ws';
-import { build } from '../build.js';
 import { windowManager } from '../window_manager.js';
 
-
 // TODO: apply new rendering code path to this vanilla server
+
+let senimanLibraryPath = process.cwd() + '/node_modules/seniman/dist';
+let frontendBundlePath = senimanLibraryPath + '/frontend-bundle';
+
+let htmlBuffers = {
+  br: fs.readFileSync(frontendBundlePath + "/index.html.brotli.bin"),
+  gzip: fs.readFileSync(frontendBundlePath + "/index.html.gz.bin"),
+  uncompressed: fs.readFileSync(frontendBundlePath + "/index.html"),
+};
+
+class HeaderWrapper {
+  constructor(headers) {
+    this.headers = headers;
+  }
+
+  get(name) {
+    return this.headers[name.toLowerCase()];
+  }
+}
 
 export function createServer(options) {
 
   windowManager.registerEntrypoint(options);
 
-  let htmlBuffers = build.htmlBuffers;
-
-  const server = httpCreateServer(function (req, res) {
+  const server = httpCreateServer(async function (req, res) {
 
     // handle favicon.ico request specially
     // TODO: add option to load custom favicon
@@ -22,39 +38,24 @@ export function createServer(options) {
       return;
     }
 
-    let acceptEncoding = req.headers['accept-encoding'] || '';
-    let algo;
-    let html;
+    let headers = new HeaderWrapper(req.headers);
+    let url = req.url;
+    let ipAddress = headers.get('x-forwarded-for') || req.socket.remoteAddress;
 
-    if (acceptEncoding.indexOf('br') > -1) {
-      algo = 'br';
-      html = htmlBuffers.br;
-    } else if (acceptEncoding.indexOf('gzip') > -1) {
-      algo = 'gzip';
-      html = htmlBuffers.gzip;
-    } else {
-      html = htmlBuffers.uncompressed;
-    }
+    let response = await windowManager.getResponse({ url, headers, ipAddress, htmlBuffers });
 
-    let headers = {
-      'Content-Type': 'text/html',
-      'Vary': 'Accept',
-      'Cache-Control': 'no-store',
-      'Content-Length': Buffer.byteLength(html)
-    }
-
-    if (algo) {
-      headers['Content-Encoding'] = algo;
-    }
-    res.writeHead(200, headers);
-    res.end(html);
+    res.writeHead(response.statusCode, response.headers);
+    res.end(response.body);
   });
 
   const wss = new WebSocketServer({ noServer: true });
 
-  server.on('upgrade', function upgrade(request, socket, head) {
-    wss.handleUpgrade(request, socket, head, ws => {
-      windowManager.applyNewConnection(ws, request);
+  server.on('upgrade', function upgrade(req, socket, head) {
+    wss.handleUpgrade(req, socket, head, ws => {
+      let headers = new HeaderWrapper(req.headers);
+      let url = req.url;
+      let ipAddress = headers.get('x-forwarded-for') || req.socket.remoteAddress;
+      windowManager.applyNewConnection(ws, { url, headers, ipAddress, htmlBuffers });
     });
   });
 

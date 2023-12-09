@@ -1,10 +1,8 @@
 import process from 'node:process';
 import { FastRateLimit } from 'fast-ratelimit';
-import { WebSocketServer } from 'ws';
 import { nanoid } from 'nanoid';
 import { Window } from './window.js';
 import { CrawlerRenderer } from './crawler/index.js';
-import { build } from './build.js';
 
 import {
   RSS_LOW_MEMORY_THRESHOLD,
@@ -74,12 +72,14 @@ class WindowManager {
 
     this.droppedMessagesCount = 0;
 
+    /*
     setInterval(() => {
       if (this.droppedMessagesCount > 0) {
         console.log('Dropped messages: ' + this.droppedMessagesCount);
         this.droppedMessagesCount = 0;
       }
     }, 2000);
+    */
 
     this.lowMemoryMode = false;
 
@@ -165,7 +165,7 @@ class WindowManager {
     // do this once we set up client-side rate limiting
     let isUnderLimit =
       this.messageLimiter.consumeSync(window.id) &&
-      message.length < MAX_INPUT_EVENT_BUFFER_SIZE;
+      message.byteLength < MAX_INPUT_EVENT_BUFFER_SIZE;
 
     // TODO: print on a regular interval the amount of messages that are being dropped
     if (!isUnderLimit) {
@@ -176,7 +176,7 @@ class WindowManager {
     // TODO: apply window & handler specific limits
 
     let buffer = Buffer.from(message);
-    let txPortId = buffer.readUint16LE(0);
+    let txPortId = buffer.readUInt16LE(0);
 
     // portId of 0 is reserved for the pong command
     if (txPortId == 0) {
@@ -184,7 +184,7 @@ class WindowManager {
       return;
     }
 
-    window.enqueueInputMessage(message);
+    window.enqueueInputMessage(buffer);
 
     if (!window.hasPendingInput) {
       this.pendingInputWindowList.push(window);
@@ -214,18 +214,15 @@ class WindowManager {
     }
   }
 
+  applyNewConnection(ws, { url, headers, ipAddress }) {
 
-  applyNewConnection(ws, req) {
-
-    let params = new URLSearchParams(req.url.split('?')[1]);
+    let params = new URLSearchParams(url.split('?')[1]);
 
     // then, get the values from the params object
     let windowId = params.get('wi') || '';
     let readOffset = parseInt(params.get('ro'));
     let viewportSize = params.get('vs').split('x').map((num) => parseInt(num));
     let currentPath = params.get('lo');
-
-    let ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
     let isUnderRateLimit = this.windowCreationLimiter.consumeSync(ipAddress);
 
@@ -235,7 +232,7 @@ class WindowManager {
       return;
     }
 
-    let cookieString = req.headers.cookie || '';
+    let cookieString = headers.get('cookie') || '';
 
     let pageParams = {
       windowId,
@@ -263,27 +260,27 @@ class WindowManager {
   initWindow(ws, pageParams) {
     let { windowId } = pageParams;
 
-    console.log('init window', windowId, getMemoryUsage());
-
-    let bufferPushFn = (buf) => {
-      ws.send(buf);
-    };
 
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
-    let window = new Window(this, bufferPushFn, pageParams, this.Body);
+    let window = new Window(this, pageParams, this.Body);
     this.windowMap.set(windowId, window);
 
-    this._setupWs(ws, window);
-
     window.onDestroy(() => {
-      console.log('destroyed', windowId, getMemoryUsage());
-
       this.windowMap.delete(windowId);
 
       if (this.windowDestroyCallback) {
         this.windowDestroyCallback(windowId);
       }
     });
+
+    // update the window's buffer push function to refer to the new websocket
+    window.onBuffer(buf => {
+      ws.send(buf);
+    });
+
+    window.resetLifecycleInterval();
+
+    this._setupWsListeners(ws, window);
   }
 
   setServer(server) {
@@ -296,9 +293,7 @@ class WindowManager {
     });
   }
 
-  async getResponse(req) {
-    let ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-
+  async getResponse({ url, headers, ipAddress, htmlBuffers }) {
     let isUnderRateLimit = this.windowCreationLimiter.consumeSync(ipAddress);
 
     if (!isUnderRateLimit) {
@@ -312,57 +307,66 @@ class WindowManager {
       }
     }
 
-    let headers = {
+    let responseHeaders = {
       'Content-Type': 'text/html',
       'Vary': 'Accept',
       'Cache-Control': 'no-store',
     };
 
-    if (this.crawlerRenderingEnabled && this.crawlerRenderer.shouldUseRenderer(req)) {
+    if (this.crawlerRenderingEnabled && this.crawlerRenderer.shouldUseRenderer(headers)) {
       // TODO: check if we have a cached response for this request
-      let html = await this.renderHtml(req);
-      headers['Content-Length'] = Buffer.byteLength(html);
+      let html = await this.renderHtml({ url, headers });
+      responseHeaders['Content-Length'] = Buffer.byteLength(html);
 
       return {
-        headers,
+        statusCode: 200,
+        headers: responseHeaders,
         body: html
       };
     }
 
-    let htmlBuffers = build.htmlBuffers;
-    let acceptEncoding = req.headers['accept-encoding'] || '';
+    let acceptEncoding = headers.get('accept-encoding') || '';
     let algo;
     let html;
 
-    if (acceptEncoding.indexOf('br') > -1) {
-      algo = 'br';
-      html = htmlBuffers.br;
-    } else if (acceptEncoding.indexOf('gzip') > -1) {
-      algo = 'gzip';
-      html = htmlBuffers.gzip;
+    // in cloudflare workers, we need to be sending uncompressed HTML
+    // seemingly CF doesn't support pre-compressed HTML
+    if (htmlBuffers.br) {
+      if (acceptEncoding.indexOf('br') > -1) {
+        algo = 'br';
+        html = htmlBuffers.br;
+      } else if (acceptEncoding.indexOf('gzip') > -1) {
+        algo = 'gzip';
+        html = htmlBuffers.gzip;
+      } else {
+        html = htmlBuffers.uncompressed;
+      }
     } else {
       html = htmlBuffers.uncompressed;
     }
 
-    headers['Content-Length'] = Buffer.byteLength(html);
+    responseHeaders['Content-Length'] = html.byteLength;
 
     if (algo) {
-      headers['Content-Encoding'] = algo;
+      responseHeaders['Content-Encoding'] = algo;
     }
 
     return {
-      headers,
+      statusCode: 200,
+      headers: responseHeaders,
       body: html
     };
   }
 
-  async renderHtml(req) {
+  async renderHtml({ headers, url }) {
     let windowId = nanoid();
-    let cookieString = req.headers.cookie || '';
+    let cookieString = headers.cookie || '';
+    // get path from req.url
+    let path = url.split('?')[0];
 
     let pageParams = {
       windowId,
-      currentPath: req.path,
+      currentPath: path,
 
       // TODO: get viewport size from request
       viewportSize: [1920, 1080],
@@ -406,11 +410,14 @@ class WindowManager {
       ws.send(buf);
     });
 
+    window.resetLifecycleInterval();
+
     window.reconnect(pageParams);
-    this._setupWs(ws, window);
+
+    this._setupWsListeners(ws, window);
   }
 
-  _setupWs(ws, window) {
+  _setupWsListeners(ws, window) {
     ws.on('message', async (message) => {
       this._enqueueMessage(window, message);
     });

@@ -37,21 +37,21 @@ export function streamBlockTemplateInstall(window, templateId) {
     let [tokenIndexes, installList] = installTokens2(blockDef.tokens, window.tokenList);
 
     if (installList) {
-        variableScratchBuffer.writeUint8(CMD_MODIFY_TOKENMAP, 0);
+        variableScratchBuffer.writeUInt8(CMD_MODIFY_TOKENMAP, 0);
 
         let offset2 = 1;
 
         installList.forEach((token) => {
             let tokenLength = Buffer.byteLength(token);
 
-            variableScratchBuffer.writeUint8(tokenLength, offset2);
+            variableScratchBuffer.writeUInt8(tokenLength, offset2);
             offset2++;
 
             variableScratchBuffer.write(token, offset2, tokenLength);
             offset2 += tokenLength;
         });
 
-        variableScratchBuffer.writeUint8(0, offset2);
+        variableScratchBuffer.writeUInt8(0, offset2);
         offset2++;
 
         // copy the scratch buffer to a real command buffer
@@ -61,16 +61,16 @@ export function streamBlockTemplateInstall(window, templateId) {
     //////////////////////////
 
     let offset = 0;
-    installScratchBuffer.writeUint8(CMD_INSTALL_TEMPLATE, 0);
-    installScratchBuffer.writeUint16BE(templateId, 1);
+    installScratchBuffer.writeUInt8(CMD_INSTALL_TEMPLATE, 0);
+    installScratchBuffer.writeUInt16BE(templateId, 1);
     offset += 3;
 
     tokenIndexes.forEach((tokenId) => {
-        installScratchBuffer.writeUint16BE(tokenId, offset);
+        installScratchBuffer.writeUInt16BE(tokenId, offset);
         offset += 2;
     });
 
-    installScratchBuffer.writeUint16BE(0, offset);
+    installScratchBuffer.writeUInt16BE(0, offset);
     offset += 2;
 
     blockDef.templateBuffer.copy(installScratchBuffer, offset);
