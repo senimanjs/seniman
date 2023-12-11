@@ -2,6 +2,8 @@
 
 In this example, we'll show you how to deploy a simple Seniman app to Cloudflare Workers.
 
+<img width="387" alt="Screenshot 2023-12-11 at 7 33 47 AM" src="https://github.com/senimanjs/seniman/assets/510503/0b8af0c5-65e7-4b16-a5c8-77378031287f">
+
 ## Prerequisites
 - Node.js 16+
 
