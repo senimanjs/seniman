@@ -1,0 +1,14 @@
+{
+  "name": "test-hello",
+  "version": "0.0.0",
+  "private": true,
+  "devDependencies": {
+    "@babel/cli": "^7.23.4",
+    "@babel/plugin-syntax-jsx": "^7.23.3",
+    "wrangler": "^3.0.0"
+  },
+  "type": "module",
+  "dependencies": {
+    "seniman": "^0.0.120"
+  }
+}

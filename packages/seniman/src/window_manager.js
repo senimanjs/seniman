@@ -138,6 +138,19 @@ class WindowManager {
     }
   }
 
+  setRateLimit({ disabled }) {
+    if (disabled) {
+      // assign no-op rate limiters 
+      this.messageLimiter = {
+        consumeSync: () => true
+      };
+
+      this.windowCreationLimiter = {
+        consumeSync: () => true
+      };
+    }
+  }
+
   _getNextWindowPendingInputAllocation() {
 
     if (this.pendingInputWindowList.length === 0) {

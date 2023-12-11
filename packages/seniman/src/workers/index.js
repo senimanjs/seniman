@@ -8,6 +8,7 @@ const htmlBuffers = {
 
 export function createServer(options) {
   windowManager.registerEntrypoint(options);
+  windowManager.setRateLimit({ disabled: true });
 
   return {
     fetch: async (req) => {
