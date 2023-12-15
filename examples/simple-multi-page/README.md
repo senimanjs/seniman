@@ -7,7 +7,7 @@ This is intended to show the absolute minimum implementation of differential ren
 <img width="604" alt="Screenshot 2023-12-15 at 10 02 37 AM" src="https://github.com/senimanjs/seniman/assets/510503/d38cbe95-bd45-413d-badf-fd76679a0203">
 
 
-For a more full-featured approach, you can explore the [`seniman/routing`](https://senimanjs.org/docs/routing) package.
+For a more full-featured approach, you can explore the [`seniman/router`](https://senimanjs.org/docs/routing) package.
 
 
 
