@@ -1,6 +1,7 @@
 import { windowManager } from '../window_manager.js';
 
 import htmlBuffer from "../frontend-bundle/index.html";
+import { buildOriginCheckerFunction } from '../helpers.js';
 
 const htmlBuffers = {
   uncompressed: Buffer.from(htmlBuffer)
@@ -10,6 +11,8 @@ export function createServer(options) {
   windowManager.registerEntrypoint(options);
   windowManager.setRateLimit({ disabled: true });
 
+  let allowedOriginChecker = buildOriginCheckerFunction(options.allowedOrigins);
+
   return {
     fetch: async (req) => {
       const upgradeHeader = req.headers.get("Upgrade");
@@ -18,6 +21,10 @@ export function createServer(options) {
       const ipAddress = headers.get('x-forwarded-for') || headers.get('CF-Connecting-IP');
 
       if (upgradeHeader == "websocket") {
+        if (!allowedOriginChecker(headers.get("Origin"))) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+
         const [client, websocket] = Object.values(new WebSocketPair())
 
         websocket.accept();
@@ -44,6 +51,10 @@ export function createServer(options) {
 
         return new Response(null, { status: 101, webSocket: client })
       } else {
+        if (!allowedOriginChecker(headers.get("Host"))) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+
         const response = await windowManager.getResponse({ url, headers, ipAddress, htmlBuffers });;
 
         return new Response(response.body, { status: response.statusCode, headers: response.headers })

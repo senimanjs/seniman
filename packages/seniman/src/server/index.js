@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { createServer as httpCreateServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { windowManager } from '../window_manager.js';
+import { buildOriginCheckerFunction } from '../helpers.js';
 
 // TODO: apply new rendering code path to this vanilla server
 
@@ -23,12 +24,19 @@ class HeaderWrapper {
     return this.headers[name.toLowerCase()];
   }
 }
-
 export function createServer(options) {
 
   windowManager.registerEntrypoint(options);
 
+  let allowedOriginChecker = buildOriginCheckerFunction(options.allowedOrigins);
+
   const server = httpCreateServer(async function (req, res) {
+
+    if (!allowedOriginChecker(req.headers.host)) {
+      res.writeHead(401);
+      res.end();
+      return;
+    }
 
     // handle favicon.ico request specially
     // TODO: add option to load custom favicon
@@ -51,6 +59,13 @@ export function createServer(options) {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', function upgrade(req, socket, head) {
+
+    if (!allowedOriginChecker(req.headers.origin)) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     wss.handleUpgrade(req, socket, head, ws => {
       let headers = new HeaderWrapper(req.headers);
       let url = req.url;

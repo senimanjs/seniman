@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
 import { windowManager } from '../window_manager.js';
+import { buildOriginCheckerFunction } from '../helpers.js';
 
 // TODO: apply new rendering code path to this vanilla server
 
@@ -27,7 +28,15 @@ export function wrapExpress(app, options) {
 
   windowManager.registerEntrypoint(options);
 
+  let allowedOriginChecker = buildOriginCheckerFunction(options.allowedOrigins);
+
   app.get('*', async function (req, res) {
+
+    if (!allowedOriginChecker(req.headers.host)) {
+      res.status(401).end();
+      return;
+    }
+
     let headers = new HeaderWrapper(req.headers);
     let url = req.url;
     let ipAddress = headers.get('x-forwarded-for') || req.socket.remoteAddress;
@@ -52,6 +61,12 @@ export function wrapExpress(app, options) {
     const wsServer = new WebSocketServer({ noServer: true });
 
     server.on('upgrade', (req, socket, head) => {
+      if (!allowedOriginChecker(req.headers.origin)) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
       wsServer.handleUpgrade(req, socket, head, ws => {
         let headers = new HeaderWrapper(req.headers);
         let url = req.url;
