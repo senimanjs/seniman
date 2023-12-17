@@ -215,7 +215,7 @@ function TweetCompactView(props) {
   return <Link name="tweet" params={{ tweet_id: props.tweet.id }}>
     <div style={{ padding: "10px", border: "1px solid #444", marginBottom: "-1px", display: "flex" }}>
       <div style={{ width: "45px", flexShrink: "0" }}>
-        <img src="https://pbs.twimg.com/profile_images/1456569850126426112/l2VJ1Nvm_400x400.jpg" style={{ width: "45px" }} />
+        <img src="https://pbs.twimg.com/profile_images/1630496379650076672/rrgzfSQy_bigger.jpg" style={{ width: "45px" }} />
       </div>
       <div style={{ paddingLeft: "10px", flexGrow: "1" }}>
         <div style={{ fontSize: "13px" }}>

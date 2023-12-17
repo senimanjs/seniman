@@ -1,5 +1,5 @@
 import { Style } from 'seniman/head';
-import { useState, onCleanup, createCollection, useClient, useMemo, useEffect, onDispose } from 'seniman';
+import { useState, useClient, useMemo, useEffect, onDispose, createHandler } from 'seniman';
 import { createServer } from 'seniman/server';
 
 let server = createServer({ Body });
@@ -72,6 +72,15 @@ function MoviePage() {
   </div>;
 }
 
+function preventDefault(fn) {
+  let handlerFn = createHandler(fn);
+
+  return $c((e) => {
+    e.preventDefault();
+    $s(handlerFn)();
+  });
+}
+
 function MoviesPage() {
   let client = useClient();
   let [movies, setMovies] = useState([]);
@@ -85,7 +94,11 @@ function MoviesPage() {
   return <div>
     <div>
       {movies().map(movie =>
-        <div onClick={() => client.navigate('/movie/' + movie.id)}>{movie.title}</div>
+        <div>
+          <a href={'/movie/' + movie.id} onClick={preventDefault(() => {
+            client.navigate('/movie/' + movie.id);
+          })}>{movie.title}</a>
+        </div>
       )}
     </div>
   </div>
@@ -100,6 +113,7 @@ function Body() {
     if (path === "/") {
       return "movies";
     } else if (path.startsWith("/movie/")) {
+      console.log('Movie page');
       return "movie";
     } else {
       return "404";

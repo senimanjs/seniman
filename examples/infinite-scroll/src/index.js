@@ -5,6 +5,9 @@ import { getTweet } from "./data.js";
 import { createRouting, RouterRoot, useRouter } from './router.js';
 import { Scroller, TweetInfiniteStream } from "./scroller.js";
 
+// uncomment to use cloudflare workers
+// import { createServer } from "seniman/workers";
+
 function TweetPage() {
   let router = useRouter();
   let [tweet, setTweet] = useState(null);
@@ -28,7 +31,7 @@ function TweetPage() {
       <div style={{ padding: "10px", border: "1px solid #ccc" }}>
         <div style={{ marginBottom: "-1px", display: "flex" }}>
           <div style={{ width: "45px", flexShrink: "0" }}>
-            <img src="https://pbs.twimg.com/profile_images/1630496379650076672/rrgzfSQy_400x400.jpg" style={{ width: "45px", height: "45px", borderRadius: "45px" }} />
+            <img src="https://pbs.twimg.com/profile_images/1630496379650076672/rrgzfSQy_bigger.jpg" style={{ width: "45px", height: "45px", borderRadius: "45px" }} />
           </div>
           <div style={{ paddingLeft: "10px", flexGrow: "1" }}>
             <div style={{ fontSize: "13px" }}>
@@ -105,6 +108,10 @@ function Body() {
 }
 
 let server = createServer({ Body });
-server.listen(process.env.PORT);
+let port = 3050;
+server.listen(port);
 
-console.log(`Listening on port ${process.env.PORT}`);
+console.log(`Listening on port ${port}`);
+
+// uncomment to use cloudflare workers
+// export default createServer({ Body });

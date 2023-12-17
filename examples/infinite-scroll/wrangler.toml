@@ -1,0 +1,4 @@
+name = "test-scroller"
+main = "dist/index.js"
+compatibility_date = "2023-11-21"
+node_compat = true
