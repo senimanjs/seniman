@@ -132,7 +132,7 @@ By default, there is a grace period (of one minute) when Seniman will keep your 
 
 When the user connects back within the grace period, there will be re-pairing of the new WebSocket connection to the existing tree, and any UI updates queued during the disconnection will be sent to the browser and executed.
 
-When the user connects back after grace period, a new component tree will be created for the user, and the existing tab will be reloaded to render the new component tree from a fresh state. There will be APIs in the future for you to choose the specific upon-late-reconnection behavior other than reloading to create a smoother experience for your users.
+When the user connects back after the grace period, a new component tree will be created for the user, and the existing tab will be reloaded to render the new component tree from a fresh state. There will be APIs in the future for you to choose the specific upon-late-reconnection behavior other than reloading to create a smoother experience for your users.
 
 ### This looks pretty stateful -- do I get to deploy this normally? How do I scale it up?
 
