@@ -4,7 +4,40 @@ In this example, we'll show you a simple multi-page application in Seniman.
 
 This is intended to show the absolute minimum implementation of differential rendering based on the route of the page using `client.path()` API and the `Anchor` component provided by Seniman. 
 
-<img width="604" alt="Screenshot 2023-12-15 at 10 02 37 AM" src="https://github.com/senimanjs/seniman/assets/510503/d38cbe95-bd45-413d-badf-fd76679a0203">
+
+```js
+let pageType = useMemo(() => {
+  let path = client.path();
+
+  if (path === "/") {
+    return "movies";
+  } else if (path.startsWith("/movie/")) {
+    console.log('Movie page');
+    return "movie";
+  } else {
+    return "404";
+  }
+});
+
+return <div>
+  <Style text={cssText} />
+  <div style={{ marginBottom: "10px", fontWeight: "bold" }}>Seniman</div>
+  <div>
+    {() => {
+      // This function is re-run only when pageType changes
+      let _pageType = pageType();
+
+      switch (_pageType) {
+        case "movie":
+          return <MoviePage />;
+        case "movies":
+          return <MoviesPage />;
+        default:
+          return <div>404</div>;
+      }
+    }}
+  </div>;
+```
 
 
 For a more full-featured approach, you can explore the [`seniman/router`](https://senimanjs.org/docs/routing) package.
