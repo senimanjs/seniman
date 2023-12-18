@@ -7,10 +7,13 @@ import { db } from './db.js';
 import { SessionProvider, useSession } from './session.js';
 
 let app = express();
+let port = process.env.PORT || 3002;
 
 wrapExpress(app, { Body });
 
-app.listen(process.env.PORT || 3002);
+console.log('Listening on port', port);
+
+app.listen(port);
 
 const cssText = `
   body, * {

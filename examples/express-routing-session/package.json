@@ -1,5 +1,5 @@
 {
-  "name": "$APP_NAME",
+  "name": "express-routing-session",
   "version": "0.1.0",
   "description": "",
   "type": "module",
@@ -11,7 +11,7 @@
   "dependencies": {
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.0",
-    "seniman": "^0.0.95",
+    "seniman": "^0.0.124",
     "sqlite-async": "^1.2.0"
   },
   "devDependencies": {
