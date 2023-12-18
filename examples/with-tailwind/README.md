@@ -1,4 +1,4 @@
-# seniman-with-tailwind
+# Seniman & Tailwind CSS
 
 In this example, we'll show a simple Seniman app with Tailwind CSS for styling.
 
