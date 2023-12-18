@@ -1,5 +1,5 @@
 {
-  "name": "$APP_NAME",
+  "name": "seniman-chat",
   "version": "0.1.0",
   "description": "",
   "type": "module",
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "seniman": "^0.0.109"
+    "seniman": "^0.0.124"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
