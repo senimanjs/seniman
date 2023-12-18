@@ -1,7 +1,7 @@
 import express from 'express';
 
 import { Style, Title } from 'seniman/head';
-import { onCleanup, useWindow, createHandler, useState, useMemo } from 'seniman';
+import { onDispose, createHandler, useState, useMemo } from 'seniman';
 import { wrapExpress } from 'seniman/express';
 import produce from 'immer';
 
@@ -35,15 +35,6 @@ body {
   margin-bottom: 10px;
 }`;
 
-function Head() {
-  let window = useWindow();
-
-  return <>
-    <title>{window.pageTitle}</title>
-    <style>{cssText}</style>
-  </>;
-}
-
 function Body() {
   let [firstName, setFirstName] = useState("James");
   let [lastName, setLastName] = useState("Bond");
@@ -51,8 +42,6 @@ function Body() {
   let fullName = useMemo(() => {
     return `${firstName()} ${lastName()}`;
   });
-
-  let window = useWindow();
 
   let [todoList, setTodoList] = useState([
     { text: "Learn Seniman" },
@@ -92,7 +81,7 @@ function Body() {
     setRealtimeCount(realtimeCount => realtimeCount + 1);
   }, 1000);
 
-  onCleanup(() => {
+  onDispose(() => {
     clearInterval(interval);
   });
 

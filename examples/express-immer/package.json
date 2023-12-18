@@ -1,5 +1,5 @@
 {
-  "name": "$APP_NAME",
+  "name": "express-immer",
   "version": "0.1.0",
   "description": "",
   "type": "module",
@@ -11,7 +11,7 @@
   "dependencies": {
     "express": "^4.18.2",
     "immer": "^9.0.18",
-    "seniman": "^0.0.95"
+    "seniman": "^0.0.124"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",

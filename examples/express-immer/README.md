@@ -1,9 +1,8 @@
-# express-sqlite
+# express-immer
 
-In this example, we'll show a simple Todo app using Seniman and SQLite.
+In this example, we'll show a simple usage example of Seniman, together with the `immer` package -- allowing for a more expressive way of updating state.
 
 ## Prerequisites
-
 - Node.js 16+
 
 ## Installation

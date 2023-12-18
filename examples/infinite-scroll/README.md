@@ -27,3 +27,4 @@ And then the following command to start the development server:
 npx nodemon dist/index.js
 ```
 
+You can access the live instance deployed on Cloudflare Workers at https://test-scroller.garindra.workers.dev

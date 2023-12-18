@@ -5,10 +5,12 @@ import { wrapExpress } from 'seniman/express';
 import { Database } from 'sqlite-async';
 
 let app = express();
-
+let port = process.env.PORT || 3002;
 wrapExpress(app, { Body });
 
-app.listen(process.env.PORT || 3002);
+app.listen(port);
+
+console.log('Listening on port', port);
 
 let db;
 
