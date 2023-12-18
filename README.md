@@ -24,8 +24,7 @@ The entire `Counter` component -- including the `onClick` handler -- runs on the
 
 Tweet thread explaining the motivation and general architecture here: https://twitter.com/senimanjs/status/1630888630905606144
 
-
-##### Note: Seniman is alpha software. The API is unstable and may change in the future. Please use with caution.
+Example applications are available at the [examples](examples/) folder.
 
 ## Table of Contents
 - [How it Works](#how-it-works)
@@ -158,3 +157,6 @@ Some early users are using TypeScript to build with Seniman -- official support 
 
 ### How about SEO support?
 There is a separate HTML renderer that can be activated specifically when a request is coming from a search engine crawler. This will allow you to implement SEO support for your Seniman app. We're already using this for our docs site at senimanjs.org -- documentation will also be coming soon!
+
+### Is this production ready?
+Not yet, but APIs are starting to stabilize and are already in active use in internal projects of some of our users.
