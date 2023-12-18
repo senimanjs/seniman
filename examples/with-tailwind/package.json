@@ -1,0 +1,17 @@
+{
+  "name": "budiman",
+  "version": "0.1.0",
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "seniman": "^0.0.124",
+    "valtio": "^1.12.1"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.23.4",
+    "@babel/plugin-syntax-jsx": "^7.23.3"
+  }
+}
