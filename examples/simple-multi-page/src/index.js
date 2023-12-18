@@ -1,5 +1,5 @@
 import { Style } from 'seniman/head';
-import { useState, useClient, useMemo, useEffect, onDispose, createHandler } from 'seniman';
+import { useState, useClient, useMemo, useEffect, onDispose, Anchor } from 'seniman';
 import { createServer } from 'seniman/server';
 
 let server = createServer({ Body });
@@ -72,17 +72,7 @@ function MoviePage() {
   </div>;
 }
 
-function preventDefault(fn) {
-  let handlerFn = createHandler(fn);
-
-  return $c((e) => {
-    e.preventDefault();
-    $s(handlerFn)();
-  });
-}
-
 function MoviesPage() {
-  let client = useClient();
   let [movies, setMovies] = useState([]);
 
   useEffect(async () => {
@@ -95,9 +85,7 @@ function MoviesPage() {
     <div>
       {movies().map(movie =>
         <div>
-          <a href={'/movie/' + movie.id} onClick={preventDefault(() => {
-            client.navigate('/movie/' + movie.id);
-          })}>{movie.title}</a>
+          <Anchor href={'/movie/' + movie.id}>{movie.title}</Anchor>
         </div>
       )}
     </div>

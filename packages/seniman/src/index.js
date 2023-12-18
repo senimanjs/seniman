@@ -17,6 +17,38 @@ function withValue(fn) {
   return $c((e) => $s(handler)(e.target.value));
 }
 
+function preventDefault(fn) {
+  let handler;
+
+  if (typeof fn === 'function') {
+    handler = createHandler(fn);
+  } else {
+    // if not function, assume it is already a handler
+    handler = fn;
+  }
+
+  return $c((e) => {
+    e.preventDefault();
+    $s(handler)();
+  });
+}
+
+function Anchor(props) {
+  let client = useClient();
+
+  return <a
+    href={props.href}
+    style={props.style}
+    class={props.style}
+    onClick={preventDefault(() => {
+      if (props.onClick) {
+        props.onClick(props.href);
+      } else {
+        client.navigate(props.href);
+      }
+    })}>{props.children}</a>;
+}
+
 export {
   useState,
   useMemo,
@@ -40,6 +72,8 @@ export {
   wrapPromise,
 
   withValue,
+  preventDefault,
+  Anchor,
 
   onError,
   onCleanup,
