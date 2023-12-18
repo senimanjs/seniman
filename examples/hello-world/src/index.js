@@ -14,5 +14,8 @@ function Body() {
 }
 
 let server = createServer({ Body });
+let port = 3002;
 
-server.listen(3002);
+console.log("Listening on port", port);
+
+server.listen(port);
