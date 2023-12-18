@@ -2,7 +2,7 @@
 
 In this example, we'll show you a simple multi-page application in Seniman. 
 
-This is intended to show the absolute minimum implementation of differential rendering based on the route of the page using `client.path()` and `client.navigate()` APIs provided by Seniman. 
+This is intended to show the absolute minimum implementation of differential rendering based on the route of the page using `client.path()` API and the `Anchor` component provided by Seniman. 
 
 <img width="604" alt="Screenshot 2023-12-15 at 10 02 37 AM" src="https://github.com/senimanjs/seniman/assets/510503/d38cbe95-bd45-413d-badf-fd76679a0203">
 
