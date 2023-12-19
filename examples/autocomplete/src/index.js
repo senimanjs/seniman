@@ -29,11 +29,8 @@ function Body() {
   let [autocompleteResults, setAutocompleteResults] = useState([]);
 
   let onChange = (value) => {
-    let start = performance.now();
     // preferably done on a separate process / service in production
     let results = trie.search(value);
-
-    console.log(`Search for "${value}" took ${performance.now() - start}ms`);
 
     setAutocompleteResults(results);
   }
