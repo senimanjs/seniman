@@ -1712,6 +1712,8 @@ function senimanDecode(buffer) {
 
   if (stringBufferLength > 0) {
     stringBuffer = textDecoder.decode(buffer.subarray(2, 2 + stringBufferLength));
+  } else {
+    stringBuffer = '';
   }
 
   let position = 2 + stringBufferLength;
