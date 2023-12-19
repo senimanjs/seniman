@@ -1,6 +1,6 @@
 # Autocomplete
 
-In this example, we'll show a simple autocomplete UX implemented using Seniman. 
+In this example, we'll show a simple autocomplete UX implemented using Seniman. Live instance of this example is available at https://seniman-autocomplete.garindra.workers.dev
 
 The UI inspiration is taken from the tweet at https://twitter.com/thdxr/status/1736780708759175487
 
