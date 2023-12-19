@@ -1,15 +1,13 @@
 import fs from "fs";
-import { useState, withValue } from "seniman";
+import { createHandler, useState, withValue } from "seniman";
 import { createServer } from "seniman/server";
 import { Style } from "seniman/head";
 import TrieSearch from 'trie-search';
 
-/*
 // Uncomment to deploy to Cloudflare Workers
-import { createServer } from 'seniman/workers';
-import dataJson from '../data/entries.json';
-const users = dataJson.users;
-*/
+// import { createServer } from 'seniman/workers';
+// import dataJson from '../data/entries.json';
+// const users = dataJson.users;
 
 const users = JSON.parse(fs.readFileSync('./data/entries.json', 'utf8')).users;
 
@@ -28,17 +26,28 @@ const cssText = `
 function Body() {
   let [autocompleteResults, setAutocompleteResults] = useState([]);
 
-  let onChange = (value) => {
+  let onChange = createHandler((value) => {
     // preferably done on a separate process / service in production
     let results = trie.search(value);
 
     setAutocompleteResults(results);
-  }
+  });
 
   return (
     <div>
       <Style text={cssText} />
-      <input type="text" onKeyUp={withValue(onChange)} placeholder="Search..."
+      <input
+        type="text"
+
+        // the standard thing is to just use onKeyUp event for the typing event, like so:
+        // onKeyUp={withValue(onChange)}
+
+        // but since this is latency-sensitive autocomplete, so we use onKeyDown instead
+        // downside is we need the setTimeout hack since the value is not yet updated when the event is fired
+        // https://stackoverflow.com/questions/1338483/detecting-value-of-input-text-field-after-a-keydown-event-in-the-text-field
+        onKeyDown={$c(e => setTimeout(() => $s(onChange)(e.target.value), 0))}
+
+        placeholder="Search..."
         style={{ padding: '10px', border: 0, outline: 'none', borderBottom: '1px solid #ccc', width: '100%' }}
       />
       <div>
@@ -83,4 +92,4 @@ let port = 3002;
 console.log("Listening on port", port);
 server.listen(port);
 
-// export default createServer({ Body });
+//export default createServer({ Body });
