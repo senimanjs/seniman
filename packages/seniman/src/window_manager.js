@@ -390,11 +390,11 @@ class WindowManager {
 
     let htmlRenderContext = this.crawlerRenderer.createHtmlRenderingContext();
 
-    let bufferPushFn = (buf) => {
-      htmlRenderContext.feedBuffer(buf);
-    };
+    let window = new Window(this, pageParams, this.Body);
 
-    let window = new Window(this, bufferPushFn, pageParams, this.Body);
+    window.onBuffer(buf => {
+      htmlRenderContext.feedBuffer(buf);
+    });
 
     window.onDestroy(() => {
       if (this.windowDestroyCallback) {

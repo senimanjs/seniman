@@ -3,6 +3,7 @@ let CMD_INSTALL_TEMPLATE = 1;
 let CMD_INIT_WINDOW = 2;
 let CMD_ATTACH_ANCHOR = 3;
 let CMD_ATTACH_EVENT_V2 = 5;
+let CMD_INSTALL_EVENT_TYPE = 6;
 let CMD_ELEMENT_UPDATE = 7;
 let CMD_INIT_BLOCK = 8;
 let CMD_REMOVE_BLOCKS = 9;
@@ -954,6 +955,10 @@ export class HtmlRenderingContext {
       [CMD_INSTALL_TEMPLATE]: _installTemplate2,
       [CMD_ATTACH_ANCHOR]: _attachAtAnchorV2,
       [CMD_ATTACH_EVENT_V2]: _attachEventHandlerV2,
+      [CMD_INSTALL_EVENT_TYPE]: () => {
+        let eventType = getUint8();
+        let eventName = getString(getUint8());
+      },
       [CMD_ELEMENT_UPDATE]: _elementUpdate,
       [CMD_REMOVE_BLOCKS]: () => {
         let blockId;
