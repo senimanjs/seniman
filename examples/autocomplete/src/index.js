@@ -14,7 +14,7 @@ const users = dataJson.users;
 const users = JSON.parse(fs.readFileSync('./data/entries.json', 'utf8')).users;
 
 // search on both name and email
-const trie = new TrieSearch('name', { ignoreCase: true, min: 1 });
+const trie = new TrieSearch(['name', 'email'], { ignoreCase: true, min: 1 });
 trie.addAll(users);
 
 const cssText = `
@@ -29,8 +29,11 @@ function Body() {
   let [autocompleteResults, setAutocompleteResults] = useState([]);
 
   let onChange = (value) => {
+    let start = performance.now();
     // preferably done on a separate process / service in production
     let results = trie.search(value);
+
+    console.log(`Search for "${value}" took ${performance.now() - start}ms`);
 
     setAutocompleteResults(results);
   }
