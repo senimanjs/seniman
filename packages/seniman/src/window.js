@@ -155,14 +155,14 @@ function createNoArgClientFunction(fn) {
 
 function BackButtonListener(props) {
   let client = useClient();
-  let onPopState = createHandler((pathname) => {
-    props.onBackButton(pathname);
+  let onPopState = createHandler((hrefString) => {
+    props.onBackButton(hrefString);
   });
 
   client.exec($c(() => {
-    window.onpopstate = () => {
-      $s(onPopState)(location.pathname);
-    }
+    window.addEventListener('popstate', () => {
+      $s(onPopState)(location.href);
+    });
   }));
 }
 
@@ -229,7 +229,7 @@ export class Window {
     this.windowManager = windowManager;
 
     let { windowId,
-      currentPath,
+      href,
       viewportSize,
       cookieString } = pageParams;
 
@@ -273,12 +273,70 @@ export class Window {
 
     this.lastPongTime = Date.now();
 
+    let url = new URL(href);
+
     this.rootDisposer = useDisposableEffect(() => {
-      let [path, setPath] = useState(currentPath);
-      // let [pageTitle, set_pageTitle] = useState('');
       let [getCookie, setCookie] = useState(cookieString);
       let [viewportSizeSignal, setViewportSize] = useState({ width: viewportSize[0], height: viewportSize[1] });
       let [shouldSendPostScript, setShouldSendPostScript] = useState(false);
+      let [locationUrl, setLocationUrl] = useState(url);
+
+      function _setLocalLocationUrl(url) {
+        let hrefString = url.href;
+
+        clientContext.exec($c(() => {
+          window.history.pushState({}, '', $s(hrefString));
+        }));
+
+        setLocationUrl(url);
+      }
+
+      let location = {
+
+        host: url.host,
+        hostname: url.hostname,
+        origin: url.origin,
+        protocol: url.protocol,
+        port: url.port,
+
+        href: useMemo(() => {
+          return locationUrl().href;
+        }),
+        pathname: useMemo(() => {
+          return locationUrl().pathname;
+        }),
+        search: useMemo(() => {
+          return locationUrl().search;
+        }),
+        searchParams: useMemo(() => {
+          return locationUrl().searchParams;
+        }),
+        setHref: (hrefString) => {
+
+          // check if the navigation string is an absolute URL, relative URL, or a protocol-relative URL
+          if (hrefString.startsWith('/')) {
+            _setLocalLocationUrl(new URL(hrefString, location.origin));
+            return;
+          }
+
+          let url = new URL(hrefString);
+
+          if (url.href.startsWith('https://') || url.href.startsWith('http://') || url.href.startsWith('//')) {
+            // if the hostname is different to the initial (unchangeable) hostname,
+            // then execute a client-side href change
+            if (url.origin !== location.origin) {
+              clientContext.exec($c(() => {
+                window.location.href = $s(hrefString);
+              }));
+              return;
+            } else {
+              _setLocalLocationUrl(url);
+            }
+          } else {
+            throw new Error(`Invalid href: ${hrefString}. Accepted href is a relative URL (e.g. /path?query=string), an absolute URL (e.g. https://example.com/path?query=string), or a protocol-relative URL (e.g. //example.com/path?query=string).`);
+          }
+        }
+      };
 
       let clientContext = {
         viewportSize: viewportSizeSignal,
@@ -313,14 +371,11 @@ export class Window {
           });
         },
 
-        path,
+        location,
 
-        navigate: (path) => {
-          clientContext.exec($c(() => {
-            window.history.pushState({}, '', $s(path));
-          }));
-          setPath(path);
-        },
+        // compatibility with old API 
+        path: location.pathname,
+        navigate: location.setHref,
 
         exec: (clientFnSpec) => {
           let { clientFnId, serverBindFns } = clientFnSpec;
@@ -347,8 +402,8 @@ export class Window {
         }
       };
 
-      let onBackButton = (pathname) => {
-        setPath(pathname);
+      let onBackButton = (hrefString) => {
+        setLocationUrl(new URL(hrefString));
       }
 
       let onResize = (width, height) => {

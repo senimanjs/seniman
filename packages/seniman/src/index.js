@@ -44,7 +44,7 @@ function Anchor(props) {
       if (props.onClick) {
         props.onClick(props.href);
       } else {
-        client.navigate(props.href);
+        client.location.setHref(props.href);
       }
     })}>{props.children}</a>;
 }

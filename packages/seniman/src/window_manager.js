@@ -235,7 +235,7 @@ class WindowManager {
     let windowId = params.get('wi') || '';
     let readOffset = parseInt(params.get('ro'));
     let viewportSize = params.get('vs').split('x').map((num) => parseInt(num));
-    let currentPath = params.get('lo');
+    let locationString = params.get('lo');
 
     let isUnderRateLimit = this.windowCreationLimiter.consumeSync(ipAddress);
 
@@ -247,9 +247,16 @@ class WindowManager {
 
     let cookieString = headers.get('cookie') || '';
 
+    // href is the combination of:
+    // - the protocol+hostname+port (take it from the Origin header for security)
+    // - pathname
+    // - searchParams
+    let origin = headers.get('origin') || '';
+    let href = origin + locationString;
+
     let pageParams = {
       windowId,
-      currentPath,
+      href,
       viewportSize,
       readOffset,
       cookieString,
@@ -272,7 +279,6 @@ class WindowManager {
 
   initWindow(ws, pageParams) {
     let { windowId } = pageParams;
-
 
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
     let window = new Window(this, pageParams, this.Body);
@@ -306,7 +312,7 @@ class WindowManager {
     });
   }
 
-  async getResponse({ url, headers, ipAddress, htmlBuffers }) {
+  async getResponse({ url, headers, ipAddress, isSecure, htmlBuffers }) {
     let isUnderRateLimit = this.windowCreationLimiter.consumeSync(ipAddress);
 
     if (!isUnderRateLimit) {
@@ -327,8 +333,15 @@ class WindowManager {
     };
 
     if (this.crawlerRenderingEnabled && this.crawlerRenderer.shouldUseRenderer(headers)) {
+
+      // href is combination of:
+      // - the protocol+hostname+port 
+      // - pathname
+      // - searchParams
+      let href = (isSecure ? 'https://' : 'http://') + headers.get('host') + url;
+
       // TODO: check if we have a cached response for this request
-      let html = await this.renderHtml({ url, headers });
+      let html = await this.renderHtml({ headers, href });
       responseHeaders['Content-Length'] = Buffer.byteLength(html);
 
       return {
@@ -371,15 +384,13 @@ class WindowManager {
     };
   }
 
-  async renderHtml({ headers, url }) {
+  async renderHtml({ headers, href }) {
     let windowId = nanoid();
-    let cookieString = headers.cookie || '';
-    // get path from req.url
-    let path = url.split('?')[0];
+    let cookieString = headers.get('cookie') || '';
 
     let pageParams = {
       windowId,
-      currentPath: path,
+      href,
 
       // TODO: get viewport size from request
       viewportSize: [1920, 1080],

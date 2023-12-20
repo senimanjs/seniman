@@ -32,16 +32,12 @@ export function wrapExpress(app, options) {
 
   app.get('*', async function (req, res) {
 
-    if (!allowedOriginChecker(req.headers.host)) {
-      res.status(401).end();
-      return;
-    }
-
     let headers = new HeaderWrapper(req.headers);
     let url = req.url;
     let ipAddress = headers.get('x-forwarded-for') || req.socket.remoteAddress;
+    let isSecure = req.secure;
 
-    let response = await windowManager.getResponse({ url, headers, ipAddress, htmlBuffers });
+    let response = await windowManager.getResponse({ url, headers, ipAddress, isSecure, htmlBuffers });
 
     if (response.statusCode) {
       res.status(response.statusCode);

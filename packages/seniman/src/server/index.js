@@ -32,12 +32,6 @@ export function createServer(options) {
 
   const server = httpCreateServer(async function (req, res) {
 
-    if (!allowedOriginChecker(req.headers.host)) {
-      res.writeHead(401);
-      res.end();
-      return;
-    }
-
     // handle favicon.ico request specially
     // TODO: add option to load custom favicon
     if (req.url === '/favicon.ico') {
@@ -50,7 +44,10 @@ export function createServer(options) {
     let url = req.url;
     let ipAddress = headers.get('x-forwarded-for') || req.socket.remoteAddress;
 
-    let response = await windowManager.getResponse({ url, headers, ipAddress, htmlBuffers });
+    // TODO: have the logic be configurable?
+    let isSecure = req.headers['x-forwarded-proto'] == 'https';
+
+    let response = await windowManager.getResponse({ url, headers, ipAddress, isSecure, htmlBuffers });
 
     res.writeHead(response.statusCode, response.headers);
     res.end(response.body);

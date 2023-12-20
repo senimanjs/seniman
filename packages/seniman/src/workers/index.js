@@ -51,11 +51,9 @@ export function createServer(options) {
 
         return new Response(null, { status: 101, webSocket: client })
       } else {
-        if (!allowedOriginChecker(headers.get("Host"))) {
-          return new Response("Unauthorized", { status: 401 });
-        }
-
-        const response = await windowManager.getResponse({ url, headers, ipAddress, htmlBuffers });;
+        // TODO: have the logic be configurable?
+        const isSecure = req.headers.get('x-forwarded-proto') == 'https';
+        const response = await windowManager.getResponse({ url, headers, ipAddress, isSecure, htmlBuffers });;
 
         return new Response(response.body, { status: response.statusCode, headers: response.headers })
       }
