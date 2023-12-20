@@ -4,7 +4,7 @@ Seniman is a JavaScript server-driven UI framework that runs your JSX components
 
 Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~3KB browser runtime, allowing fast-loading, low-latency user interfaces. 
 
-Try the live demo at our docs site built completely with Seniman at https://senimanjs.org. 
+Try the live demo at our docs site built completely with Seniman at https://seniman.dev. 
 
 
 ```js
@@ -117,7 +117,7 @@ Open up your browser and navigate to `http://localhost:3002`, and you should see
 
 When the user clicks the button, the browser runtime will send a `click` event to the server. The server will then execute the `onClick` handler assigned to the element's live representation on the server, which will then update the UI state, depending on your logic. If there is any change to the UI state, the server will generate a set of DOM operations to update the UI and send it to the client. The client will then apply the DOM operations, updating the UI. 
 
-This round trip might sound slow, but in most cases, 4G connections are now low-latency enough for the users to not notice the delay. In addition, Seniman is designed to be efficient in terms of network usage -- only the necessary DOM operations are sent to the client. You can feel the latency for yourself, live at our docs page: [senimanjs.org](https://senimanjs.org/), and decide if it is acceptable for your use case.
+This round trip might sound slow, but in most cases, 4G connections are now low-latency enough for the users to not notice the delay. In addition, Seniman is designed to be efficient in terms of network usage -- only the necessary DOM operations are sent to the client. You can feel the latency for yourself, live at our docs page: [seniman.dev](https://seniman.dev/), and decide if it is acceptable for your use case.
 
 ### This looks pretty stateful -- what happens when a client loses its connection to the server, or a server goes down?
 
@@ -145,11 +145,11 @@ No, only the resulting DOM operations are sent to the client -- your component c
 
 ### I have some logic I need running on the client. How do I do that?
 
-While most UI patterns are entirely implementable server-side with Seniman, Seniman also supports running custom logic on the client. Things that naturally need to run on the client like Google Single Sign-On, or custom analytics can be implemented using the `$c` and `$s` syntax -- explained in [this](https://senimanjs.org/docs/client-functions) docs page.
+While most UI patterns are entirely implementable server-side with Seniman, Seniman also supports running custom logic on the client. Things that naturally need to run on the client like Google Single Sign-On, or custom analytics can be implemented using the `$c` and `$s` syntax -- explained in [this](https://seniman.dev/docs/client-functions) docs page.
 
 ### Any example of this framework running somewhere? I want to see how a remotely-driven UI feels like.
 
-Yes -- the documentation site for Seniman is built using Seniman itself! You can access the (currently in-development) site at [senimanjs.org](https://senimanjs.org/).
+Yes -- the documentation site for Seniman is built using Seniman itself! You can access the (currently in-development) site at [seniman.dev](https://seniman.dev/).
 
 
 ### TypeScript support?
