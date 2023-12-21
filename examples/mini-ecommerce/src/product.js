@@ -74,7 +74,6 @@ function ProductHeader(props) {
         </div>
         <div style={{ fontSize: '18px', float: 'left', marginTop: '2px', marginLeft: '10px', fontWeight: "bold" }}>{props.title}</div>
         <div style={{ clear: 'both' }}></div>
-
         <div style={{ position: 'absolute', right: '10px', top: '10px', padding: '10px' }}>
           <Anchor href="/search">
             <img src={IMAGE_PREFIX + "/search.png"} style={{ width: '20px', display: 'block' }} />
@@ -111,7 +110,6 @@ function ProductVariantButton(props) {
 }
 
 function ProductDescription(props) {
-  let [longText, _] = useState(props.text);
   let [showFullText, setShowFullText] = useState(false);
 
   let flip = () => {
@@ -123,10 +121,10 @@ function ProductDescription(props) {
     <div style={{ fontSize: '14px', marginTop: '10px', lineHeight: '20px' }}>
       {() => {
         if (showFullText()) {
-          return longText();
+          return props.text;
         }
         else {
-          return shortenText(longText());
+          return shortenText(props.text);
         }
       }}
     </div>
@@ -146,7 +144,7 @@ function ProductVariantSelector(props) {
   }
 
   return <div style={{ background: '#fff', padding: '15px', marginBottom: '15px' }}>
-    <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Pilih Varian</div>
+    <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Choose Variant</div>
     <div style={{ marginTop: '10px' }}>
       {variants().map((variant, index) => <ProductVariantButton onClick={() => onVariantClick(index)} variant={variant} isActive={index == activeIndex()} />)}
       <div style={{ clear: "both" }}></div>
@@ -201,8 +199,8 @@ export default function ProductPage(props) {
 
         {recommendedProductIds() ?
           <ProductCollectionCard
-            title="Rekomendasi Untuk Kamu"
-            description="Produk lain yang mungkin kamu suka"
+            title="Recommendations For You"
+            description="Other products you might like"
             productIds={recommendedProductIds()} /> : null}
       </div>
     </div>
