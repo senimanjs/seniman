@@ -1,4 +1,4 @@
-import { useState, useClient, createHandler, useMemo, Anchor } from 'seniman';
+import { useState, useClient, createHandler, useMemo, Anchor, createRef } from 'seniman';
 import { searchProducts } from './data.js';
 import { IMAGE_PREFIX } from './config.js';
 
@@ -7,6 +7,13 @@ function SearchHeader(props) {
   let onChange = createHandler((data) => {
     props.onSearchQueryTextChange(data);
   });
+
+  let client = useClient();
+  let inputRef = createRef();
+
+  setTimeout(() => {
+    client.exec($c(() => $s(inputRef).get().focus()));
+  }, 10);
 
   return <div style={{
     backgroundColor: '#fff',
@@ -23,6 +30,7 @@ function SearchHeader(props) {
         <div style={{ width: '128px', height: '32px', margin: '14px' }}>
           <input
             type="text"
+            ref={inputRef}
 
             // the standard thing is to just use onKeyUp event for the typing event, like so:
             // onKeyUp={withValue(onChange)}
@@ -51,26 +59,10 @@ let l1 = {
   ]
 };
 
-let l2 = {
-  title: 'Category Searches',
-  items: [
-    'Puppets & Figurines',
-    'Plush & Soft Toys',
-    'Doll Clothing & Accessories',
-    'Cultural & Traditional Dolls',
-    'Craft & DIY Kits',
-    'Musical Instrument Replicas',
-    'Historical & Mythological Toys',
-    'Educational Games & Puzzles',
-    'Dollhouse & Miniatures',
-    'Art & Craft Supplies',
-    'Books & Storytelling'
-  ]
-};
 
 function SearchShortcutSection(props) {
 
-  let list = props.listId == 1 ? l1 : l2;
+  let list = l1;
 
   return <div>
     <div style={{ background: "#aaa", padding: "10px 15px", 'font-size': '14px' }}>
@@ -85,10 +77,6 @@ function SearchShortcutSection(props) {
       <div style={{ clear: 'both' }}></div>
     </div>
   </div>
-}
-
-function SearchResult() {
-  return <div>Searching..</div>;
 }
 
 export default function SearchPage() {
@@ -129,7 +117,6 @@ export default function SearchPage() {
         </div>
         : <div>
           <SearchShortcutSection listId={1} />
-          <SearchShortcutSection listId={2} />
         </div>}
     </div>
   </div>;

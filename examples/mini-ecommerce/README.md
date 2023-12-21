@@ -1,23 +1,8 @@
-# Seniman @ Cloudflare Workers
+# Mini Ecommerce
 
-In this example, we'll show you how to deploy a simple Seniman app to Cloudflare Workers.
+In this example, we'll show you a simple ecommerce app with basic features such as home feed, product page, and search implemented using Seniman.
 
-```js
-import { useState } from 'seniman'; 
-import { createServer } from 'seniman/workers';
-
-function Body() {
-  let [getCount, setCount] = useState(0);
-  let onClick = () => setCount(count => count + 1);
-
-  return <div>
-    My counter: {getCount()}
-    <button onClick={onClick}>Add +</button>
-  </div>;
-}
-
-export default createServer({ Body });
-```
+Design is adapted from the Sayurbox app at https://www.sayurbox.com
 
 ## Prerequisites
 - Node.js 16+
@@ -41,15 +26,5 @@ npx babel src --out-dir dist
 And then the following command to start the development server:
 
 ```bash
-npx wrangler dev
+npx nodemon dist/index.js
 ```
-
-## Deployment
-
-Run the following command to deploy the app to CloudFlare Workers:
-
-```bash
-npx wrangler deploy
-```
-
-You might be asked to login to your Cloudflare account if you haven't already.

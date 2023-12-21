@@ -64,16 +64,22 @@ function ProductHeader(props) {
     width: '100%'
   }}>
     <div style={{
-      maxWidth: '480px', // Set the maximum width
+      maxWidth: '450px', // Set the maximum width
       width: '100%', // Make width flexible
       margin: '0 auto', // Center the div
     }}>
-      <div style={{ padding: '20px 0' }}>
-        <div style={{ cursor: "pointer" }} onClick={$c(e => window.history.back())}>
+      <div style={{ padding: '20px 0', position: 'relative' }}>
+        <div style={{ cursor: "pointer", padding: '0 10px' }} onClick={$c(e => window.history.back())}>
           <img style={{ float: 'left', width: '24px', height: '24px' }} src={IMAGE_PREFIX + "/arrow-left.png"} />
         </div>
         <div style={{ fontSize: '18px', float: 'left', marginTop: '2px', marginLeft: '10px', fontWeight: "bold" }}>{props.title}</div>
         <div style={{ clear: 'both' }}></div>
+
+        <div style={{ position: 'absolute', right: '10px', top: '10px', padding: '10px' }}>
+          <Anchor href="/search">
+            <img src={IMAGE_PREFIX + "/search.png"} style={{ width: '20px', display: 'block' }} />
+          </Anchor>
+        </div>
       </div>
     </div>
   </div>;
@@ -176,11 +182,11 @@ export default function ProductPage(props) {
   return <div>
     <ProductHeader title={product() ? product().title : "..."} />
     <div style={{ backgroundColor: '#eee', minHeight: '800px' }}>
-      <div style={{ margin: '0 auto', width: '480px' }}>
+      <div style={{ margin: '0 auto', width: '450px' }}>
         {
           product() ?
             <div>
-              <img src={`${IMAGE_PREFIX}/products/${product().id}-original.webp`} style={{ width: '100%', minHeight: '400px' }} />
+              <img src={`${IMAGE_PREFIX}/products/${product().id}-original.webp`} style={{ width: '450px', minHeight: '400px' }} />
 
               <div style={{ padding: '15px 15px', background: 'white' }}>
                 <div style={{ fontSize: '22px', fontWeight: 'bold' }}>{product().title}</div>
