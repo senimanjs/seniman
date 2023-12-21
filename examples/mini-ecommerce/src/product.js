@@ -137,7 +137,6 @@ function ProductDescription(props) {
 function ProductVariantSelector(props) {
 
   let [activeIndex, setActiveIndex] = useState(0);
-  let [variants, setVariants] = useState(props.variants);
 
   let onVariantClick = (index) => {
     setActiveIndex(index);
@@ -146,7 +145,7 @@ function ProductVariantSelector(props) {
   return <div style={{ background: '#fff', padding: '15px', marginBottom: '15px' }}>
     <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Choose Variant</div>
     <div style={{ marginTop: '10px' }}>
-      {variants().map((variant, index) => <ProductVariantButton onClick={() => onVariantClick(index)} variant={variant} isActive={index == activeIndex()} />)}
+      {props.variants.map((variant, index) => <ProductVariantButton onClick={() => onVariantClick(index)} variant={variant} isActive={index == activeIndex()} />)}
       <div style={{ clear: "both" }}></div>
     </div>
   </div>;
@@ -204,6 +203,5 @@ export default function ProductPage(props) {
             productIds={recommendedProductIds()} /> : null}
       </div>
     </div>
-
   </div>;
 };

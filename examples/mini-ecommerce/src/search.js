@@ -49,7 +49,7 @@ function SearchHeader(props) {
   </div>;
 }
 
-let l1 = {
+let searchKeyRecommendationGroup = {
   title: 'Popular Searches',
   items: [
     'Wayang Golek Puppets',
@@ -59,18 +59,15 @@ let l1 = {
   ]
 };
 
-
 function SearchShortcutSection(props) {
 
-  let list = l1;
-
   return <div>
-    <div style={{ background: "#aaa", padding: "10px 15px", 'font-size': '14px' }}>
-      {list.title}
+    <div style={{ background: "#aaa", padding: "10px 15px", fontSize: '14px' }}>
+      {searchKeyRecommendationGroup.title}
     </div>
     <div style={{ padding: "10px" }}>
-      {list.items.map(item => {
-        return <div style={{ float: 'left', background: '#eee', padding: '8px', 'margin-right': '10px', 'margin-bottom': '10px', 'border-radius': '5px', 'font-size': '14px' }}>
+      {searchKeyRecommendationGroup.items.map(item => {
+        return <div style={{ float: 'left', background: '#eee', padding: '8px', marginRight: '10px', marginBottom: '10px', borderRadius: '5px', fontSize: '14px' }}>
           {item}
         </div>;
       })}

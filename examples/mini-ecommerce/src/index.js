@@ -21,8 +21,8 @@ function Header() {
     width: '100%'
   }}>
     <div style={{
-      'maxWidth': '480px',
-      'margin': '0 auto',
+      maxWidth: '480px',
+      margin: '0 auto',
     }}>
       <div style={{ position: 'relative', height: '60px', }}>
         <div style={{ position: 'absolute', right: '10px', top: '10px', padding: '10px' }}>
@@ -44,7 +44,7 @@ function Hero() {
 function WelcomePrompt() {
 
   return <div style={{ padding: '10px', background: '#eee' }}>
-    <div style={{ color: '#555', padding: '12px', 'border-radius': '10px', background: '#fff', 'font-size': '14px', 'font-weight': 'bold', lineHeight: '20px' }}>
+    <div style={{ color: '#555', padding: '12px', 'border-radius': '10px', background: '#fff', fontSize: '14px', fontWeight: 'bold', lineHeight: '20px' }}>
       Welcome to Dollanan, the second best place to find Indonesian-themed dolls and toys on the internet!
     </div>
   </div>;
