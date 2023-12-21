@@ -26,7 +26,9 @@ export async function getRelatedProductRecommendations(productId) {
     let id = Math.floor(Math.random() * 10) + 1;
 
     // exclude the current product id
-    if (id == productId) continue;
+    if (id == productId) {
+      continue;
+    }
 
     productIdSet.add(id);
   }
@@ -113,7 +115,7 @@ let products = {
     "id": 18, "title": "Orangutan Cuddly Toy", "price": 65000, "discount": 0, "shortDescription": "Soft Orangutan plush", "description": "Soft, cuddly toy inspired by the Orangutan, an iconic primate native to the Indonesian rainforests.", "variants": [{ "text": '30cm' }, { "text": '50cm' }]
   },
   19: {
-    "id": 19, "title": "Indonesian Rainforest Animal Toy Set", "price": 50000, "discount": 10, "shortDescription": "Rainforest animal figures", "description": "A toy set featuring various animals from the Indonesian rainforest, such as the Sumatran tiger, Javan rhinoceros, and Bornean orangutan, designed to be both fun and educational.", "variants": [{ "text": 'Standard Set' }, { "text": 'Deluxe Set' }]
+    "id": 19, "title": "Indonesian Rainforest Animal Toy Set", "price": 50000, "discount": 0, "shortDescription": "Rainforest animal figures", "description": "A toy set featuring various animals from the Indonesian rainforest, such as the Sumatran tiger, Javan rhinoceros, and Bornean orangutan, designed to be both fun and educational.", "variants": [{ "text": 'Standard Set' }, { "text": 'Deluxe Set' }]
   },
   20: {
     "id": 20, "title": "Indonesian Wildlife Jigsaw Puzzle", "price": 110000, "discount": 15, "shortDescription": "Wildlife puzzle", "description": "A jigsaw puzzle featuring the rich wildlife of Indonesia, both educational and engaging for all ages.", "variants": [{ "text": '500 pieces' }, { "text": '1000 pieces' }]

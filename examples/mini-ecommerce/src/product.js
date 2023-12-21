@@ -49,7 +49,7 @@ export function ProductCollectionCard(props) {
       </div>
     </div>
     <div style={{ padding: '10px', overflowY: 'scroll' }}>
-      <div style={{ width: '1025px', height: '280px' }}>
+      <div style={{ width: `${props.productIds.length * 128}px`, height: '280px' }}>
         {products().map(product => <ProductMiniViewCard product={product} />)}
       </div>
     </div>
@@ -161,7 +161,7 @@ export default function ProductPage(props) {
     let productId = client.location.pathname().split('/')[2];
 
     let productPromise = getProductData(productId)
-    let recommendedProductPromise = getRelatedProductRecommendations(recommendedProductIds);
+    let recommendedProductPromise = getRelatedProductRecommendations(productId);
 
     setProduct(await productPromise);
     setRecommendedProductIds(await recommendedProductPromise);
