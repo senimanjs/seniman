@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, processWorkQueue, getActiveNode, runInNode, getActiveWindow, setActiveWindow, useCallback, getActiveCell, runInCell } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, processWorkQueue, getActiveNode, runInNode, getActiveWindow, setActiveWindow, useCallback, getActiveCell, runInCell, onDispose } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
 import { bufferPool, PAGE_SIZE } from './buffer-pool.js';
 import { ErrorHandler } from './errors.js';
@@ -457,7 +457,10 @@ export class Window {
       }
 
       this.sendPing();
-      this.flushBlockDeleteQueue();
+
+      if (this.deleteBlockCount > 300) {
+        this.flushBlockDeleteQueue();
+      }
     }, 2500);
   }
 
@@ -542,20 +545,17 @@ export class Window {
   }
 
   flushBlockDeleteQueue() {
-    //return;
-    if (this.deleteBlockCount > 0) {
-      let buf = this._allocCommandBuffer(1 + 2 * this.deleteBlockCount + 2);
+    let buf = this._allocCommandBuffer(1 + 2 * this.deleteBlockCount + 2);
 
-      buf.writeUInt8(CMD_REMOVE_BLOCKS, 0);
+    buf.writeUInt8(CMD_REMOVE_BLOCKS, 0);
 
-      // copy over the block ids
-      this.deleteBlockCommandBuffer.copy(buf, 1, 0, this.deleteBlockCount * 2);
+    // copy over the block ids
+    this.deleteBlockCommandBuffer.copy(buf, 1, 0, this.deleteBlockCount * 2);
 
-      // write the end marker
-      buf.writeUInt16BE(0, 1 + 2 * this.deleteBlockCount);
+    // write the end marker
+    buf.writeUInt16BE(0, 1 + 2 * this.deleteBlockCount);
 
-      this.deleteBlockCount = 0;
-    }
+    this.deleteBlockCount = 0;
   }
 
   registerPong(pongBuffer) {
@@ -1083,6 +1083,10 @@ export class Window {
 
     anchors && anchors.map((anchorNodeResult, anchorIndex) => {
       this._attach(newBlockId, anchorIndex, anchorNodeResult);
+    });
+
+    onDispose(() => {
+      this._handleBlockCleanup(newBlockId);
     });
 
     return new Block(newBlockId);
