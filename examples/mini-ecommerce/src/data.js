@@ -1,3 +1,5 @@
+import TrieSearch from 'trie-search';
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -36,7 +38,15 @@ export async function getRelatedProductRecommendations(productId) {
   return Array.from(productIdSet);
 }
 
+export async function searchProducts(query) {
+  await sleep(10);
+  // preferably done on a separate process / service in production
+  return productSearchTrie.search(query);
+}
+
 //////////////////////
+
+
 
 let homepageFeedGroups = [
   {
@@ -122,3 +132,5 @@ let products = {
   }
 };
 
+const productSearchTrie = new TrieSearch(['title'], { ignoreCase: true, min: 1 });
+productSearchTrie.addAll(Object.values(products));

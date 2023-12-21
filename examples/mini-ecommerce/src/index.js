@@ -97,6 +97,7 @@ function Body() {
 
   // simple "router" that checks the pathname and returns the page type
   let pageType = useMemo(() => {
+    // location.pathname is a state that will trigger this memo to recompute when it changes
     let pathname = client.location.pathname();
 
     if (pathname == "/") {
@@ -104,6 +105,7 @@ function Body() {
     } else if (pathname.startsWith("/product")) {
       // note that /product/123 and /product/456 will both return "product" page type
       // allowing the ProductPage component to not be unmounted when the user navigates between products
+      // and instead just handles the product id change internally
       return "product";
     } else if (pathname == "/search") {
       return "search";
@@ -112,7 +114,6 @@ function Body() {
     }
   });
 
-  // add meta no-resize for mobile
   return <div>
     <Style text={cssText} />
     <Meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />

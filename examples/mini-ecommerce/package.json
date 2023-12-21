@@ -10,6 +10,7 @@
   "type": "module",
   "dependencies": {
     "express": "^4.18.2",
-    "seniman": "^0.0.130"
+    "seniman": "^0.0.130",
+    "trie-search": "^2.0.0"
   }
 }

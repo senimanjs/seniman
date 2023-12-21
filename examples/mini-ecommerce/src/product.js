@@ -64,10 +64,10 @@ function ProductHeader(props) {
     width: '100%'
   }}>
     <div style={{
-      width: '480px',
-      margin: '0 auto',
+      maxWidth: '480px', // Set the maximum width
+      width: '100%', // Make width flexible
+      margin: '0 auto', // Center the div
     }}>
-
       <div style={{ padding: '20px 0' }}>
         <div style={{ cursor: "pointer" }} onClick={$c(e => window.history.back())}>
           <img style={{ float: 'left', width: '24px', height: '24px' }} src={IMAGE_PREFIX + "/arrow-left.png"} />
@@ -87,7 +87,6 @@ function shortenText(text) {
 
   return text.substring(0, 100) + '...';
 }
-
 
 function ProductVariantButton(props) {
 
