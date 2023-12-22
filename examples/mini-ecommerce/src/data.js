@@ -98,7 +98,7 @@ let products = {
     "id": 9, "title": "Indonesian Floral Pattern Puzzle", "price": 140000, "discount": 20, "shortDescription": "Jigsaw puzzle", "description": "A jigsaw puzzle featuring intricate Indonesian floral patterns, offering a relaxing and engaging activity.", "variants": [{ "text": '500 pieces' }, { "text": '1000 pieces' }]
   },
   10: {
-    "id": 10, "title": "Anklung Musical Toy", "price": 75000, "discount": 5, "shortDescription": "Traditional bamboo instrument", "description": "Playable Anklung toy made of bamboo, a traditional Indonesian musical instrument that produces a unique sound.", "variants": [{ "text": 'Small' }, { "text": 'Medium' }]
+    "id": 10, "title": "Angklung Musical Toy", "price": 75000, "discount": 5, "shortDescription": "Traditional bamboo instrument", "description": "Playable Angklung toy made of bamboo, a traditional Indonesian musical instrument that produces a unique sound.", "variants": [{ "text": 'Small' }, { "text": 'Medium' }]
   },
   11: {
     "id": 11, "title": "Javanese Batik Doll Dress", "price": 50000, "discount": 0, "shortDescription": "Batik pattern doll dress", "description": "Beautiful doll dress featuring Javanese Batik patterns, showcasing the rich textile art of Indonesia.", "variants": [{ "text": 'For 30cm doll' }, { "text": 'For 40cm doll' }]

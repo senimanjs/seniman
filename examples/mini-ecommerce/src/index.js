@@ -3,7 +3,7 @@ import { useState, useClient, onDispose, Anchor, useMemo, useEffect } from 'seni
 import { Style, Meta } from "seniman/head";
 import express from "express";
 import { wrapExpress } from "seniman/express";
-//import { createServer } from "seniman/workers";
+// import { createServer } from "seniman/workers";
 
 import { ProductCollectionCard } from './product.js';
 import ProductPage from './product.js';
@@ -141,4 +141,4 @@ await wrapExpress(app, { Body });
 
 app.listen(parseInt(process.env.PORT) || 3007, "0.0.0.0");
 
-//export default createServer({ Body });
+// export default createServer({ Body });

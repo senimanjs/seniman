@@ -39,7 +39,7 @@ function Anchor(props) {
   return <a
     href={props.href}
     style={props.style}
-    class={props.style}
+    class={props.class}
     onClick={preventDefault(() => {
       if (props.onClick) {
         props.onClick(props.href);
