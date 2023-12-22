@@ -1,19 +1,26 @@
-import { useState, useClient, createHandler, useMemo, Anchor, createRef } from 'seniman';
+import { useState, useClient, createHandler, useMemo, Anchor, createRef, useEffect, untrack } from 'seniman';
 import { searchProducts } from './data.js';
 import { IMAGE_PREFIX } from './config.js';
 
 function SearchHeader(props) {
 
-  let onChange = createHandler((data) => {
-    props.onSearchQueryTextChange(data);
-  });
-
   let client = useClient();
   let inputRef = createRef();
 
   setTimeout(() => {
-    client.exec($c(() => $s(inputRef).get().focus()));
-  }, 10);
+    // use client function to focus the search input & assign initial value based on the query string
+    // wrap the server values referenced from the client-side in $s()
+    client.exec($c(() => {
+      let input = $s(inputRef).get();
+
+      input.focus();
+      input.value = $s(client.location.searchParams().get('q') || '');
+    }));
+  }, 0);
+
+  let onChange = createHandler((data) => {
+    props.onSearchQueryTextChange(data);
+  });
 
   return <div style={{
     backgroundColor: '#fff',
@@ -77,19 +84,37 @@ function SearchShortcutSection(props) {
 }
 
 export default function SearchPage() {
-  let [searchQuery, setSearchQuery] = useState('');
+  let client = useClient();
   let [searchResults, setSearchResults] = useState([]);
+
+  let searchQuery = useMemo(() => {
+    let params = client.location.searchParams();
+
+    // get the query string from the URL
+    return params.get('q') || '';
+  });
 
   let hasSearchQuery = useMemo(() => {
     return searchQuery() != '';
   });
 
-  let onSearchQueryTextChange = async (text) => {
-    setSearchQuery(text);
+  useEffect(async () => {
+    if (!searchQuery()) {
+      return;
+    }
 
-    let results = await searchProducts(text);
+    let results = await searchProducts(searchQuery());
 
     setSearchResults(results);
+  });
+
+  let onSearchQueryTextChange = (text) => {
+    if (text == '') {
+      client.history.replaceState('/search');
+      setSearchResults([]);
+    } else {
+      client.history.replaceState(`/search?q=${text}`);
+    }
   }
 
   return <div>

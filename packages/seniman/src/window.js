@@ -281,15 +281,55 @@ export class Window {
       let [shouldSendPostScript, setShouldSendPostScript] = useState(false);
       let [locationUrl, setLocationUrl] = useState(url);
 
-      function _setLocalLocationUrl(url) {
-        let hrefString = url.href;
+      function _makeUrl(hrefString) {
+        let url;
 
+        // TODO: handle relative non-/-prefixed?
+        if (hrefString.startsWith('/')) {
+          url = new URL(hrefString, location.origin);
+        } else {
+          url = new URL(hrefString);
+        }
+        return url;
+      }
+
+      function _pushState(url) {
         clientContext.exec($c(() => {
-          window.history.pushState({}, '', $s(hrefString));
+          window.history.pushState({}, '', $s(url.href));
         }));
 
         setLocationUrl(url);
       }
+
+      function _replaceState(url) {
+        clientContext.exec($c(() => {
+          window.history.replaceState({}, '', $s(url.href));
+        }));
+
+        setLocationUrl(url);
+      }
+
+      let history = {
+        pushState: (hrefString) => {
+          let url = _makeUrl(hrefString);
+
+          if (url.origin !== location.origin) {
+            throw new Error(`history.pushState() can only be used to navigate within the same origin. Use location.setHref() to navigate to a different origin.`);
+          }
+
+          _pushState(url);
+        },
+
+        replaceState: (hrefString) => {
+          let url = _makeUrl(hrefString);
+
+          if (url.origin !== location.origin) {
+            throw new Error(`history.replaceState() can only be used to navigate within the same origin. Use location.setHref() to navigate to a different origin.`);
+          }
+
+          _replaceState(url);
+        }
+      };
 
       let location = {
 
@@ -312,28 +352,16 @@ export class Window {
           return locationUrl().searchParams;
         }),
         setHref: (hrefString) => {
+          let url = _makeUrl(hrefString);
 
-          // check if the navigation string is an absolute URL, relative URL, or a protocol-relative URL
-          if (hrefString.startsWith('/')) {
-            _setLocalLocationUrl(new URL(hrefString, location.origin));
-            return;
-          }
-
-          let url = new URL(hrefString);
-
-          if (url.href.startsWith('https://') || url.href.startsWith('http://') || url.href.startsWith('//')) {
-            // if the hostname is different to the initial (unchangeable) hostname,
-            // then execute a client-side href change
-            if (url.origin !== location.origin) {
-              clientContext.exec($c(() => {
-                window.location.href = $s(hrefString);
-              }));
-              return;
-            } else {
-              _setLocalLocationUrl(url);
-            }
+          // if the hostname is different to the initial (unchangeable) hostname,
+          // then execute a client-side href change
+          if (url.origin !== location.origin) {
+            clientContext.exec($c(() => {
+              window.location.href = $s(hrefString);
+            }));
           } else {
-            throw new Error(`Invalid href: ${hrefString}. Accepted href is a relative URL (e.g. /path?query=string), an absolute URL (e.g. https://example.com/path?query=string), or a protocol-relative URL (e.g. //example.com/path?query=string).`);
+            _pushState(url);
           }
         }
       };
@@ -371,6 +399,7 @@ export class Window {
           });
         },
 
+        history,
         location,
 
         // compatibility with old API 
