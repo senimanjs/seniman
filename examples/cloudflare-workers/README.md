@@ -46,7 +46,7 @@ npx wrangler dev
 
 ## Deployment
 
-Run the following command to deploy the app to CloudFlare Workers:
+Run the following command to deploy the app to CloudFlare Workers with its free tier:
 
 ```bash
 npx wrangler deploy

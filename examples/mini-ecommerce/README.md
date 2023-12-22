@@ -32,3 +32,9 @@ And then the following command to start the development server:
 ```bash
 npx nodemon dist/index.js
 ```
+
+## Deployment to Cloudflare Workers
+
+You can deploy a Seniman app to Cloudflare Worker's free tier with a few lines of changes. 
+
+Please refer to the example at https://github.com/senimanjs/seniman/tree/main/examples/cloudflare-workers.
