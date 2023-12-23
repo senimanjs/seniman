@@ -1,6 +1,5 @@
 import { useState, useClient, Anchor, useEffect } from 'seniman';
-import { IMAGE_PREFIX } from './config.js';
-import { batchGetProductsData, getProductData, getRelatedProductRecommendations } from './data.js';
+import { IMAGE_PREFIX, batchGetProductsData, getProductData, getRelatedProductRecommendations } from './data.js';
 
 function formatPrice(priceNumber) {
   // input is rupiah

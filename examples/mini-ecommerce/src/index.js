@@ -8,8 +8,7 @@ import { wrapExpress } from "seniman/express";
 import { ProductCollectionCard } from './product.js';
 import ProductPage from './product.js';
 import SearchPage from './search.js';
-import { IMAGE_PREFIX } from "./config.js";
-import { getHomePageProductCollections } from "./data.js";
+import { IMAGE_PREFIX, getHomePageProductCollections } from "./data.js";
 
 function Header() {
 
@@ -50,7 +49,7 @@ function WelcomePrompt() {
   </div>;
 }
 
-export function HomePage() {
+function HomePage() {
 
   // load the home product collections
   let [productCollections, setProductCollections] = useState([]);

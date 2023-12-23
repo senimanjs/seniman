@@ -1,5 +1,7 @@
 import TrieSearch from 'trie-search';
 
+export const IMAGE_PREFIX = 'https://examples-r2.seniman.dev/mini-ecommerce';
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }

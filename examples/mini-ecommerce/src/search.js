@@ -1,6 +1,5 @@
-import { useState, useClient, createHandler, useMemo, Anchor, createRef, useEffect, untrack } from 'seniman';
-import { searchProducts } from './data.js';
-import { IMAGE_PREFIX } from './config.js';
+import { useState, useClient, createHandler, useMemo, Anchor, createRef, useEffect } from 'seniman';
+import { IMAGE_PREFIX, searchProducts } from './data.js';
 
 function SearchHeader(props) {
 
@@ -87,6 +86,16 @@ export default function SearchPage() {
   let client = useClient();
   let [searchResults, setSearchResults] = useState([]);
 
+
+  let onSearchQueryTextChange = (text) => {
+    if (text == '') {
+      client.history.replaceState('/search');
+      setSearchResults([]);
+    } else {
+      client.history.replaceState(`/search?q=${text}`);
+    }
+  }
+
   let searchQuery = useMemo(() => {
     let params = client.location.searchParams();
 
@@ -107,15 +116,6 @@ export default function SearchPage() {
 
     setSearchResults(results);
   });
-
-  let onSearchQueryTextChange = (text) => {
-    if (text == '') {
-      client.history.replaceState('/search');
-      setSearchResults([]);
-    } else {
-      client.history.replaceState(`/search?q=${text}`);
-    }
-  }
 
   return <div>
     <SearchHeader onSearchQueryTextChange={onSearchQueryTextChange} />
