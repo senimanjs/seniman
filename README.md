@@ -40,7 +40,8 @@ Example applications are available at the [examples](examples/) folder.
 
 At a high-level, the Seniman runtime is divided into the server and client-side runtimes. Here's how the rough architecture looks like:
 
-![Seniman Architecture](images/architecture.png)
+<img width="747" alt="Screenshot 2023-12-24 at 5 25 41 AM" src="https://github.com/senimanjs/seniman/assets/510503/73f977e0-e714-4775-a430-559c8420cfbd">
+
 
 Seniman's server-side includes a custom runtime that manages the lifecycle of your JSX component tree, tracks state changes, and handles connections to multiple browser windows. It generates UI update commands to ensure the latest state is rendered in the browser, and also implements a remote event system to allow server-side code to react to client-triggered events.
 
