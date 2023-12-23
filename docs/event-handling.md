@@ -6,20 +6,23 @@ Building a user interface means handling events. Let's start with a simple examp
 Let's start with the `src/index.js` file from the Hello World tutorial:
 
 ```js
+import { createRoot } from 'seniman';
 import { createServer } from 'seniman/server';
 
-function Body() {
+function App() {
   return <div>Hello World</div>;
 }
 
-let server = createServer({ Body });
+let root = createRoot(App);
+
+let server = createServer(root);
 server.listen(3002);
 ```
 
-Let's now add a button to the Body component:
+Let's now add a button to the App component:
 
 ```js
-function Body() {
+function App() {
   return <div>
     <button>Click Me</button>
     Hello World
@@ -30,7 +33,7 @@ function Body() {
 Next, we'll add a click handler to the button. We will use the `onClick` attribute to do that:
 
 ```js
-function Body() {
+function App() {
   
   let onClick = () => {
     console.log('Button clicked');

@@ -3,13 +3,16 @@
 After [installation](/docs/install), let's start building a simple app. This is a minimal, working Seniman application:
 
 ```js
+import { createRoot } from 'seniman';
 import { createServer } from 'seniman/server';
 
-function Body() {
+function App() {
   return <div>Hello World</div>;
 }
 
-let server = createServer({ Body });
+let root = createRoot(App);
+
+let server = createServer(root);
 server.listen(3002);
 ```
 

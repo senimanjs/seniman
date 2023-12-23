@@ -5,27 +5,30 @@ In order to make our app's UI change over time in response to user inputs, we ne
 Let's start with the `src/index.js` file from the Event Handling tutorial:
 
 ```js
+import { createRoot } from 'seniman';
 import { createServer } from 'seniman/server';
 
-function Body() {
+function App() {
   return <div>
-    <button onClick={() => console.log('Clicked')}>
+    <button onClick={() => console.log('Button clicked')}>
       Click Me
     </button>
   </div>;
 }
 
-let server = createServer({ Body });
+let root = createRoot(App);
+
+let server = createServer(root);
 server.listen(3002);
 ```
 
-Let's now add a state variable to the `Body` component:
+Let's now add a state variable to the `App` component, after importing the `useState` function:
 
 ```js
+import { createRoot, useState } from 'seniman';
 import { createServer } from 'seniman/server';
-import { useState } from 'seniman';
 
-function Body() {
+function App() {
   let [getCount, setCount] = useState(0);
   return <div>
     <button onClick={() => console.log('Clicked')}>
@@ -41,7 +44,7 @@ Now, let's start using `getCount()` to show the value of the counter in the UI:
 
 ```js
 
-function Body() {
+function App() {
   let [getCount, setCount] = useState(0);
   return <div>
     <button onClick={() => console.log('Clicked')}>
@@ -55,7 +58,7 @@ If you compile and run the app, you will see that the counter is not changing wh
 
 ```js
 
-function Body() {
+function App() {
   let [getCount, setCount] = useState(0);
   return <div>
     <button onClick={() => setCount(getCount() + 1)}>
