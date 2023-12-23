@@ -15,8 +15,6 @@ The events themselves, however, are standard browser events. These are the brows
 - [`onMouseEnter`](#onmouseenter)
 - [`onMouseLeave`](#onmouseleave)
 
-##### Note: Other standard browser events not currently listed here will shortly be supported.
-
 Let's go through how you'd handle these event types in Seniman. Note: familiarity with [`Client Functions`](/docs/client-functions) is helpful!
 
 
@@ -40,7 +38,7 @@ function MyComponent() {
 }
 ```
 
-Since it is a no-argument $s call, we can also write it shorter as:
+Since it is a no-argument `$s` call, we can also write it shorter as:
 
 ```js
 function MyComponent() {
