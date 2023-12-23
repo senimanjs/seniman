@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
-import { windowManager } from '../window_manager.js';
 import { buildOriginCheckerFunction } from '../helpers.js';
+import { createRoot } from '../window_manager.js';
 
 // TODO: apply new rendering code path to this vanilla server
 
@@ -24,9 +24,19 @@ class HeaderWrapper {
   }
 }
 
-export function wrapExpress(app, options) {
+export function wrapExpress(app, root, options = {}) {
 
-  windowManager.registerEntrypoint(options);
+  // check if root is the old { Body } parameter
+  // if yes, then ask to wrap it in createRoot before passing it in
+  if (typeof root == "object" && root.Body) {
+    console.warn(`
+    Calling wrapExpress(app, { Body }) is deprecated in seniman@0.0.133. 
+    Please wrap your root component in createRoot(Body) from the \`seniman\` package before passing it to wrapExpress(app, root).
+    We've wrapped it internally for you in this version.
+    `);
+
+    root = createRoot(root.Body);
+  }
 
   let allowedOriginChecker = buildOriginCheckerFunction(options.allowedOrigins);
 
@@ -37,7 +47,7 @@ export function wrapExpress(app, options) {
     let ipAddress = headers.get('x-forwarded-for') || req.socket.remoteAddress;
     let isSecure = req.secure;
 
-    let response = await windowManager.getResponse({ url, headers, ipAddress, isSecure, htmlBuffers });
+    let response = await root.getHtmlResponse({ url, headers, ipAddress, isSecure, htmlBuffers });
 
     if (response.statusCode) {
       res.status(response.statusCode);
@@ -68,7 +78,7 @@ export function wrapExpress(app, options) {
         let url = req.url;
         let ipAddress = headers.get('x-forwarded-for') || req.socket.remoteAddress;
 
-        windowManager.applyNewConnection(ws, { url, headers, ipAddress, htmlBuffers });
+        root.applyNewConnection(ws, { url, headers, ipAddress, htmlBuffers });
       });
     });
 

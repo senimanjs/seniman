@@ -1,8 +1,8 @@
 
-import { useState, useClient, onDispose, Anchor, useMemo, useEffect } from 'seniman';
+import { createRoot, useState, useClient, onDispose, Anchor, useMemo, useEffect } from 'seniman';
+import { wrapExpress } from "seniman/express";
 import { Style, Meta } from "seniman/head";
 import express from "express";
-import { wrapExpress } from "seniman/express";
 // import { createServer } from "seniman/workers";
 
 import { ProductCollectionCard } from './product.js';
@@ -91,7 +91,7 @@ const cssText = `
   }
 `;
 
-function Body() {
+function Root() {
   let client = useClient();
 
   // simple "router" that checks the pathname and returns the page type
@@ -135,9 +135,9 @@ function Body() {
   </div>;
 }
 
+let root = createRoot(Root);
+
 let app = express();
-await wrapExpress(app, { Body });
+wrapExpress(app, root);
 
 app.listen(parseInt(process.env.PORT) || 3007, "0.0.0.0");
-
-// export default createServer({ Body });

@@ -1,7 +1,7 @@
-import { useState } from 'seniman'; 
+import { createRoot, useState } from 'seniman';
 import { createServer } from 'seniman/workers';
 
-function Body() {
+function App() {
   let [getCount, setCount] = useState(0);
   let onClick = () => setCount(count => count + 1);
 
@@ -11,4 +11,6 @@ function Body() {
   </div>;
 }
 
-export default createServer({ Body });
+let root = createRoot(App);
+
+export default createServer(root);

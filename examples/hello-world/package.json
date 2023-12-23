@@ -10,14 +10,11 @@
   },
   "author": "",
   "license": "ISC",
-  "volta": {
-    "node": "16.19.1"
-  },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
     "@babel/plugin-syntax-jsx": "^7.21.4"
   },
   "dependencies": {
-    "seniman": "^0.0.124"
+    "seniman": "^0.0.133"
   }
 }

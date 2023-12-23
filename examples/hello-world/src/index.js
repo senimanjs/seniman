@@ -1,7 +1,7 @@
-import { useState } from "seniman";
+import { createRoot, useState } from "seniman";
 import { createServer } from "seniman/server";
 
-function Body() {
+function App() {
   let [getCount, setCount] = useState(0);
   let onClick = () => setCount((count) => count + 1);
 
@@ -13,9 +13,9 @@ function Body() {
   );
 }
 
-let server = createServer({ Body });
-let port = 3002;
+let root = createRoot(App);
 
-console.log("Listening on port", port);
+let server = createServer(root);
+server.listen(3002);
 
-server.listen(port);
+console.log("Server started on port 3002");

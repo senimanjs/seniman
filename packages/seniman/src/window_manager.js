@@ -41,9 +41,14 @@ class ExternalPromise {
   }
 }
 
-class WindowManager {
+export function createRoot(rootComponent) {
+  return new Root(rootComponent);
+}
 
-  constructor() {
+class Root {
+
+  constructor(RootComponent) {
+    this.RootComponent = RootComponent;
     this.windowMap = new Map();
 
     this.crawlerRenderingEnabled = ENABLE_CRAWLER_RENDERER;
@@ -281,7 +286,7 @@ class WindowManager {
     let { windowId } = pageParams;
 
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
-    let window = new Window(this, pageParams, this.Body);
+    let window = new Window(this, pageParams, this.RootComponent);
     this.windowMap.set(windowId, window);
 
     window.onDestroy(() => {
@@ -312,7 +317,7 @@ class WindowManager {
     });
   }
 
-  async getResponse({ url, headers, ipAddress, isSecure, htmlBuffers }) {
+  async getHtmlResponse({ url, headers, ipAddress, isSecure, htmlBuffers }) {
     let isUnderRateLimit = this.windowCreationLimiter.consumeSync(ipAddress);
 
     if (!isUnderRateLimit) {
@@ -466,16 +471,4 @@ class WindowManager {
       window.destroy();
     }
   }
-
-  registerEntrypoint(options) {
-
-    if (!!options.Head) {
-      throw new Error('Starting from Seniman v0.0.91 -- Head is no longer supported. To style your application, please use the Style component instead. See https://senimanjs.org/docs/head-element');
-    }
-
-    this.Body = options.Body;
-  }
 }
-
-
-export const windowManager = new WindowManager();

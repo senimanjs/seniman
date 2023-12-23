@@ -70,23 +70,25 @@ First, initialize your project's `package.json` and make sure to enable ES modul
 To start off simple, let's create a simple counter component. Create a new file called `src/index.js` with the following contents:
 
 ```js
-import { useState } from "seniman";
+import { createRoot, useState } from "seniman";
 import { createServer } from "seniman/server";
 
-function Body() {
+function App() {
   let [getCount, setCount] = useState(0);
-  let onClick = () => setCount(count => count + 1);
+  let onClick = () => setCount((count) => count + 1);
 
-  return <div class="hello-world">
-    Hello World! {getCount()}
-    <button onClick={onClick}>Add +</button>
-  </div>;
+  return (
+    <div class="hello-world">
+      Hello World! {getCount()}
+      <button onClick={onClick}>Add +</button>
+    </div>
+  );
 }
 
-let server = createServer({ Body });
+let root = createRoot(App);
 
+let server = createServer(root);
 server.listen(3002);
-
 ```
 
 To set up Seniman, you need to configure Babel to use Seniman's internal Babel plugin. You can do this by adding the following to your `babel.config.json` file:
