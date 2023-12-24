@@ -10,7 +10,7 @@ Seniman is a server-driven UI framework for Node.JS that allows you to run your 
 
 Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~3KB browser runtime, allowing fast-loading, low-latency user interfaces.
 
-Here's an example of a simple counter app built with Seniman, using Redis as data storage, running on port 3002:
+Here's an example of a simple counter app built with Seniman, using Redis as data storage, served on port `3002`:
 
 ```js
 import redis from "redis";
@@ -56,6 +56,7 @@ function App() {
 }
 ...
 ```
+With user-facing APIs and scheduling mechanism each inspired by ReactJS and SolidJS, Seniman allows you to hit the ground running in building JSX-based user interfaces.
 
 ## Table of Contents
 - [How it Works](#how-it-works)
