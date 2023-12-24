@@ -26,40 +26,37 @@ You will see the application running at [http://localhost:3002](http://localhost
 Let's start by understanding the existing code, then start building our counter functionalities from there. Let's take a  look at the only file of the app -- `src/index.js`:
 
 ```js
-import { createRoot, useState } from "seniman";
-import { createServer } from "seniman/server";
+import { createRoot } from "seniman";
+import { serve } from "seniman/server";
 
 function App() {
   return <div>Hello World</div>;
 }
 
 let root = createRoot(App);
-
-let server = createServer(root);
-server.listen(3002);
+serve(root, 3002);
 ```
 
 Let's go through these line-by-line. 
 
 ```js
-import { createRoot, useState } from "seniman";
+import { createRoot } from "seniman";
 ```
 
-We use two core functions from the `seniman` package: `createRoot` and `useState`. 
+As a start, we use one core functions from the `seniman` package: `createRoot`.
 
 `createRoot` is used to wrap your application by giving it our top-level component. It will then give us back a `Root` object that Seniman's underlying networking stack can use to manage the two-way communication between the browser and the application.
 
-`useState` is a standard state management function that you might already be familiar with from other frameworks such as React. We will use it to create a state for our counter.
 
 ```js
-import { createServer } from "seniman/server";
+import { serve } from "seniman/server";
 ```
 
-The `createServer` function is used to create a server that will serve our Seniman application. A server for a Seniman app has two main required functions: serving the main HTML page which contains the client runtime on the browser, and a WebSocket server serving as communication channel between the client runtime and the server. 
+The `serve` function is used to initialize and start a server that will serve our Seniman application. A server for a Seniman app has two main required functions: serving the main HTML page which contains the client runtime on the browser, and a WebSocket server serving as communication channel between the client runtime and the server. 
 
 Seniman has a few built-in server implementations that you can use, but in this tutorial, we will use one from the `seniman/server` package, which is a thin layer above Node's `http` server with a small WebSocket handler.
 
-There are other built-in networking options you can use such as `seniman/express` and `seniman/workers` for CloudFlare Workers, but we will use the simplest `seniman/server` for this tutorial.
+There are other built-in networking options you can use such as `seniman/express` and `seniman/workers` for CloudFlare Workers, but let's go with the simplest `seniman/server` for this tutorial.
 
 Now, let's take a look at the main component of our application:
 
@@ -71,16 +68,14 @@ function App() {
 
 This is the main and only component of our application. It is a simple component that returns a `div` (in JSX syntax) with the text "Hello World". If you open up the browser, you should see this text on the page.
 
-Let's now go on to the final three lines of the file:
+Let's now go on to the final two lines of the file:
 
 ```js
 let root = createRoot(App);
-
-let server = createServer(root);
-server.listen(3002);
+serve(root, 3002);
 ```
 
-These three lines executes the act of wrapping the application and serving it through the server. The `createRoot` function is used to wrap the application, and the `server` object is used to serve the application. 
+As mentioned, the `createRoot` function is used to wrap the application in a `Root` object for the underlying networking stack to interact with. The `serve` function is used to start the networking stack, specifically a HTTP server with a WebSocket connection handler. The `serve` function also takes a port number as its second argument, which is the port number that the server will listen to.
 
 This should be all that's required to start serving a Seniman application. Now, let's start building our counter.
 
