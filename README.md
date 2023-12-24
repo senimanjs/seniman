@@ -56,7 +56,7 @@ function App() {
 }
 ...
 ```
-With user-facing APIs and scheduling mechanism each inspired by ReactJS and SolidJS, Seniman allows you to hit the ground running in building JSX-based user interfaces.
+With user-facing APIs and fine-grained reactivity each inspired by ReactJS and SolidJS, Seniman allows you to hit the ground running in building JSX-based user interfaces.
 
 ## Table of Contents
 - [How it Works](#how-it-works)
