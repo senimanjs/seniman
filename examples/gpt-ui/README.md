@@ -2,6 +2,8 @@
 
 In this example, we'll show a simple chatbot UI that uses the OpenAI API to generate chatbot responses.
 
+https://github.com/senimanjs/seniman/assets/510503/d5f4d215-7772-41d8-ba6b-fa2415205814
+
 ## Prerequisites
 - Node.js 16+
 
