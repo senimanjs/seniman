@@ -149,7 +149,7 @@ Open up your browser and navigate to `http://localhost:3002`, and you should see
 - Our documentation site at [seniman.dev](https://seniman.dev)
 - Mini e-Commerce ([Source](examples/mini-ecommerce), [Demo](https://mini-ecommerce.examples.seniman.dev/))
 - OpenAI GPT UI ([Source](examples/gpt-ui))
-- Simple Autocomplete ([Source](examples/simple-autocomplete), [Demo](https://seniman-autocomplete.garindra.workers.dev//))
+- Simple Autocomplete ([Source](examples/autocomplete), [Demo](https://seniman-autocomplete.garindra.workers.dev/))
 - [Hello World](examples/hello-world) - Simplest possible Seniman app
 
 For (many) more examples, check out the [examples](examples) directory.
