@@ -1,19 +1,8 @@
-import fs from 'node:fs';
 import { createServer as httpCreateServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { createRoot } from '../window_manager.js';
 import { buildOriginCheckerFunction } from '../helpers.js';
 
-// TODO: apply new rendering code path to this vanilla server
-
-let senimanLibraryPath = process.cwd() + '/node_modules/seniman/dist';
-let frontendBundlePath = senimanLibraryPath + '/frontend-bundle';
-
-let htmlBuffers = {
-  br: fs.readFileSync(frontendBundlePath + "/index.html.brotli.bin"),
-  gzip: fs.readFileSync(frontendBundlePath + "/index.html.gz.bin"),
-  uncompressed: fs.readFileSync(frontendBundlePath + "/index.html"),
-};
 
 class HeaderWrapper {
   constructor(headers) {
@@ -32,7 +21,7 @@ export function createServer(root, options = {}) {
   if (typeof root == "object" && root.Body) {
     console.warn(`
     Calling createServer({ Body }) is deprecated in seniman@0.0.133. 
-    Please wrap your root component in createRoot(Body) from the \`seniman\` package before passing it to createServer(root).
+    Please wrap your Body component in createRoot(Body) from the \`seniman\` package before passing it to createServer(root).
     We've wrapped it internally for you in this version.
     `);
 
@@ -58,7 +47,7 @@ export function createServer(root, options = {}) {
     // TODO: have the logic be configurable?
     let isSecure = req.headers['x-forwarded-proto'] == 'https';
 
-    let response = await root.getHtmlResponse({ url, headers, ipAddress, isSecure, htmlBuffers });
+    let response = await root.getHtmlResponse({ url, headers, ipAddress, isSecure });
 
     res.writeHead(response.statusCode, response.headers);
     res.end(response.body);
@@ -78,7 +67,7 @@ export function createServer(root, options = {}) {
       let headers = new HeaderWrapper(req.headers);
       let url = req.url;
       let ipAddress = headers.get('x-forwarded-for') || req.socket.remoteAddress;
-      root.applyNewConnection(ws, { url, headers, ipAddress, htmlBuffers });
+      root.applyNewConnection(ws, { url, headers, ipAddress });
     });
   });
 

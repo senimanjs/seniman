@@ -1,4 +1,5 @@
 {
+  let _versionHash = "$$VERSION$$";
   let _window = window;
   let _document = document;
   let _location = location;
@@ -21,7 +22,7 @@
     let lastMessageTime = 0;
 
     let connectSocket = () => {
-      socket = new WebSocket(`${_window.origin.replace('http', 'ws')}?wi=${windowId}&ro=${readOffset}&vs=${_window.innerWidth}x${_window.innerHeight}&lo=${encodeURIComponent(_location.pathname + _location.search)}`);
+      socket = new WebSocket(`${_window.origin.replace('http', 'ws')}?wi=${windowId}&ro=${readOffset}&vs=${_window.innerWidth}x${_window.innerHeight}&lo=${encodeURIComponent(_location.pathname + _location.search)}&vh=${_versionHash}`);
       socket.binaryType = "arraybuffer";
 
       socket.onopen = (e) => { };

@@ -1,11 +1,5 @@
 import { createRoot } from '../window_manager.js';
-
-import htmlBuffer from "../frontend-bundle/index.html";
 import { buildOriginCheckerFunction } from '../helpers.js';
-
-const htmlBuffers = {
-  uncompressed: Buffer.from(htmlBuffer)
-};
 
 export function createServer(root, options = {}) {
 
@@ -14,7 +8,7 @@ export function createServer(root, options = {}) {
   if (typeof root == "object" && root.Body) {
     console.log(`
     Calling createServer({ Body }) is deprecated in seniman@0.0.133. 
-    Please wrap your root component in createRoot(Body) from the \`seniman\` package before passing it to createServer(root).
+    Please wrap your Body component in createRoot(Body) from the \`seniman\` package before passing it to createServer(root).
     We've wrapped it internally for you in this version.
     `);
 
@@ -22,6 +16,7 @@ export function createServer(root, options = {}) {
   }
 
   root.setRateLimit({ disabled: true });
+  root.setDisableHtmlCompression();
 
   let allowedOriginChecker = buildOriginCheckerFunction(options.allowedOrigins);
 
@@ -59,13 +54,13 @@ export function createServer(root, options = {}) {
           }
         };
 
-        root.applyNewConnection(ws, { url, headers, ipAddress, htmlBuffers });
+        root.applyNewConnection(ws, { url, headers, ipAddress });
 
         return new Response(null, { status: 101, webSocket: client })
       } else {
         // TODO: have the logic be configurable?
         const isSecure = req.headers.get('x-forwarded-proto') == 'https';
-        const response = await root.getHtmlResponse({ url, headers, ipAddress, isSecure, htmlBuffers });;
+        const response = await root.getHtmlResponse({ url, headers, ipAddress, isSecure });;
 
         return new Response(response.body, { status: response.statusCode, headers: response.headers })
       }

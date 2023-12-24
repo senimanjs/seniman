@@ -2,6 +2,7 @@ import fs from 'fs';
 import { execa } from 'execa';
 import uglifyjs from 'uglify-js';
 import zlib from 'zlib';
+import crypto from 'crypto';
 
 async function buildClientScaffolding(config) {
 
@@ -25,20 +26,28 @@ async function buildClientScaffolding(config) {
   };
 
   let minifiedCode = uglifyjs.minify(jsCodeString, options).code;
+
+  // get 8 character hash of the minified code
+  let versionHash = crypto.createHash('sha256').update(minifiedCode).digest('hex').slice(0, 8);
+
+  // replace $$VERSION$$ with the version hash
+  minifiedCode = minifiedCode.replace(/\$\$VERSION\$\$/g, versionHash);
+
   let htmlString = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1" /><script>${minifiedCode}</script>`;
   let htmlBuffer = Buffer.from(htmlString);
-
-  let frontendBundlePath = targetDirectory + '/frontend-bundle';
-
-  await fs.promises.mkdir(frontendBundlePath, { recursive: true });
-
   let brotliBuffer = zlib.brotliCompressSync(htmlBuffer);
-  await fs.promises.writeFile(frontendBundlePath + '/index.html.brotli.bin', brotliBuffer);
-
   let gzipBuffer = zlib.gzipSync(htmlBuffer);
-  await fs.promises.writeFile(frontendBundlePath + '/index.html.gz.bin', gzipBuffer);
 
-  await fs.promises.writeFile(frontendBundlePath + '/index.html', htmlBuffer);
+  let templateBuffersString = `
+export default {
+  versionHash: "${versionHash}",
+  br: Buffer.from("${brotliBuffer.toString('base64')}", 'base64'),
+  gzip: Buffer.from("${gzipBuffer.toString('base64')}", 'base64'),
+  uncompressed: Buffer.from("${htmlBuffer.toString('base64')}", 'base64')
+};
+`;
+
+  await fs.promises.writeFile(targetDirectory + '/_htmlBuffers.js', templateBuffersString);
 }
 
 // mkdir dist if it doesn't exist
