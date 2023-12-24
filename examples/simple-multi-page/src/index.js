@@ -41,9 +41,9 @@ async function loadMovieData(movieId) {
 }
 
 function MoviePage() {
-
   let client = useClient();
   let [movieData, setMovieData] = useState(null);
+
   let movieId = useMemo(() => {
     let path = client.path();
     return path.split("/")[2];
@@ -96,12 +96,11 @@ function Body() {
   let client = useClient();
 
   let pageType = useMemo(() => {
-    let path = client.path();
+    let pathname = client.location.pathname();
 
-    if (path === "/") {
+    if (pathname === "/") {
       return "movies";
-    } else if (path.startsWith("/movie/")) {
-      console.log('Movie page');
+    } else if (pathname.startsWith("/movie/")) {
       return "movie";
     } else {
       return "404";

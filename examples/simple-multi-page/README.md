@@ -7,12 +7,11 @@ This is intended to show the absolute minimum implementation of differential ren
 
 ```js
 let pageType = useMemo(() => {
-  let path = client.path();
+  let pathname = client.location.pathname();
 
-  if (path === "/") {
+  if (pathname === "/") {
     return "movies";
-  } else if (path.startsWith("/movie/")) {
-    console.log('Movie page');
+  } else if (pathname.startsWith("/movie/")) {
     return "movie";
   } else {
     return "404";
@@ -25,9 +24,7 @@ return <div>
   <div>
     {() => {
       // This function is re-run only when pageType changes
-      let _pageType = pageType();
-
-      switch (_pageType) {
+      switch (pageType()) {
         case "movie":
           return <MoviePage />;
         case "movies":
@@ -36,7 +33,8 @@ return <div>
           return <div>404</div>;
       }
     }}
-  </div>;
+  </div>
+</div>;
 ```
 
 
