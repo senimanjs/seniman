@@ -24,7 +24,7 @@ import { Anchor } from 'seniman';
 
 function MyComponent() {
 
-  return <Anchor href="http://another-host.com">External Site</Anchor>;
+  return <Anchor href="http://otherhost.com">External Site</Anchor>;
 }
 ```
 
@@ -41,7 +41,7 @@ function MyComponent(props) {
   let client = useClient();
 
   let onClick = () => {
-    client.location.setHref('http://another-host.com/another-page?id=' + props.id);
+    client.location.setHref('http://otherhost.com/page?id=' + props.id);
   };
 
   return <button onClick={onClick}>Go to another page</button>;
@@ -106,7 +106,6 @@ Now, we have an application that renders different components depending on the p
 
 ```js
 import { createRoot, useState } from 'seniman';
-
 
 function App() {
   let client = useClient();

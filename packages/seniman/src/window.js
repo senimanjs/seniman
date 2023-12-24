@@ -225,7 +225,7 @@ const scratchBuffer = Buffer.alloc(32768);
 
 export class Window {
 
-  constructor(windowManager, pageParams, RootComponent) {
+  constructor(windowManager, pageParams, rootFn) {
     this.windowManager = windowManager;
 
     let { windowId,
@@ -403,8 +403,14 @@ export class Window {
         location,
 
         // compatibility with old API 
-        path: location.pathname,
-        navigate: location.setHref,
+        path: () => {
+          console.warn('client.path() is deprecated. Use client.location.pathname() instead. See: https://seniman.dev/docs/client');
+          return location.pathname();
+        },
+        navigate: (href) => {
+          console.warn('client.navigate() is deprecated. Use client.history.pushState() instead. See: https://seniman.dev/docs/client');
+          location.setHref(href);
+        },
 
         exec: (clientFnSpec) => {
           let { clientFnId, serverBindFns } = clientFnSpec;
@@ -446,7 +452,7 @@ export class Window {
 
       this._attach(1, 0,
         <ErrorHandler>
-          <RootComponent />
+          {rootFn}
           <BackButtonListener onBackButton={onBackButton} />
           {shouldSendPostScript() ? <WindowResizeListener onResize={onResize} /> : null}
           {shouldSendPostScript() ? <DefaultNetworkStatusView /> : null}

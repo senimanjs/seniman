@@ -78,14 +78,14 @@ To start off simple, let's create a simple counter component. Create a new file 
 
 ```js
 import { createRoot, useState } from "seniman";
-import { createServer } from "seniman/server";
+import { serve } from "seniman/server";
 
 function App(props) {
   let [getCount, setCount] = useState(0);
   let onClick = () => setCount((count) => count + 1);
 
   return (
-    <div class="hello-world">
+    <div>
       {props.name} counted: {getCount()}
       <button onClick={onClick}>Add +</button>
     </div>
@@ -93,12 +93,10 @@ function App(props) {
 }
 
 let root = createRoot(() => <App name={"Eka"} />);
-
-let server = createServer(root);
-server.listen(3002);
+serve(root, 3002);
 ```
 
-To set up Seniman, you need to configure Babel to use Seniman's internal Babel plugin. You can do this by adding the following to your `babel.config.json` file:
+To set up Seniman, you need to configure Babel to use Seniman's internal Babel plugin. You can do this by adding a `babel.config.json` file with the following contents:
 
 ```json
 {

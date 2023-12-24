@@ -84,3 +84,10 @@ export function createServer(root, options = {}) {
 
   return server;
 }
+
+export function serve(root, port) {
+  let server = createServer(root);
+  server.listen(port);
+
+  console.log("[START] Server started at port", port);
+}

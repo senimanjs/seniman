@@ -19,7 +19,7 @@ Add the following to your project's `package.json` since the examples used here 
   "type": "module"
 ```
 
-Then, add the following to your `babel.config.json`:
+Then, create `babel.config.json` at the root of your project with the following contents:
   
 ```json
 {

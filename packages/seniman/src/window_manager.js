@@ -41,14 +41,14 @@ class ExternalPromise {
   }
 }
 
-export function createRoot(rootComponent) {
-  return new Root(rootComponent);
+export function createRoot(rootFn) {
+  return new Root(rootFn);
 }
 
 class Root {
 
-  constructor(RootComponent) {
-    this.RootComponent = RootComponent;
+  constructor(rootFn) {
+    this.rootFn = rootFn;
     this.windowMap = new Map();
 
     this.crawlerRenderingEnabled = ENABLE_CRAWLER_RENDERER;
@@ -286,7 +286,7 @@ class Root {
     let { windowId } = pageParams;
 
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
-    let window = new Window(this, pageParams, this.RootComponent);
+    let window = new Window(this, pageParams, this.rootFn);
     this.windowMap.set(windowId, window);
 
     window.onDestroy(() => {

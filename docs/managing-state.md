@@ -6,7 +6,7 @@ Let's start with the `src/index.js` file from the Event Handling tutorial:
 
 ```js
 import { createRoot } from 'seniman';
-import { createServer } from 'seniman/server';
+import { serve } from "seniman/server";
 
 function App() {
   return <div>
@@ -17,16 +17,14 @@ function App() {
 }
 
 let root = createRoot(App);
-
-let server = createServer(root);
-server.listen(3002);
+serve(root, 3002);
 ```
 
 Let's now add a state variable to the `App` component, after importing the `useState` function:
 
 ```js
 import { createRoot, useState } from 'seniman';
-import { createServer } from 'seniman/server';
+import { serve } from 'seniman/server';
 
 function App() {
   let [getCount, setCount] = useState(0);
@@ -79,4 +77,4 @@ node dist/index.js
 
 Open [http://localhost:3002](http://localhost:3002) in your browser to see your counter in action. 
 
-This is the basics of state management in Seniman. To see its full capability, check out the [State Management](/docs/state-management) tutorial. Next, we'll see how to build on more complex interfaces using [Components](/docs/components).
+This is the basics of state management in Seniman. To see its full capability, check out the [State Management](/docs/state-management) tutorial. Next, we'll see how to change pages and react to URL changes in the [next tutorial](/docs/changing-pages).

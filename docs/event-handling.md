@@ -6,17 +6,15 @@ Building a user interface means handling events. Let's start with a simple examp
 Let's start with the `src/index.js` file from the Hello World tutorial:
 
 ```js
-import { createRoot } from 'seniman';
-import { createServer } from 'seniman/server';
+import { createRoot } from "seniman";
+import { serve } from "seniman/server";
 
 function App() {
   return <div>Hello World</div>;
 }
 
 let root = createRoot(App);
-
-let server = createServer(root);
-server.listen(3002);
+serve(root, 3002);
 ```
 
 Let's now add a button to the App component:
@@ -54,6 +52,20 @@ npx babel src --out-dir dist
 node dist/index.js
 ```
 
-Open [http://localhost:3002](http://localhost:3002) in your browser. When you click the button, you should see the message in the server console. 
+Open [http://localhost:3002](http://localhost:3002) in your browser. When you click the button, you should see the message in the server console.
+
+You can also run the `babel` process in watch mode in another terminal window so that it automatically recompiles the code when you make changes:
+
+```bash
+npx babel src --out-dir dist --watch
+```
+
+And then use `nodemon` to automatically restart the server when the compiled code changes:
+
+```bash
+npx nodemon dist/index.js
+```
+
+This way, you can make changes to the code and see the changes in the browser without having to manually restart the server.
 
 In the next tutorial, we'll start modifying the interface in response to events.

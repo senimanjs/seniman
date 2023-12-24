@@ -1,5 +1,5 @@
 import { createRoot, useState } from "seniman";
-import { createServer } from "seniman/server";
+import { serve } from "seniman/server";
 
 function App(props) {
   let [getCount, setCount] = useState(0);
@@ -14,8 +14,4 @@ function App(props) {
 }
 
 let root = createRoot(() => <App name={"Eka"} />);
-
-let server = createServer(root);
-server.listen(3002);
-
-console.log("Server started on port 3002");
+serve(root, 3002);

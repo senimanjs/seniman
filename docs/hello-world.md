@@ -3,17 +3,15 @@
 After [installation](/docs/install), let's start building a simple app. This is a minimal, working Seniman application:
 
 ```js
-import { createRoot } from 'seniman';
-import { createServer } from 'seniman/server';
+import { createRoot } from "seniman";
+import { serve } from "seniman/server";
 
 function App() {
   return <div>Hello World</div>;
 }
 
 let root = createRoot(App);
-
-let server = createServer(root);
-server.listen(3002);
+serve(root, 3002);
 ```
 
 In the root of your project, copy the code above into a file at `src/index.js`. Then, run the following command:
