@@ -6,36 +6,62 @@
 ![1500x500](https://github.com/senimanjs/seniman/assets/510503/8eee96ef-09bf-422d-9fd4-dd1633c841bb)
 
 
-Seniman is a Node.JS server-driven UI framework that manages your JSX components on the server, enabling your UI to operate without downloading your component & business logic code to the client. 
+Seniman is a server-driven UI framework for Node.JS that allows you to run your JSX components on the server, enabling your UI to operate without sending your component & business logic code to the client.
 
-Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~3KB browser runtime, allowing fast-loading, low-latency user interfaces. 
+Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~3KB browser runtime, allowing fast-loading, low-latency user interfaces.
 
-Try the live demo at our docs site built completely with Seniman at https://seniman.dev. 
-
+Here's an example of a simple counter app built with Seniman, using Redis as data storage, running on port 3002:
 
 ```js
-import { useState } from "seniman";
+import redis from "redis";
+import { createRoot } from "seniman";
+import { serve } from "seniman/server";
 
-function Counter(props) {
-  let [getCount, setCount] = useState(0);
-  let onClick = () => setCount(count => count + 1);
+let redisClient = redis.createClient();
 
-  return <div class="counter">
-    {props.name} counted: {getCount()}
-    <button onClick={onClick}>Add +</button>
-  </div>;
+function App() {
+  let onClick = () => redisClient.incr('count');
+
+  return (
+    <button onClick={onClick}>
+      Add +
+    </button>
+  );
 }
+
+let root = createRoot(App);
+serve(root, 3002);
 ```
-The entire `Counter` component -- including the `onClick` handler -- runs on the server. Seniman runs on Node.JS and uses familiar JSX syntax & state management APIs, so you can hit the ground running.
 
-Tweet thread explaining the motivation and general architecture here: https://twitter.com/senimanjs/status/1630888630905606144
+Since the component runs on the server, you can directly access your database and other backend services from your component code. You can also modify the UI state directly based on the result of your database queries, like so:
 
-Example applications are available at the [examples](examples/) folder.
+```js
+import { createRoot, useState } from "seniman";
+
+...
+
+function App() {
+  let [latestCount, setLatestCount] = useState(0);
+
+  let onClick = async () => {
+    let count = await redisClient.incr('count');
+    setLatestCount(count);
+  }
+
+  return (
+    <button onClick={onClick}>
+      Add to {latestCount()}
+    </button>
+  );
+}
+...
+```
 
 ## Table of Contents
 - [How it Works](#how-it-works)
 - [Installation](#installation)
 - [Basic Usage](#basic-usage)
+- [Example Apps](#example-apps)
 - [FAQ](#faq)
 
 ## How it Works
@@ -116,7 +142,17 @@ This will compile the code in `src` to the `dist` directory. You can then run yo
 node dist/index.js
 ```
 
-Open up your browser and navigate to `http://localhost:3002`, and you should see a counter that increments when you click the button. For more examples, you can check out the [examples](examples) directory.
+Open up your browser and navigate to `http://localhost:3002`, and you should see a counter that increments when you click the button. 
+
+## Example Apps
+
+- Our documentation site at [seniman.dev](https://seniman.dev)
+- Mini e-Commerce ([Source](examples/mini-ecommerce), [Demo](https://mini-ecommerce.examples.seniman.dev/))
+- OpenAI GPT UI ([Source](examples/gpt-ui))
+- Simple Autocomplete ([Source](examples/simple-autocomplete), [Demo](https://seniman-autocomplete.garindra.workers.dev//))
+- [Hello World](examples/hello-world) - Simplest possible Seniman app
+
+For (many) more examples, check out the [examples](examples) directory.
 
 ## FAQ
 
