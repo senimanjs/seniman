@@ -113,13 +113,13 @@ function App(props) {
 
   return (
     <div>
-      {props.name} counted: {getCount()}
+      Hello {props.name}. We counted: {getCount()}
       <button onClick={onClick}>Add +</button>
     </div>
   );
 }
 
-let root = createRoot(() => <App name={"Eka"} />);
+let root = createRoot(() => <App name={"Dunia"} />);
 serve(root, 3002);
 ```
 
