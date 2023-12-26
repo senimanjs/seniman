@@ -5,14 +5,14 @@ Although Seniman is a primarily server-side framework, accessing the browser fun
 You can access the `Client` object from the `useClient` hook:
 
 ```js
-import { useClient } from 'seniman'
+import { useClient } from 'seniman';
 
 export function MyComponent() {
   let client = useClient();
 
   return (
     <div>
-      <p>Current path: {client.path()}</p>
+      <p>Current path: {client.location.pathname()}</p>
     </div>
   )
 }
@@ -27,21 +27,16 @@ The `client` object is used for server-side management of critical browser funct
 - [`viewportSize`](#viewportsize)
 - [`exec`](#exec)
 
-And a few deprecated ones:
-
-- [`path`](#path)
-- [`navigate`](#navigate)
-
-Let's go through the usage of these functions and states.
+Let's go through the usage of these properties.
 
 ## Location
 
 The `client.location` object is a rough equivalent of the `window.location` object in the browser. It has a few state getters that you can use to listen to location changes:
 
-- `client.location.pathname`
-- `client.location.search`
-- `client.location.searchParams`
-- `client.location.href`
+- `location.pathname`
+- `location.search`
+- `location.searchParams`
+- `location.href`
 
 You can use it in an effect to be notified when the location changes:
 
@@ -60,31 +55,29 @@ function Component() {
 
 There are also a few other static properties that are available:
 
-- `client.location.host`
-- `client.location.hostname`
-- `client.location.origin`
-- `client.location.protocol`
-- `client.location.port`
+- `location.host`
+- `location.hostname`
+- `location.origin`
+- `location.protocol`
+- `location.port`
 
 These are static values and not states since they do not change during the lifetime of the window.
 
 ### Changing the Location
 To change the location of the page, there is a single function that you can use:
 
-- `client.location.setHref(href)`
+- `location.setHref(href)`
 
 This is roughly equivalent to `window.location.href = ...` in the browser, with a slight caveat: if it is a relative path or refers to the host that is similar to the current host, it will be treated as a path change that is equivalent to a `history.pushState`. Otherwise, it will be treated as a full page load. 
 
 Under the hood, the `pushState` process uses the `client.history` object that we will discuss next.
 
-##### Note: Seniman has a built-in router that wrap these APIs that you can use to manage the pages routing more easily. You can read more about it in the [Routing](/docs/routing) document.
-
 ## History
 
 The `client.history` object is a rough equivalent of the `window.history` object in the browser. It has a few functions that you can use to manage the history of the page:
 
-- `client.history.pushState(href)`
-- `client.history.replaceState(href)`
+- `history.pushState(href)`
+- `history.replaceState(href)`
 
 These are the primary functions that you can use to change the location of the page, and are roughly equivalent to `window.history.pushState` and `window.history.replaceState` in the browser. The call to these functions will trigger the server-side `location` state to change, and history management on the browser to be executed.
 
@@ -189,70 +182,3 @@ function Body() {
 #### `exec`
 
 The `exec` function is used to execute a client function. A client function is used to execute logic that needs to run exclusively on the client, as opposed to the server. A more complete explanation on how to use this is written at the [Client Functions](/docs/client-functions) document.
-
-
----
-
-#### Deprecated APIs
-
-## Path
-
-#### `path`
-
-The `path` state is a string that represents the current path of the page. The value of the `path` state is automatically updated when the page's path changes. 
-
-Example use:
-
-```js
-import { useClient } from 'seniman'
-
-export function MyComponent() {
-  const client = useClient();
-
-  return (
-    <div>
-      <p>Current path: {client.path()}</p>
-    </div>
-  )
-}
-```
-
-Since this is just a regular state, you can also use it in a `useEffect` to be notified when the path changes.
-
-```js
-import { useClient, useEffect } from 'seniman'
-
-export function MyComponent() {
-  const client = useClient();
-
-  useEffect(() => {
-    console.log('Current path:', client.path());
-  });
-
-  return (
-    <div>
-      <p>Current path: {client.path()}</p>
-    </div>
-  )
-}
-```
-
-## Navigation
-
-#### `navigate`
-
-The `navigate` function is used to change the current path of the browser.
-
-```js
-import { useClient } from 'seniman'
-
-export function MyComponent() {
-  const client = useClient();
-
-  return (
-    <div>
-      <button onClick={() => client.navigate('/new-path')}>Change path</button>
-    </div>
-  )
-}
-```

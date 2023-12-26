@@ -28,7 +28,7 @@ function MyComponent() {
 }
 ```
 
-The `Anchor` component will automatically detect if the link is an external link, and will execute a full page load instead of a `history.pushState` under the hood.
+The `Anchor` component will automatically detect if the link is an external link, and will execute a full page load instead of `history.pushState`.
 
 ### Programmatic page changes
 
@@ -55,17 +55,15 @@ function MyComponent(props) {
 
 We've just covered how to change the page. But how do we react to page changes? Seniman provides a few state getters in the `client.location` that you can use to react to page changes. 
 
-Let's make a simple example that displays different "page components" depending on the page URL.
-
-First, let's create a `div` that will be the root of our application, with a scope function inside, calling the `client.location.pathname` state getter:
+Let's make a simple example that displays different "page components" depending on the page URL. First, let's create a `div` that will be the root of our app, with a function inside, calling the `client.location.pathname` state getter:
 
 ```js
-import { createRoot, useState } from 'seniman';
+import { useClient } from 'seniman';
 
 function App() {
   let client = useClient();
 
-  return <div class="root-div">
+  return <div>
     {() => {
       let pathname = client.location.pathname();      
     }}
@@ -73,16 +71,15 @@ function App() {
 }
 ```
 
-With this code, we'll have the function re-compute every time the page URL changes. Now, we want to have the function actually
-return a component depending on the page URL. Let's do that:
+With this code, we'll have the function re-compute every time the page URL changes. Now, we want to have the function actually return a component depending on the page URL. Let's do that:
 
 ```js
-import { createRoot, useClient } from 'seniman';
+import { useClient } from 'seniman';
 
 function App() {
   let client = useClient();
 
-  return <div class="root-div">
+  return <div>
     {() => {
       let pathname = client.location.pathname();
 
@@ -102,15 +99,15 @@ function AboutPage() { ... }
 function NotFoundPage() { ... }
 ```
 
-Now, we have an application that renders different components depending on the page URL. But we're not changing the page URL yet. Let's create a few links to change the page URL:
+Now, we have an application that renders different components depending on the page URL using standard if-else statements. Let's now add a few `Anchor` components to make the links. First, let's add a few imports:
 
 ```js
-import { createRoot, useState } from 'seniman';
+import { useClient, Anchor } from 'seniman';
 
 function App() {
   let client = useClient();
 
-  return <div class="root-div">
+  return <div>
     <Anchor href="/products">Products</Anchor>
     <Anchor href="/about">About</Anchor>
     {() => {
@@ -132,4 +129,6 @@ function AboutPage() { ... }
 function NotFoundPage() { ... }
 ```
 
-Voila! We now have an application that renders different components depending on the page URL. There are details that we haven't covered yet, such as getting parameters from the URL -- you can take a look at a more complete multi-page app example in the [examples](https://github.com/senimanjs/seniman/tree/main/examples/simple-multi-page).
+Voila! We now have an application that renders different components depending on the URL, with links to navigate between them.
+
+Next, we'll take a look at styling our interface using CSS in Seniman [here](/docs/styling).

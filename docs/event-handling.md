@@ -52,7 +52,7 @@ npx babel src --out-dir dist
 node dist/index.js
 ```
 
-Open [http://localhost:3002](http://localhost:3002) in your browser. When you click the button, you should see the message in the server console.
+Open [http://localhost:3002](http://localhost:3002) in your browser. When you click the button, you should see the message in the server console. 
 
 You can also run the `babel` process in watch mode in another terminal window so that it automatically recompiles the code when you make changes:
 
@@ -68,4 +68,4 @@ npx nodemon dist/index.js
 
 This way, you can make changes to the code and see the changes in the browser without having to manually restart the server.
 
-In the next tutorial, we'll start modifying the interface in response to events.
+In the next tutorial, we'll start modifying the interface in response to events [here](/docs/managing-state).
