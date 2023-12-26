@@ -43,10 +43,13 @@ function Anchor(props) {
     class={props.class}
     onClick={preventDefault(() => {
       if (props.onClick) {
-        props.onClick(props.href);
-      } else {
-        client.location.setHref(props.href);
+        let returnValue = props.onClick(props.href);
+        if (returnValue === false) {
+          return;
+        }
       }
+
+      client.location.setHref(props.href);
     })}>{props.children}</a>;
 }
 

@@ -222,6 +222,7 @@ const CMD_INIT_MODULE = 18;
 
 const pingBuffer = Buffer.from([0]);
 const scratchBuffer = Buffer.alloc(32768);
+const DELETE_BLOCK_BUFFER_SIZE = 2048;
 
 export class Window {
 
@@ -249,7 +250,7 @@ export class Window {
     this.latestBlockId = 10;
 
     // reuse the same buffer for all block delete commands
-    this.deleteBlockCommandBuffer = Buffer.alloc(1000 * 2);
+    this.deleteBlockCommandBuffer = Buffer.alloc(DELETE_BLOCK_BUFFER_SIZE * 2);
     this.deleteBlockCount = 0;
 
     this.clientTemplateInstallationSet = new Set();
@@ -571,12 +572,39 @@ export class Window {
   _handleBlockCleanup(blockId) {
 
     // if the buffer is full, send it
-    if (this.deleteBlockCount == 1000) {
-      this.flushBlockDeleteQueue();
+    if (this.deleteBlockCount == DELETE_BLOCK_BUFFER_SIZE) {
+      this.emergencyFlushBlockDeleteQueue();
     }
 
     this.deleteBlockCommandBuffer.writeUInt16BE(blockId, this.deleteBlockCount * 2);
     this.deleteBlockCount++;
+  }
+
+  emergencyFlushBlockDeleteQueue() {
+    let tempBuffer = Buffer.alloc(DELETE_BLOCK_BUFFER_SIZE * 2);
+    let deleteBlockCount = this.deleteBlockCount;
+    this.deleteBlockCommandBuffer.copy(tempBuffer, 0, 0, this.deleteBlockCount * 2);
+
+    // Schedule to send the delete block command after the tick
+    // Note: we needed to do delay sending out the delete message to the browser
+    // because the browser may still need the reference to the block during cleanNode() to insert the replacement block.
+    // Doing the block delete flush too early will cause the browser to lose reference
+    // This could happen if the element tree is large & update rate is high that the delete buffer gets filled up before
+    // the ping loop automatically flushes it
+    // TODO: introduce custom delete buffer size so apps that need it can increase it to avoid this path
+    setTimeout(() => {
+      let buf = this._allocCommandBuffer(1 + 2 * deleteBlockCount + 2);
+
+      buf.writeUInt8(CMD_REMOVE_BLOCKS, 0);
+
+      // copy over the block ids
+      tempBuffer.copy(buf, 1, 0, deleteBlockCount * 2);
+
+      // write the end marker
+      buf.writeUInt16BE(0, 1 + 2 * deleteBlockCount);
+    }, 0);
+
+    this.deleteBlockCount = 0;
   }
 
   flushBlockDeleteQueue() {
