@@ -1,9 +1,7 @@
-
 import { createRoot, useState, useClient, onDispose, Anchor, useMemo, useEffect } from 'seniman';
 import { wrapExpress } from "seniman/express";
 import { Style, Meta } from "seniman/head";
 import express from "express";
-// import { createServer } from "seniman/workers";
 
 import { ProductCollectionCard } from './product.js';
 import ProductPage from './product.js';
