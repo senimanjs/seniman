@@ -258,12 +258,12 @@
     let serverBoundValues = _decodeServerBoundValuesBuffer();
 
     // TODO: rename the serverFunction context key in the compiler
-    let fn = clientFunctionsMap.get(clientFnId).bind({ serverFunctions: serverBoundValues });
 
     if (eventType == 1) {
-      clickEventHandlerIdWeakMap.set(targetHandlerElement, fn);
+      clickEventHandlerIdWeakMap.set(targetHandlerElement, [clientFnId, serverBoundValues]);
     } else {
       let eventName = EventMap[eventType];
+      let fn = clientFunctionsMap.get(clientFnId).bind({ serverFunctions: serverBoundValues });
 
       _addEventListener(targetHandlerElement, eventName, fn);
     }
@@ -966,7 +966,7 @@
       let clientFunctionId = getUint16();
       let serverBoundValues = _decodeServerBoundValuesBuffer();
 
-      clientFunctionsMap.get(clientFunctionId).apply({ serverFunctions: serverBoundValues });
+      applyClientFunction(clientFunctionId, serverBoundValues);
     },
     // 12: CMD_APPEND_TOKENLIST
     () => {
@@ -1010,10 +1010,12 @@
 
       moduleMap.set(
         moduleId,
-        clientFunctionsMap.get(clientFunctionId).apply({ serverFunctions: serverBoundValues })
+        applyClientFunction(clientFunctionId, serverBoundValues)
       );
     }
   ];
+
+  let applyClientFunction = (clientFunctionId, sbv, args) => clientFunctionsMap.get(clientFunctionId).apply({ serverFunctions: sbv }, args);
 
   let _applyMessage = (message) => {
     processOffset = 0;
@@ -1038,14 +1040,16 @@
     readOffset += processOffset;
   }
 
-  let eventHandler = (e) => {
+  let globalClickEventHandler = (e) => {
     let node = e.target;
 
     while (node !== null) {
-      let handlerFn = clickEventHandlerIdWeakMap.get(node);
+      let data = clickEventHandlerIdWeakMap.get(node);
 
-      if (handlerFn) {
-        handlerFn(e);
+      if (data) {
+        // data[0] is clientFunctionId
+        // data[1] is serverBoundValues
+        applyClientFunction(data[0], data[1], [e]);
         if (e.defaultPrevented) {
           return;
         }
@@ -1055,7 +1059,7 @@
     }
   }
 
-  _addEventListener(_document, "click", eventHandler);
+  _addEventListener(_document, "click", globalClickEventHandler);
 
   //////////////////// WRITER ////////////////////
 
