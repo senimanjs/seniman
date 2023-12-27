@@ -4,7 +4,7 @@ import _generate from '@babel/generator';
 import _JSX from '@babel/plugin-syntax-jsx';
 import {
   createCompilerInternalImportsExpression,
-  createDeclareBlockExpression,
+  createDeclareBlockExpression2,
   createDeclareClientFunctionExpression
 } from './declare.js';
 
@@ -167,7 +167,15 @@ function processProgram(path) {
           children: [],
           isTarget: false,
           style: [],
-          attributes: {}
+          attributes: {},
+          style_v2: {
+            static: [],
+            dynamic: []
+          },
+          class_v2: {
+            static: [],
+            dynamic: []
+          }
         };
 
         let targetId;
@@ -195,6 +203,8 @@ function processProgram(path) {
 
           // Allocate a target entry to this element.
           element.isTarget = hasEventHandlers || hasDynamicAttribute || hasRef;
+
+          //console.log('element.isTarget', element.isTarget);// hasEventHandlers, hasDynamicAttribute, hasRef, element.isTarget);
 
           if (element.isTarget) {
             targetId = contextBlock.targetElementCount;
@@ -437,7 +447,7 @@ function processProgram(path) {
       //let encodeCompressionMap = getEncodeCompressionMap();
 
       gatheredUIBlocks.forEach((block, index) => {
-        node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareBlockExpression(block));
+        node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareBlockExpression2(block.id, block.rootElement));
       });
 
       gatheredClientFunctions.forEach((clientFunction, index) => {
@@ -1036,6 +1046,9 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
 
               element.style.push([key, valueString]);
 
+              // also populate element.style_v2.static
+              element.style_v2.static.push([key, valueString]);
+
               staticStyleStringables.push(`${key}:${prop.value.value}`);
             } else {
               styleConditions.push({ type: 'style', key, condition: prop.value });
@@ -1050,7 +1063,7 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
       }
 
       if (value.type == 'StringLiteral') {
-        // disable support for style string attribute for now
+        // no support for style string attribute for now
       } else if (value.type == 'JSXExpressionContainer') {
         processStyleObject(value.expression);
       } else {
@@ -1062,6 +1075,13 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
 
       if (value.type == 'StringLiteral') {
         element.attributes.class = value.value;
+
+        // populate element.class_v2.static value
+        let classNames = value.value.split(' ');
+
+        classNames.forEach(className => {
+          element.class_v2.static.push(className);
+        });
       } else if (value.type == 'JSXExpressionContainer') {
         styleConditions.push({ type: 'class', condition: value.expression });
       }
