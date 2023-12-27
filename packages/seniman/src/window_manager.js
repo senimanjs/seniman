@@ -419,7 +419,7 @@ class Root {
 
     let htmlRenderContext = this.crawlerRenderer.createHtmlRenderingContext();
 
-    let window = new Window(this, pageParams, this.Body);
+    let window = new Window(this, pageParams, this.rootFn);
 
     window.onBuffer(buf => {
       htmlRenderContext.feedBuffer(buf);
