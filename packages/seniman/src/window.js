@@ -405,11 +405,11 @@ export class Window {
 
         // compatibility with old API 
         path: () => {
-          console.warn('client.path() is deprecated. Use client.location.pathname() instead. See: https://seniman.dev/docs/client');
+          // console.warn('client.path() is deprecated. Use client.location.pathname() instead. See: https://seniman.dev/docs/client');
           return location.pathname();
         },
         navigate: (href) => {
-          console.warn('client.navigate() is deprecated. Use client.history.pushState() instead. See: https://seniman.dev/docs/client');
+          // console.warn('client.navigate() is deprecated. Use client.history.pushState() instead. See: https://seniman.dev/docs/client');
           location.setHref(href);
         },
 
