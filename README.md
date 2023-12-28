@@ -151,9 +151,10 @@ Open up your browser and navigate to `http://localhost:3002`, and you should see
 - Mini e-Commerce ([Source](examples/mini-ecommerce), [Demo](https://mini-ecommerce.examples.seniman.dev/))
 - OpenAI GPT UI ([Source](examples/gpt-ui))
 - Simple Autocomplete ([Source](examples/autocomplete), [Demo](https://seniman-autocomplete.garindra.workers.dev/))
-- [Hello World](examples/hello-world) - Simplest possible Seniman app
+- [Hello World](examples/hello-world) - Smallest possible Seniman app
+- [Basic Routing](examples/simple-multi-page) - Simple Seniman app with basic routing
 
-For (many) more examples, check out the [examples](examples) directory.
+For more examples, check out the [examples](examples) directory.
 
 ## FAQ
 
