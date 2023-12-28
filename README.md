@@ -152,7 +152,7 @@ Open up your browser and navigate to `http://localhost:3002`, and you should see
 - OpenAI GPT UI ([Source](examples/gpt-ui))
 - Simple Autocomplete ([Source](examples/autocomplete), [Demo](https://seniman-autocomplete.garindra.workers.dev/))
 - [Hello World](examples/hello-world) - Smallest possible Seniman app
-- [Basic Routing](examples/simple-multi-page) - Simple Seniman app with basic routing
+- [Basic Routing](examples/routing-basic) - Simple Seniman app with basic routing
 
 For more examples, check out the [examples](examples) directory.
 
