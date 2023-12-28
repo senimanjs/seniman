@@ -1,12 +1,6 @@
+import { useState, useClient, useMemo, useEffect, onDispose, Anchor, createRoot } from 'seniman';
+import { serve } from 'seniman/server';
 import { Style } from 'seniman/head';
-import { useState, useClient, useMemo, useEffect, onDispose, Anchor } from 'seniman';
-import { createServer } from 'seniman/server';
-
-let server = createServer({ Body });
-
-let port = 3015;
-server.listen(port);
-console.log('Listening on port', port);
 
 const cssText = `
 body,
@@ -45,7 +39,7 @@ function MoviePage() {
   let [movieData, setMovieData] = useState(null);
 
   let movieId = useMemo(() => {
-    let path = client.path();
+    let path = client.location.pathname();
     return path.split("/")[2];
   });
 
@@ -92,7 +86,7 @@ function MoviesPage() {
   </div>
 }
 
-function Body() {
+function App() {
   let client = useClient();
 
   let pageType = useMemo(() => {
@@ -113,9 +107,7 @@ function Body() {
     <div>
       {() => {
         // This function is re-run only when pageType changes
-        let _pageType = pageType();
-
-        switch (_pageType) {
+        switch (pageType()) {
           case "movie":
             return <MoviePage />;
           case "movies":
@@ -127,3 +119,6 @@ function Body() {
     </div>
   </div>;
 }
+
+let root = createRoot(App);
+serve(root, 3015);

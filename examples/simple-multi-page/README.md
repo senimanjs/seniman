@@ -37,11 +37,6 @@ return <div>
 </div>;
 ```
 
-
-For a more full-featured approach, you can explore the [`seniman/router`](https://senimanjs.org/docs/routing) package.
-
-
-
 ## Prerequisites
 - Node.js 16+
 

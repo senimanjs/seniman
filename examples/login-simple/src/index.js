@@ -1,47 +1,6 @@
-import { useContext, useWindow, useClient, useState, Anchor, withValue, useMemo, createContext, useEffect, createRoot } from 'seniman';
+import { useClient, Anchor, withValue, useMemo, useState, createRoot } from 'seniman';
 import { serve } from 'seniman/server';
-import jwt from 'jsonwebtoken';
-
-let JWT_SECRET = process.env.JWT_SECRET || 'this-is-secret';
-
-// a wrapper around window.cookie to create a session object to be provided as Context to the app
-function createJWTSession(cookieKey) {
-  let window = useWindow();
-  let clientDataCookie = window.cookie(cookieKey);
-
-  let sessionData = useMemo(() => {
-    let clientDataString = clientDataCookie();
-
-    if (clientDataString != '') {
-      try {
-        var decoded = jwt.verify(clientDataString, JWT_SECRET, { complete: true });
-
-        if (decoded.payload) {
-          return decoded.payload;
-        }
-      } catch (e) {
-        return null;
-      }
-    }
-    return null;
-  });
-
-  let loggedIn = useMemo(() => {
-    return sessionData() != null;
-  });
-
-  return {
-    loggedIn: loggedIn,
-    data: sessionData,
-    login: (loginData) => {
-      let token = jwt.sign(loginData, JWT_SECRET, { expiresIn: '1d' });
-      window.setCookie(cookieKey, token);
-    },
-    logout: () => {
-      window.setCookie(cookieKey, '');
-    }
-  };
-}
+import { useSession, SessionProvider } from './session.js';
 
 // Replace this with your own authentication logic
 async function authenticate(email, password) {
@@ -57,9 +16,9 @@ async function authenticate(email, password) {
 }
 
 function LoginPage() {
-
   let email, password;
   let session = useSession();
+  let [error, setError] = useState(null);
 
   let setEmail = (value) => {
     email = value;
@@ -74,36 +33,24 @@ function LoginPage() {
 
     if (loginData) {
       session.login(loginData);
+    } else {
+      setError('Invalid email or password');
     }
   }
 
   return <div>
     <div>Login</div>
+
     <div style={{ marginTop: "10px" }}>
       <input type="text" placeholder="Email" onBlur={withValue(setEmail)} />
       <input type="password" placeholder="Password" onBlur={withValue(setPassword)} />
       <button onClick={onLoginClick}>Login</button>
     </div>
     <div style={{ fontSize: '11px', marginTop: '5px', color: '#666' }}>Hint: admin@admin.com & admin :)</div>
+    {error() ? <div style={{ color: 'red', fontSize: '11px', marginTop: '5px' }}>Error: {error()}</div> : null}
   </div>
 }
 
-
-function SessionProvider(props) {
-  let session = createJWTSession('senimanExampleCookieKey');
-
-  return (
-    <SessionContext.Provider value={session}>
-      {props.children}
-    </SessionContext.Provider>
-  );
-}
-
-const SessionContext = createContext(null);
-
-function useSession() {
-  return useContext(SessionContext);
-}
 
 function LoggedInRoot(props) {
   let client = useClient();
