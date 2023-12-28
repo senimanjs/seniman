@@ -1,22 +1,11 @@
-import express from 'express';
-import { useState, withValue } from 'seniman';
-import { Style } from 'seniman/head';
-import { wrapExpress } from 'seniman/express';
+import { createRoot, useState, withValue } from 'seniman';
+import { serve } from 'seniman/server';
 import { Database } from 'sqlite-async';
-
-let app = express();
-let port = process.env.PORT || 3002;
-wrapExpress(app, { Body });
-
-app.listen(port);
-
-console.log('Listening on port', port);
 
 let db;
 
 try {
   db = await Database.open(':memory:');
-
 } catch (error) {
   throw Error('Could not open database')
 }
@@ -38,17 +27,7 @@ try {
   throw Error('Could not insert new task');
 }
 
-const cssText = `
-  body, * {
-    padding: 0;
-    margin: 0;
-    font-family: sans-serif;
-  }
-  body { padding: 10px; background:#444; }
-`;
-
-
-function Body() {
+function Root() {
   let [getTasks, setTasks] = useState([]);
   let [inputValue, setInputValue] = useState('');
 
@@ -77,8 +56,7 @@ function Body() {
     loadTasks();
   };
 
-  return <div>
-    <Style text={cssText} />
+  return <div style={{ padding: 0, margin: 0, fontFamily: 'sans-serif' }}>
     <div>
       {getTasks().map(task => {
         return <div style={{ width: "300px", background: "#eee", padding: "5px" }}>
@@ -87,7 +65,7 @@ function Body() {
         </div>
       })}
     </div>
-    <div>
+    <div style={{ marginTop: "10px" }}>
       <input
         type="text"
         value={inputValue()}
@@ -96,3 +74,6 @@ function Body() {
     </div>
   </div>;
 }
+
+let root = createRoot(Root);
+serve(root, 3002);
