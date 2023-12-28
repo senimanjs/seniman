@@ -1,4 +1,4 @@
-import { useState, useClient, Anchor, useEffect } from 'seniman';
+import { useState, useClient, Anchor, useEffect, createRef } from 'seniman';
 import { IMAGE_PREFIX, batchGetProductsData, getProductData, getRelatedProductRecommendations } from './data.js';
 
 function formatPrice(priceNumber) {
@@ -11,7 +11,7 @@ function ProductMiniViewCard(props) {
 
   return <div style={{ height: "290px", width: '120px', position: 'relative', float: 'left', marginRight: '8px' }}>
     <Anchor href={"/product/" + props.product.id} style={{ display: 'block' }} >
-      <img style={{ borderRadius: '5px', width: '100%' }} src={`${IMAGE_PREFIX}/products/${props.product.id}-small.webp`} />
+      <img alt={props.product.title} style={{ borderRadius: '5px', width: '120px', height: '120px' }} src={`${IMAGE_PREFIX}/products/${props.product.id}-small.webp`} />
     </Anchor>
     <Anchor href={"/product/" + props.product.id} style={{ display: 'block' }} >
       <div style={{ fontSize: '14px', marginBottom: '2px', marginTop: '5px', lineHeight: '18px' }}>{props.product.title}</div>
@@ -62,11 +62,7 @@ function ProductHeader(props) {
     position: 'static',
     width: '100%'
   }}>
-    <div style={{
-      maxWidth: '450px', // Set the maximum width
-      width: '100%', // Make width flexible
-      margin: '0 auto', // Center the div
-    }}>
+    <div style={{ maxWidth: '450px', margin: '0 auto' }}>
       <div style={{ padding: '20px 0', position: 'relative' }}>
         <div style={{ cursor: "pointer", padding: '0 10px' }} onClick={$c(e => window.history.back())}>
           <img style={{ float: 'left', width: '24px', height: '24px' }} src={IMAGE_PREFIX + "/arrow-left.png"} />
@@ -192,7 +188,6 @@ export default function ProductPage(props) {
               <ProductVariantSelector variants={product().variants || []} />
             </div> : null
         }
-
         {recommendedProductIds() ?
           <ProductCollectionCard
             title="Recommendations For You"
