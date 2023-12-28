@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 
 let JWT_SECRET = process.env.JWT_SECRET || 'this-is-secret';
 
-// a wrapper around window.cooki to create a session object
+// a wrapper around window.cookie to create a session object to be provided as Context to the app
 function createJWTSession(cookieKey) {
   let window = useWindow();
   let clientDataCookie = window.cookie(cookieKey);
