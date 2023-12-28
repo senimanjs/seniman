@@ -1,4 +1,4 @@
-# simple-multi-page
+# Simple Log In
 
 In this example, we'll show you a simple log-in flow in Seniman -- supported by a small session abstraction layer on top of Seniman's `client.cookie()` API and JWT.
 
