@@ -148,16 +148,18 @@ function _createElementExpression(element) {
       exp.properties.push(classProperty);
     }
 
-    const childrenProperty = t.objectProperty(
-      t.identifier('children'),
-      t.arrayExpression(
-        element.children.map(childElement => {
-          return _createElementExpression(childElement);
-        })
-      )
-    );
+    if (element.children.length > 0) {
+      const childrenProperty = t.objectProperty(
+        t.identifier('children'),
+        t.arrayExpression(
+          element.children.map(childElement => {
+            return _createElementExpression(childElement);
+          })
+        )
+      );
 
-    exp.properties.push(childrenProperty);
+      exp.properties.push(childrenProperty);
+    }
   }
 
   return exp;

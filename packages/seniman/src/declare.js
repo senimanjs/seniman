@@ -177,6 +177,11 @@ function getTemplateBuffer(rootElement, tokens) {
       let el = siblings[i];
       let tagNameId = getVariableId(el.type);
 
+      // retroactively add children array if it doesn't exist -- compatibility with the old logic we ported from compile-time 
+      if (!el.children) {
+        el.children = [];
+      }
+
       //let tagNameId = el.type == '$text' ? 32 : encodeCompressionMap.typeIdMapping[el.type];
       let filteredChildren = (el.children || []).filter(childEl => childEl.type != '$anchor');
 
@@ -195,14 +200,14 @@ function getTemplateBuffer(rootElement, tokens) {
         firstByte = firstByte | (1 << 7);
       }
 
-      buf.writeUint8(firstByte, offset);
+      buf.writeUInt8(firstByte, offset);
       offset++;
 
       // if this is a text
       if (tagNameId == 0) {
         let textLength = Buffer.byteLength(el.text);
 
-        buf.writeUint16BE(textLength, offset);
+        buf.writeUInt16BE(textLength, offset);
         offset += 2;
 
         // write the string
@@ -213,7 +218,7 @@ function getTemplateBuffer(rootElement, tokens) {
 
         if (el.style) {
           let attrId = getVariableId('style');
-          buf.writeUint8(attrId, offset);
+          buf.writeUInt8(attrId, offset);
           offset++;
 
           Object.keys(el.style).forEach(propName => {
@@ -221,13 +226,13 @@ function getTemplateBuffer(rootElement, tokens) {
             let styleKeyId = getVariableId(propName);
             let styleValueId = getVariableId(propValue);
 
-            buf.writeUint8(styleKeyId, offset);
-            buf.writeUint8(styleValueId, offset + 1);
+            buf.writeUInt8(styleKeyId, offset);
+            buf.writeUInt8(styleValueId, offset + 1);
 
             offset += 2;
           });
 
-          buf.writeUint8(0, offset);
+          buf.writeUInt8(0, offset);
 
           offset++;
         }
@@ -244,11 +249,11 @@ function getTemplateBuffer(rootElement, tokens) {
             throw new Error();
           }
 
-          buf.writeUint8(attrId, offset);
+          buf.writeUInt8(attrId, offset);
           offset++;
 
           let attrValue = el.attributes[attrName];
-          buf.writeUint16BE(attrValue.length, offset);
+          buf.writeUInt16BE(attrValue.length, offset);
 
           offset += 2;
           buf.write(attrValue, offset, attrValue.length);
@@ -256,7 +261,7 @@ function getTemplateBuffer(rootElement, tokens) {
 
         }
 
-        buf.writeUint8(0, offset);
+        buf.writeUInt8(0, offset);
         offset++;
       }
 
@@ -270,7 +275,7 @@ function getTemplateBuffer(rootElement, tokens) {
 
   let elementCountBuffer = Buffer.alloc(2);
 
-  elementCountBuffer.writeUint16BE(totalElementCount);
+  elementCountBuffer.writeUInt16BE(totalElementCount);
 
   return Buffer.concat([elementCountBuffer, buf.subarray(0, offset)]);
 }
@@ -459,39 +464,39 @@ function _createElScriptBuffer(els, anchors, targets) {
   let bufLen = (1 + 2 * refElementsCount) + (1 + 2 * anchorCount) + (1 + 1 * targetElementCount);
   let buf = Buffer.alloc(bufLen);
 
-  buf.writeUint8(refElementsCount, 0);
+  buf.writeUInt8(refElementsCount, 0);
 
   let offset = 1;
   for (let i = 0; i < refElementsCount; i++) {
     let refEl = els[i];
     //let relCodeMap = {firstChild}
-    buf.writeUint8(refEl.rel, offset + i * 2);
-    buf.writeUint8(refEl.relRefId, offset + i * 2 + 1);
+    buf.writeUInt8(refEl.rel, offset + i * 2);
+    buf.writeUInt8(refEl.relRefId, offset + i * 2 + 1);
   }
 
   offset += 2 * refElementsCount;
-  buf.writeUint8(anchorCount, offset);
+  buf.writeUInt8(anchorCount, offset);
   offset++;
 
   for (let i = 0; i < anchorCount; i++) {
     let anchor = anchors[i];
 
-    buf.writeUint8(anchor.el, offset + i * 2);
+    buf.writeUInt8(anchor.el, offset + i * 2);
 
     // in beforeEl context, 255 means undefined -- ie. no beforeEl applicable. 
     // 255 that is usually used to refer to rootElement can be reused here since 
     // there is no situation in which rootElement is an anchor's beforeElement.
-    buf.writeUint8(anchor.beforeEl == undefined ? 255 : anchor.beforeEl, offset + i * 2 + 1)
+    buf.writeUInt8(anchor.beforeEl == undefined ? 255 : anchor.beforeEl, offset + i * 2 + 1)
   }
 
   offset += 2 * anchorCount;
-  buf.writeUint8(targetElementCount, offset);
+  buf.writeUInt8(targetElementCount, offset);
   offset++;
 
   for (let i = 0; i < targetElementCount; i++) {
     let target = targets[i];
 
-    buf.writeUint8(target, offset + i);
+    buf.writeUInt8(target, offset + i);
   }
 
   offset += targetElementCount;
