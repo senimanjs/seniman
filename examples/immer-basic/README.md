@@ -1,4 +1,4 @@
-# express-immer
+# immer-basic
 
 In this example, we'll show a simple usage example of Seniman, together with the `immer` package -- allowing for a more expressive way of updating state.
 

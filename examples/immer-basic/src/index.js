@@ -1,17 +1,7 @@
-import express from 'express';
-
+import { onDispose, createHandler, useState, useMemo, createRoot } from 'seniman';
+import { serve } from 'seniman/server';
 import { Style, Title } from 'seniman/head';
-import { onDispose, createHandler, useState, useMemo } from 'seniman';
-import { wrapExpress } from 'seniman/express';
 import produce from 'immer';
-
-const app = express();
-wrapExpress(app, { Body });
-
-const port = process.env.PORT || 3002;
-app.listen(port);
-
-console.log('Listening on port', port);
 
 const cssText = `
 body,
@@ -35,7 +25,7 @@ body {
   margin-bottom: 10px;
 }`;
 
-function Body() {
+function App() {
   let [firstName, setFirstName] = useState("James");
   let [lastName, setLastName] = useState("Bond");
 
@@ -106,3 +96,6 @@ function Body() {
     </div>
   </div>;
 }
+
+const root = createRoot(App);
+serve(root, 3002);

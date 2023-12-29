@@ -1,17 +1,15 @@
 {
-  "name": "express-immer",
+  "name": "immer-basic",
   "version": "0.1.0",
   "description": "",
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node dist/index.js",
-    "dev": "npx concurrently \"npx babel src --out-dir dist --watch\" \"npx nodemon --delay 5ms dist/index.js\""
+    "start": "node dist/index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
     "immer": "^9.0.18",
-    "seniman": "^0.0.124"
+    "seniman": "^0.0.146"
   },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
