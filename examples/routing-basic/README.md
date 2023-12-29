@@ -1,8 +1,8 @@
-# simple-multi-page
+# Basic Routing
 
 In this example, we'll show you a simple multi-page application in Seniman. 
 
-This is intended to show the absolute minimum implementation of differential rendering based on the route of the page using `client.path()` API and the `Anchor` component provided by Seniman. 
+This is intended to show the absolute minimum implementation of differential rendering based on the route of the page using `client.location` API and the `Anchor` component provided by Seniman. 
 
 
 ```js
