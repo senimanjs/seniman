@@ -1,6 +1,6 @@
 import fs from "fs";
-import { useState, onDispose } from "seniman";
-import { createServer } from "seniman/server";
+import { useState, onDispose, createRoot } from "seniman";
+import { serve } from "seniman/server";
 import { Style } from "seniman/head";
 import { proxy, subscribe } from "valtio";
 
@@ -46,9 +46,5 @@ function Body() {
   </div>;
 }
 
-let server = createServer({ Body });
-let port = process.env.PORT || 3002;
-
-console.log("Listening on port", port);
-
-server.listen(port);
+let root = createRoot(Body);
+serve(root, 3002);
