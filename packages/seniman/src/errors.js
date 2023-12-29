@@ -3,13 +3,18 @@ import fs from 'node:fs';
 import { parse } from 'stacktrace-parser';
 
 function addFileContentsToStackTraceLine(line) {
-  if (line.file.startsWith('file://')) {
-    let contents = fs.readFileSync(line.file.split('file://')[1], 'utf8');
-    let lines = contents.split('\n');
-    let lineContents = lines[line.lineNumber - 1];
 
-    line.contents = lineContents;
-  } else {
+  try {
+    if (line.file.startsWith('file://')) {
+      let contents = fs.readFileSync(line.file.split('file://')[1], 'utf8');
+      let lines = contents.split('\n');
+      let lineContents = lines[line.lineNumber - 1];
+
+      line.contents = lineContents;
+    } else {
+      line.contents = '';
+    }
+  } catch (err) {
     line.contents = '';
   }
 }
