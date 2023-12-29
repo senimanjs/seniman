@@ -1,13 +1,8 @@
-import fs from "fs";
-import { createHandler, useState, withValue } from "seniman";
-import { createServer } from "seniman/server";
+import fs from 'fs';
+import { createHandler, useState, withValue, createRoot } from "seniman";
+import { serve } from "seniman/server";
 import { Style } from "seniman/head";
 import TrieSearch from 'trie-search';
-
-// Uncomment to deploy to Cloudflare Workers
-// import { createServer } from 'seniman/workers';
-// import dataJson from '../data/entries.json';
-// const users = dataJson.users;
 
 const users = JSON.parse(fs.readFileSync('./data/entries.json', 'utf8')).users;
 
@@ -23,7 +18,7 @@ const cssText = `
   }
 `;
 
-function Body() {
+function App() {
   let [autocompleteResults, setAutocompleteResults] = useState([]);
 
   let onChange = createHandler((value) => {
@@ -86,10 +81,5 @@ const getColorForInitials = (initials) => {
   return colorMap[index];
 };
 
-let server = createServer({ Body });
-let port = 3002;
-
-console.log("Listening on port", port);
-server.listen(port);
-
-//export default createServer({ Body });
+let root = createRoot(App);
+serve(root, 3002);
