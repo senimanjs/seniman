@@ -52,11 +52,12 @@ class Router {
     let routerCell = getActiveNode();
     let router = this;
 
-    let createRouteNode = (route, onFinish) => {
+    let createRouteNode = (route, extractor) => {
 
       runInNode(routerCell, () => {
         let disposeFn = useDisposableEffect(() => {
-          onFinish(<div>
+
+          extractor(<div>
             <RouterContext.Provider value={router}>
               <route.component />
             </RouterContext.Provider>
@@ -77,7 +78,9 @@ class Router {
 
       // is new route
       if (shouldPushToStack) {
-        let onFinish = (node, disposeFn) => {
+
+        // extracts the node and disposeFn from the child route's disposableEffect
+        let extractor = (node, disposeFn) => {
           let scrollPosition = this.lastScrollPosition;
           let scrollerRef = this.lastScrollerRef;
 
@@ -90,14 +93,14 @@ class Router {
               page.scrollerRef = scrollerRef;
             }
 
-            // push new page to stack
+            // push new page to stack (along with the very important node & disposeFn we extracted)
             pageStack.push({ route, path, node, disposeFn, scrollerRef: null, scrollPosition: { x: 0, y: 0 } });
 
             this.lastScrollPosition = { x: 0, y: 0 };
           }));
         }
 
-        createRouteNode(route, onFinish);
+        createRouteNode(route, extractor);
       } else {
 
         // if it's a back action, we need to pop the current page from the stack
@@ -168,7 +171,6 @@ class Router {
     return `${path}?${queryString}`;
   }
 
-
   getRouteParams(path, match) {
     const paramRegex = /:[^/]+/g;
     const paramNames = path.match(paramRegex);
@@ -191,7 +193,6 @@ class Router {
     this.lastScrollPosition = scrollPosition;
 
     this.client.navigate(href);
-
   }
 
   push(routeName, params, queryString, scrollerRef, scrollPosition) {

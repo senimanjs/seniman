@@ -1,12 +1,9 @@
-import { useState, useEffect, useMemo, untrack } from "seniman";
-import { createServer } from "seniman/server";
+import { useState, useEffect, useMemo, untrack, createRoot } from "seniman";
+import { serve } from "seniman/server";
 import { Style, Link as HeadLink } from "seniman/head";
 import { getTweet } from "./data.js";
 import { createRouting, RouterRoot, useRouter } from './router.js';
 import { Scroller, TweetInfiniteStream } from "./scroller.js";
-
-// uncomment to use cloudflare workers
-// import { createServer } from "seniman/workers";
 
 function TweetPage() {
   let router = useRouter();
@@ -83,7 +80,7 @@ let routing = createRouting();
 routing.on("/tweet/:tweet_id", "tweet", TweetPage);
 routing.on("/", "home", HomeFeed);
 
-function Body() {
+function App() {
   return <div>
     <HeadLink rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reset.css@2.0.2/reset.min.css" />
     <HeadLink rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&display=swap" />
@@ -107,11 +104,5 @@ function Body() {
   </div>;
 }
 
-let server = createServer({ Body });
-let port = 3050;
-server.listen(port);
-
-console.log(`Listening on port ${port}`);
-
-// uncomment to use cloudflare workers
-// export default createServer({ Body });
+let root = createRoot(App);
+serve(root, 3050);
