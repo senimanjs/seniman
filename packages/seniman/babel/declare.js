@@ -99,7 +99,7 @@ function _createElementExpression(element) {
 
       attributeProps.push(
         t.objectProperty(
-          t.identifier(attrName),
+          t.stringLiteral(attrName),
           t.stringLiteral(attrValue)
         )
       );
