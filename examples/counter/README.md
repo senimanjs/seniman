@@ -1,4 +1,4 @@
-# Hello World 
+# Counter
 
 In this example, we'll show a simple counter application implemented using Seniman.
 
