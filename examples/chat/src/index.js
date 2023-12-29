@@ -1,16 +1,7 @@
-import express from 'express';
+import { useState, onCleanup, createCollection, createHandler, useClient, wrapPromise, createRoot } from 'seniman';
+import { serve } from 'seniman/server';
 import { Style } from 'seniman/head';
-import { useState, onCleanup, createCollection, createHandler, useClient, wrapPromise } from 'seniman';
-import { wrapExpress } from 'seniman/express';
 import { chatService } from './chat-service.js';
-
-let app = express();
-wrapExpress(app, { Body });
-
-let port = process.env.PORT || 3014;
-app.listen(port);
-
-console.log('Listening on port', port);
 
 const cssText = `
 body,
@@ -133,10 +124,13 @@ function ChatStream() {
   </div>;
 }
 
-function Body() {
+function App() {
   return <div>
     <Style text={cssText} />
     <div style={{ marginBottom: "10px", fontWeight: "bold" }}>SenimanChat</div>
     <ChatStream />
   </div>;
 }
+
+let root = createRoot(App);
+serve(root, 3014);
