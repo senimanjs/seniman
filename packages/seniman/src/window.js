@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, processWorkQueue, getActiveNode, runInNode, getActiveWindow, setActiveWindow, useCallback, getActiveCell, runInCell, onDispose } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveNode, getActiveWindow, useCallback, getActiveCell, runInCell, onDispose, WorkQueue } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
 import { bufferPool, PAGE_SIZE } from './buffer-pool.js';
 import { ErrorHandler } from './errors.js';
@@ -28,7 +28,8 @@ const eventTypeNameMap = {
   6: 'keydown',
   7: 'keyup',
   8: 'mouseenter',
-  9: 'mouseleave'
+  9: 'mouseleave',
+  10: 'load'
 }
 
 // TODO: use a LRU cache
@@ -97,55 +98,6 @@ function setCookieValue(cookieString, key, value) {
   return newCookieString;
 }
 
-class WorkQueue {
-
-  constructor() {
-    this.queue = [];
-  }
-
-  add(item) {
-    // looping from the end of the list, find the first item that has the similar or less depth,
-    // if so, insert after it. otherwise, insert at the beginning
-    let i = this.queue.length - 1;
-    while (i >= 0) {
-      if (this.queue[i].depth <= item.depth) {
-        this.queue.splice(i + 1, 0, item);
-        return;
-      }
-
-      i--;
-    }
-
-    this.queue.unshift(item);
-  }
-
-  isEmpty() {
-    return this.queue.length === 0;
-  }
-
-  poll() {
-    return this.queue.shift();
-  }
-}
-
-function processInput(window, inputQueue) {
-
-  setActiveWindow(window);
-
-  while (inputQueue.length) {
-    let msg = inputQueue.shift();
-
-    untrack(() => {
-      try {
-        window._onMessage(msg);
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }
-
-  setActiveWindow(null);
-}
 
 function createNoArgClientFunction(fn) {
   return $c(() => {
@@ -216,9 +168,8 @@ const CMD_INSTALL_CLIENT_FUNCTION = 10;
 const CMD_RUN_CLIENT_FUNCTION = 11;
 const CMD_INIT_SEQUENCE = 13;
 const CMD_MODIFY_SEQUENCE = 14;
-const CMD_MODIFY_HEAD = 16;
-const CMD_CHANNEL_MESSAGE = 17;
-const CMD_INIT_MODULE = 18;
+const CMD_CHANNEL_MESSAGE = 15;
+const CMD_INIT_MODULE = 16;
 
 const pingBuffer = Buffer.from([0]);
 const scratchBuffer = Buffer.alloc(32768);
@@ -226,7 +177,7 @@ const DELETE_BLOCK_BUFFER_SIZE = 2048;
 
 export class Window {
 
-  constructor(windowManager, pageParams, rootFn) {
+  constructor(windowManager, pageParams, rootFn, bufferFn) {
     this.windowManager = windowManager;
 
     let { windowId,
@@ -243,7 +194,7 @@ export class Window {
     this.global_writeOffset = 0;
     this.mutationGroup = null;
 
-    this.bufferFn = null;
+    this.bufferFn = bufferFn;
 
     this._streamInitWindow();
 
@@ -446,12 +397,16 @@ export class Window {
         setViewportSize({ width, height });
       }
 
+      let headSequence = new Sequence();
+
       getActiveNode().context = {
         [ClientContext.id]: clientContext,
-        [HeadContext.id]: createHeadContextValue(clientContext)
+        [HeadContext.id]: createHeadContextValue(headSequence)
       };
 
-      this._attach(1, 0,
+      this._attach(1, 0, headSequence);
+
+      this._attach(2, 0,
         <ErrorHandler>
           {rootFn}
           <BackButtonListener onBackButton={onBackButton} />
@@ -541,28 +496,8 @@ export class Window {
     this.bufferFn = bufferFn;
   }
 
-  submitWork(node) {
-    this.workQueue.add(node);
-
-    if (!this.hasPendingWork) {
-      this.windowManager.requestExecution(this);
-      this.hasPendingWork = true;
-    }
-  }
-
-  scheduleWork() {
-
-    // TODO: probably do the queue loop here, 
-    // in high-traffic situations, cross check the output buffer if there's enough generated there
-    // to start yielding to another window even though queue is not completely processed
-    // to make sure everyone's windows are sufficiently responsive
-    processWorkQueue(this, this.workQueue);
-
+  flushCommandBuffer() {
     this._flushMutationGroup();
-
-    // for now, always assume we're done with work, and set this.hasPendingWork to false
-    // later, we'll need to check if there's still work to do since we'll only be allowed to do a certain amount of work per frame
-    this.hasPendingWork = false;
   }
 
   sendPing() {
@@ -720,20 +655,15 @@ export class Window {
     this.inputMessageQueue.push(msg);
   }
 
-  scheduleInput() {
-    processInput(this, this.inputMessageQueue);
-    this.hasPendingInput = false;
-  }
-
-  _onMessage(buffer) {
-    let txPortId = buffer.readUInt16LE(0);
+  processInput(inputBuffer) {
+    let txPortId = inputBuffer.readUInt16LE(0);
 
     if (!this.eventHandlers.has(txPortId)) {
       return;
     }
 
     let handler = this.eventHandlers.get(txPortId);
-    let argsList = senimanDecode(buffer.subarray(2));
+    let argsList = senimanDecode(inputBuffer.subarray(2));
 
     handler.apply(null, argsList);
   }
@@ -1705,7 +1635,6 @@ class Collection {
 
   _initNode(view, itemId, onInitial, onChange) {
     let isInitial = true;
-    let initialNode = null;
     let disposeFn = null;
 
     runInCell(view.cell, () => {
@@ -1715,7 +1644,6 @@ class Collection {
 
         if (isInitial) {
           isInitial = false;
-          initialNode = nodeResult;
           onInitial(nodeResult);
         } else {
           onChange(currentIndexForItemId, nodeResult);
@@ -1772,19 +1700,31 @@ export class Sequence {
   remove(index, count) {
     this.nodes.splice(index, count);
 
-    this.onChangeFn({ type: MODIFY_REMOVE, index, count });
+    if (this.onChangeFn) {
+      this.onChangeFn({ type: MODIFY_REMOVE, index, count });
+    }
+  }
+
+  push(items) {
+    let index = this.nodes.length;
+
+    this.insert(index, items);
   }
 
   insert(index, items) {
     this.nodes.splice(index, 0, ...items);
 
-    this.onChangeFn({ type: MODIFY_INSERT, index, count: items.length });
+    if (this.onChangeFn) {
+      this.onChangeFn({ type: MODIFY_INSERT, index, count: items.length });
+    }
   }
 
   replace(index, items) {
     this.nodes.splice(index, items.length, ...items);
 
-    this.onChangeFn({ type: MODIFY_REPLACE, index, count: items.length });
+    if (this.onChangeFn) {
+      this.onChangeFn({ type: MODIFY_REPLACE, index, count: items.length });
+    }
   }
 }
 

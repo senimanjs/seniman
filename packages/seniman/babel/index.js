@@ -20,7 +20,8 @@ const eventTypeIdMap = {
   'onKeyDown': 6,
   'onKeyUp': 7,
   'onMouseEnter': 8,
-  'onMouseLeave': 9
+  'onMouseLeave': 9,
+  'onLoad': 10
 };
 
 const eventNames = Object.keys(eventTypeIdMap);

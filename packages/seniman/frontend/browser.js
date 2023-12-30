@@ -3,7 +3,6 @@
   let _window = window;
   let _document = document;
   let _location = location;
-  let head = _document.head;
   let createMap = () => new Map();
 
   let moduleMap = createMap();
@@ -43,13 +42,13 @@
           // excessive window creation error
           // TODO: do nothing for now
         } else {
-          callbacks.close.forEach(cb => cb(event));
+          closeCallbacks.forEach(cb => cb(event));
         }
       }
 
       socket.onerror = (error) => {
         // requestReopen = true;
-        callbacks.error.forEach(cb => cb(error));
+        errorCallbacks.forEach(cb => cb(error));
       };
     }
 
@@ -59,10 +58,8 @@
       socket.onerror = null;
     }
 
-    let callbacks = {
-      close: [],
-      error: [],
-    };
+    let closeCallbacks = [];
+    let errorCallbacks = [];
 
     connectSocket();
 
@@ -73,11 +70,11 @@
       },
 
       onClose: (callback) => {
-        callbacks.close.push(callback);
+        closeCallbacks.push(callback);
       },
 
       onError: (callback) => {
-        callbacks.error.push(callback);
+        errorCallbacks.push(callback);
       },
 
       close: () => {
@@ -506,10 +503,16 @@
     let [templateString, isSvg] = _compileTemplate(templateTokenList);
     const t = createElement("template");
     t.innerHTML = templateString;
-
     let node = t.content.firstChild;
 
-    if (isSvg) {
+    // handle case where template is a script -- need to create a new script element from scratch
+    if (['SCRIPT', 'LINK'].includes(node.nodeName)) {
+      let newNode = createElement(node.nodeName);
+      for (let attr of node.attributes) {
+        newNode.setAttribute(attr.name, attr.value);
+      }
+      node = newNode;
+    } else if (isSvg) {
       node = node.firstChild;
     }
 
@@ -841,68 +844,6 @@
     }
   }
 
-  let headElementsMap = createMap();
-
-  let _modifyHead = () => {
-    let command = _decodeServerBoundValuesBuffer()[0];
-
-    let CMD_HEAD_SET_TITLE = 1;
-    let CMD_HEAD_ADD_STYLE = 2;
-    let CMD_HEAD_ADD_LINK = 3;
-    let CMD_HEAD_ADD_SCRIPT = 4;
-    let CMD_HEAD_ADD_META = 5;
-    let CMD_HEAD_REMOVE = 6;
-
-    let cmdType = command.type;
-
-    if (cmdType == CMD_HEAD_SET_TITLE) {
-      _document.title = command.value;
-    } else if (cmdType == CMD_HEAD_REMOVE) {
-      let elToRemove = headElementsMap.get(command.id);
-      elToRemove.remove();
-      headElementsMap.delete(command.id);
-    } else {
-      let elMap = {
-        [CMD_HEAD_ADD_STYLE]: 'style',
-        [CMD_HEAD_ADD_LINK]: 'link',
-        [CMD_HEAD_ADD_SCRIPT]: 'script',
-        [CMD_HEAD_ADD_META]: 'meta'
-      };
-
-      let elType = elMap[cmdType];
-      let el = createElement(elType);
-      let attributes = command.attributes;
-
-      Object.keys(attributes).forEach(key => {
-        let value = attributes[key];
-
-        if (value) {
-          el.setAttribute(key, attributes[key]);
-        }
-      });
-
-      if (command.text) {
-        el.innerText = command.text;
-      }
-
-      let onLoad = command.onLoad;
-      let onError = command.onError;
-
-      if (onLoad) {
-        // TODO: check if onload needs to be nullified after the first call
-        // since some browsers will call it multiple times
-        el.onload = () => onLoad();
-      }
-
-      if (onError) {
-        el.onerror = () => onError();
-      }
-
-      headElementsMap.set(command.id, el);
-      head.appendChild(el);
-    }
-  }
-
   // fill out the 0-index to make it easier for templating to do 1-indexing
   let GlobalTokenList = [''];
 
@@ -914,8 +855,11 @@
     // 2: CMD_INIT_WINDOW
     () => {
       windowId = getString(21);
+      let head = _document.head;
       let body = _document.body;
-      _blocksMap.set(1, new Block(body, [], [{ el: body }]));
+
+      _blocksMap.set(1, new Block(head, [], [{ el: head }]));
+      _blocksMap.set(2, new Block(body, [], [{ el: body }]));
     },
     // 3: CMD_ATTACH_ANCHOR
     _attachAtAnchorV2,
@@ -932,10 +876,10 @@
     _attachEventHandlerV2,
     // 6: CMD_INSTALL_EVENT_TYPE
     () => {
-      let eventType = getUint8();
+      let eventTypeId = getUint8();
       let eventName = getString(getUint8());
 
-      EventMap[eventType] = eventName;
+      EventMap[eventTypeId] = eventName;
     },
     // 7: CMD_ELEMENT_UPDATE
     _elementUpdate,
@@ -980,11 +924,7 @@
     _initSequence,
     // 14: CMD_MODIFY_SEQUENCE
     _modifySequence,
-    // 15: null
-    null,
-    // 16: CMD_MODIFY_HEAD
-    _modifyHead,
-    // 17: CMD_CHANNEL_MESSAGE
+    // 15: CMD_CHANNEL_MESSAGE
     () => {
       let channelId = getUint16();
       let serverBoundValues = _decodeServerBoundValuesBuffer();
@@ -1002,7 +942,7 @@
         bufferedChannelMessages.get(channelId).push(value);
       }
     },
-    // 18: CMD_INIT_MODULE
+    // 16: CMD_INIT_MODULE
     () => {
       let moduleId = getUint16();
       let clientFunctionId = getUint16();

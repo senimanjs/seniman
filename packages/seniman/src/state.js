@@ -17,16 +17,82 @@ const EXEC_PROMISE = 3;
 const MEMO = 5;
 const EFFECT = 6;
 
-export function getActiveWindow() {
-  return ActiveWindow;
+export class WorkQueue {
+
+  constructor() {
+    this.queue = [];
+  }
+
+  add(item) {
+    // looping from the end of the list, find the first item that has the similar or less depth,
+    // if so, insert after it. otherwise, insert at the beginning
+    let i = this.queue.length - 1;
+    while (i >= 0) {
+      if (this.queue[i].depth <= item.depth) {
+        this.queue.splice(i + 1, 0, item);
+        return;
+      }
+
+      i--;
+    }
+
+    this.queue.unshift(item);
+  }
+
+  isEmpty() {
+    return this.queue.length === 0;
+  }
+
+  poll() {
+    return this.queue.shift();
+  }
 }
 
-export function setActiveWindow(window) {
-  ActiveWindow = window;
+class ExternalPromise {
+  constructor() {
+    this.promise = new Promise((resolve, reject) => {
+      this.resolve = resolve
+      this.reject = reject
+    })
+  }
+
+  then(resolve, reject) {
+    return this.promise.then(resolve, reject)
+  }
+
+  catch(reject) {
+    return this.promise.catch(reject)
+  }
 }
 
-export function processWorkQueue(window, workQueue) {
+export function processInputQueue(window) {
+
+  setActiveWindow(window);
+
+  const inputQueue = window.inputMessageQueue;
+
+  while (inputQueue.length) {
+    let inputBuffer = inputQueue.shift();
+
+    untrack(() => {
+      try {
+        window.processInput(inputBuffer);
+      } catch (e) {
+        console.error(e);
+      }
+    });
+  }
+
+  // for now, always assume we're done with input, and set this.hasPendingInput to false
+  window.hasPendingInput = false;
+
+  setActiveWindow(null);
+}
+
+export function processWorkQueue(window) {
   ActiveWindow = window;
+
+  const workQueue = window.workQueue;
 
   let i = 0;
 
@@ -42,7 +108,117 @@ export function processWorkQueue(window, workQueue) {
     i++;
   }
 
+  // for now, always assume we're done with work, and set this.hasPendingWork to false
+  // later, we'll need to check if there's still work to do since we'll only be allowed to do a certain amount of work per frame
+  window.hasPendingWork = false;
+
+  window.flushCommandBuffer();
+
   ActiveWindow = null;
+}
+
+function submitWork(window, node) {
+  window.workQueue.add(node);
+
+  if (!window.hasPendingWork) {
+    window.hasPendingWork = true;
+    requestExecution(window);
+  }
+}
+
+let loopAwaiting = true;
+let loopWaitPromise = new ExternalPromise();
+
+let pendingWorkWindowList = [];
+let pendingInputWindowList = [];
+
+function requestExecution(window) {
+
+  pendingWorkWindowList.push(window);
+
+  if (loopAwaiting) {
+    loopAwaiting = false;
+    loopWaitPromise.resolve();
+  }
+}
+
+// TODO: refactor this loop to not use promise and instead have this fired by the server upon input or upon work submission
+async function _runLoop() {
+
+  await loopWaitPromise;
+
+  while (true) {
+    // prioritize windows that need input, and allocate (maybe a small) amount of work to them right away
+    // so the user at least can see some updates quickly
+    let allocWindow = _getNextWindowPendingInputAllocation();
+
+    if (allocWindow) {
+      processInputQueue(allocWindow);
+
+      // TODO: pass amount of allowed work to do in this window
+      processWorkQueue(allocWindow);
+
+      continue;
+    }
+
+    // if there is no window that needs input processing, run the regular work scheduling
+    allocWindow = _getNextWindowPendingWorkAllocation();
+
+    if (allocWindow) {
+      // TODO: pass amount of allowed work to do in this window
+      processWorkQueue(allocWindow);
+      continue;
+    }
+
+    loopAwaiting = true;
+    loopWaitPromise = new ExternalPromise();
+    await loopWaitPromise;
+  }
+}
+
+_runLoop();
+
+function _getNextWindowPendingInputAllocation() {
+
+  if (pendingInputWindowList.length === 0) {
+    return null;
+  }
+
+  return pendingInputWindowList.shift();
+}
+
+function _getNextWindowPendingWorkAllocation() {
+
+  let nextWindow = pendingWorkWindowList.shift();
+
+  if (!nextWindow) {
+    return null;
+  }
+
+  return nextWindow;
+}
+
+export function notifyWindowPendingInput(window) {
+
+  if (!window.hasPendingInput) {
+    pendingInputWindowList.push(window);
+    window.hasPendingInput = true;
+  }
+
+  if (loopAwaiting) {
+    loopAwaiting = false;
+    loopWaitPromise.resolve();
+  }
+}
+
+///////////////////////////
+
+export function getActiveWindow() {
+  return ActiveWindow;
+}
+
+function setActiveWindow(window) {
+  ActiveWindow = window;
 }
 
 function executeNode(window, node) {
@@ -140,7 +316,7 @@ function schedulePromiseResolve(window) {
       resolver: resolve
     };
 
-    window.submitWork(promiseEntry);
+    submitWork(window, promiseEntry);
   });
 }
 
@@ -170,8 +346,6 @@ export function useState(initialValue) {
   }
 
   let _nodeWindow = ActiveWindow;
-
-  //console.log("useState window", !!_nodeWindow);
 
   function setState(newValue) {
 
@@ -209,12 +383,14 @@ function _queueNodeForUpdate(window, node) {
 
   if (node.updateState === NODE_FRESH) {
     node.updateState = NODE_QUEUED;
-    window.submitWork(node);
+    submitWork(window, node);
   }
 }
 
 function cleanNode(node) {
   _removeNodeFromSources(node);
+  _runDisposeFns(node);
+
   _removeNodeSubtree(node);
 
   node.updateState = NODE_FRESH;
@@ -240,6 +416,9 @@ function _removeNodeFromSources(node) {
       }
     }
   }
+}
+
+function _runDisposeFns(node) {
 
   if (node.cleanups && node.cleanups.length) {
     // loop over the clean ups 
@@ -259,6 +438,7 @@ function _removeNodeSubtree(node) {
     for (let i = 0; i < childrenCount; i++) {
       let child = node.children[i];
       _removeNodeFromSources(child);
+      _runDisposeFns(child);
 
       child.updateState = NODE_DESTROYED;
 
@@ -334,7 +514,7 @@ function createEffect(fn, value) {
 export function useDisposableEffect(fn, value, window) {
   let effect = createEffect(fn, value);
 
-  (window || ActiveWindow).submitWork(effect);
+  submitWork(window || ActiveWindow, effect);
 
   return () => untrack(() => cleanNode(effect));
 }
@@ -351,7 +531,7 @@ export function untrack(fn) {
 export function useEffect(fn, value) {
   let effect = createEffect(fn, value);
 
-  ActiveWindow.submitWork(effect);
+  submitWork(ActiveWindow, effect);
 }
 
 
@@ -381,7 +561,7 @@ export function useMemo(fn) {
     ActiveNode.children.push(memo);
   }
 
-  ActiveWindow.submitWork(memo);
+  submitWork(ActiveWindow, memo);
 
   function readMemo() {
     registerDependency(memo);

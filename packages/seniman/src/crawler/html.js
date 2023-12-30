@@ -1,23 +1,4 @@
-let CMD_PING = 0;
-let CMD_INSTALL_TEMPLATE = 1;
-let CMD_INIT_WINDOW = 2;
-let CMD_ATTACH_ANCHOR = 3;
-let CMD_ATTACH_EVENT_V2 = 5;
-let CMD_INSTALL_EVENT_TYPE = 6;
-let CMD_ELEMENT_UPDATE = 7;
-let CMD_INIT_BLOCK = 8;
-let CMD_REMOVE_BLOCKS = 9;
-let CMD_INSTALL_CLIENT_FUNCTION = 10;
-let CMD_RUN_CLIENT_FUNCTION = 11;
-let CMD_APPEND_TOKENLIST = 12;
-let CMD_INIT_SEQUENCE = 13;
-let CMD_MODIFY_SEQUENCE = 14;
-let CMD_PAGE_READY = 15;
-let CMD_MODIFY_HEAD = 16;
-let CMD_CHANNEL_MESSAGE = 17;
-let CMD_INIT_MODULE = 18;
-
-let selfClosingTagSet = new Set(['br', 'hr', 'img', 'input', 'link']);
+let selfClosingTagSet = new Set(['br', 'hr', 'img', 'input', 'link', 'meta']);
 
 let magicSplitUint16 = (key) => {
   return [key & (1 << 15), key & 0x7FFF];
@@ -198,94 +179,6 @@ class Element {
   }
 }
 
-class Block {
-  constructor(blocksMap, rootEl, targetEls, anchorDefs) {
-    this.rootEl = rootEl;
-    this.targetEls = targetEls;
-    this.anchors = anchorDefs.map(anchor =>
-      new BlockAnchor(blocksMap, anchor.el, anchor.marker)
-    );
-  }
-
-  _attachText(index, text) {
-    this.anchors[index]._attachText(text);
-  }
-
-  _attachBlock(index, blockId) {
-    this.anchors[index]._attachBlock(blockId);
-  }
-}
-
-class BlockAnchor {
-  constructor(blocksMap, el, marker) {
-    this.blocksMap = blocksMap;
-    this.el = el;
-    this.marker = marker;
-
-    this.node = null;
-    this.seqId = -1;
-  }
-
-  _attachText(text) {
-    //return;
-
-    this._attachSingle(new TextNode(text));
-  }
-
-  _attachBlock(blockId) {
-
-    // return;
-
-    let block = this.blocksMap.get(blockId);// getBlock(blockId);
-
-    if (block instanceof Sequence) {
-      this._attachSeq(blockId);
-    } else {
-      this._attachSingle(block.rootEl);
-    }
-  }
-
-  _attachSeq(seqId) {
-    // clean up
-    this._clean();
-
-    let block = this.blocksMap.get(seqId);// getBlock(blockId);
-
-    block._setParent(this);
-
-    this.node = null;
-    this.seqId = seqId;
-  }
-
-  _attachSingle(newNode) {
-    //let current = this.nodes;
-    // clean up
-    this._clean();
-    // insert new node
-    this.el.insertBefore(newNode, this.marker);
-
-    this.node = newNode;
-    this.seqId = -1;
-  }
-
-  _clean() {
-    if (this.seqId > -1) {
-      let nodes = [];
-
-      let seq = this.blocksMap.get(this.seqId);// getBlock(blockId);
-      //let seq = getBlock(this.seqId);
-
-      gatherSequenceNodes(nodes, seq);
-
-      nodes.forEach(node => {
-        node.remove();
-      });
-    } else if (this.node) {
-      this.node.remove();
-    }
-  }
-}
-
 let gatherSequenceNodes = (nodes, seq) => {
 
   seq.items.forEach(item => {
@@ -300,6 +193,48 @@ let gatherSequenceNodes = (nodes, seq) => {
     }
   });
 }
+
+function createElement(tagName) {
+  return new Element(tagName);
+}
+
+export class HtmlRenderingContext {
+
+  constructor() {
+    this.templateDefinitionMap = new Map();
+    this.GlobalTokenList = [''];
+    this._blocksMap = new Map();
+
+    this.headElement = createElement('head');
+    this.start();
+
+    setTimeout(() => {
+      this.markReady();
+    }, 100);
+  }
+
+  markReady() {
+    let html = this.renderHtml();
+    this.readyCallback(html);
+  }
+
+  renderHtml() {
+    let string = "";
+
+    string += "<!DOCTYPE html>";
+    string += "<html>";
+    string += this.headElement.toString();
+    string += this._blocksMap.get(2).rootEl.toString();
+    string += "</html>";
+
+    return string;
+  }
+
+  feedBuffer(buffer) {
+    this.onBufferFn(buffer);
+  }
+
+  start() {
 
 class SequenceItem {
   constructor(seq) {
@@ -440,47 +375,96 @@ class Sequence {
   }
 }
 
-function createElement(tagName) {
-  return new Element(tagName);
-}
 
-export class HtmlRenderingContext {
+    class Block {
+      constructor(blocksMap, rootEl, targetEls, anchorDefs) {
+        this.rootEl = rootEl;
+        this.targetEls = targetEls;
+        this.anchors = anchorDefs.map(anchor =>
+          new BlockAnchor(blocksMap, anchor.el, anchor.marker)
+        );
+      }
 
-  constructor() {
-    this.templateDefinitionMap = new Map();
-    this.GlobalTokenList = [''];
-    this._blocksMap = new Map();
+      _attachText(index, text) {
+        this.anchors[index]._attachText(text);
+      }
 
-    this.headElement = createElement('head');
-    this.start();
+      _attachBlock(index, blockId) {
+        this.anchors[index]._attachBlock(blockId);
+      }
+    }
 
-    setTimeout(() => {
-      this.markReady();
-    }, 100);
+    class BlockAnchor {
+      constructor(blocksMap, el, marker) {
+        this.blocksMap = blocksMap;
+        this.el = el;
+        this.marker = marker;
+
+        this.node = null;
+        this.seqId = -1;
+      }
+
+      _attachText(text) {
+        //return;
+
+        this._attachSingle(new TextNode(text));
+      }
+
+      _attachBlock(blockId) {
+
+        // return;
+
+        let block = this.blocksMap.get(blockId);// getBlock(blockId);
+
+        if (block instanceof Sequence) {
+          this._attachSeq(blockId);
+        } else {
+          this._attachSingle(block.rootEl);
+        }
+      }
+
+      _attachSeq(seqId) {
+        // clean up
+        this._clean();
+
+        let block = this.blocksMap.get(seqId);// getBlock(blockId);
+
+        block._setParent(this);
+
+        this.node = null;
+        this.seqId = seqId;
+      }
+
+      _attachSingle(newNode) {
+        //let current = this.nodes;
+        // clean up
+        this._clean();
+        // insert new node
+        this.el.insertBefore(newNode, this.marker);
+
+        this.node = newNode;
+        this.seqId = -1;
   }
 
-  markReady() {
-    let html = this.renderHtml();
-    this.readyCallback(html);
-  }
+      _clean() {
+        if (this.seqId > -1) {
+          let nodes = [];
 
-  renderHtml() {
-    let string = "";
+          let seq = this.blocksMap.get(this.seqId);// getBlock(blockId);
+          //let seq = getBlock(this.seqId);
 
-    string += "<!DOCTYPE html>";
-    string += "<html>";
-    string += this.headElement.toString();
-    string += this._blocksMap.get(1).rootEl.toString();
-    string += "</html>";
+          gatherSequenceNodes(nodes, seq);
 
-    return string;
-  }
+          nodes.forEach(node => {
+            node.remove();
+          });
+        } else if (this.node) {
+          this.node.remove();
+        }
+      }
+    }
 
-  feedBuffer(buffer) {
-    this.onBufferFn(buffer);
-  }
 
-  start() {
     let _blocksMap = this._blocksMap;
     let templateDefinitionMap = this.templateDefinitionMap;
     let GlobalTokenList = this.GlobalTokenList;
@@ -525,6 +509,7 @@ export class HtmlRenderingContext {
       return value;
     }
 
+
     let _decodeServerBoundValuesBuffer = () => {
       let ARGTYPE_STRING = 1;
       let ARGTYPE_INT16 = 2;
@@ -535,12 +520,19 @@ export class HtmlRenderingContext {
       let ARGTYPE_HANDLER = 7;
       let ARGTYPE_ARRAY = 8;
       let ARGTYPE_OBJECT = 9;
+      let ARGTYPE_REF = 10;
+      let ARGTYPE_CHANNEL = 11;
+      let ARGTYPE_MODULE = 12;
+      let ARGTYPE_ARRAY_BUFFER = 13;
 
       let extractValue = () => {
         switch (getUint8()) {
           case ARGTYPE_HANDLER:
             let id = getUint16();
-            return null;
+
+            return (...args) => {
+              return _portSend(id, ...args);
+            }
           case ARGTYPE_STRING:
             let stringLength = getUint16();
             return getString(stringLength);
@@ -569,6 +561,22 @@ export class HtmlRenderingContext {
               object[key] = extractValue();
             }
             return object;
+          case ARGTYPE_REF:
+            let refId = getUint16();
+            return null;
+          case ARGTYPE_CHANNEL:
+            let channelId = getUint16();
+            return getChannelObject(channelId);
+          case ARGTYPE_MODULE:
+            let moduleId = getUint16();
+            return moduleMap.get(moduleId);
+          case ARGTYPE_ARRAY_BUFFER:
+            let arrayBufferLength = getUint16();
+            let dstUint8 = new Uint8Array(arrayBufferLength);
+
+            dstUint8.set(getUint8Array(arrayBufferLength));
+
+            return dstUint8.buffer;
         }
       }
 
@@ -876,124 +884,94 @@ export class HtmlRenderingContext {
       let serverBoundValues = _decodeServerBoundValuesBuffer();
     }
 
-    let headElementsMap = new Map();
-    let _modifyHead = () => {
-      let command = _decodeServerBoundValuesBuffer()[0];
-
-      let CMD_HEAD_SET_TITLE = 1;
-      let CMD_HEAD_ADD_STYLE = 2;
-      let CMD_HEAD_ADD_LINK = 3;
-      let CMD_HEAD_ADD_SCRIPT = 4;
-      let CMD_HEAD_ADD_META = 5;
-      let CMD_HEAD_REMOVE = 6;
-
-      let cmdType = command.type;
-
-      if (cmdType == CMD_HEAD_SET_TITLE) {
-        let titleElement = createElement('title');
-        titleElement.appendChild(new TextNode(command.value));
-        head.appendChild(titleElement);
-
-
-
-      } else if (cmdType == CMD_HEAD_REMOVE) {
-        let elToRemove = headElementsMap.get(command.id);
-        elToRemove.remove();
-        headElementsMap.delete(command.id);
-      } else {
-        let elMap = {
-          [CMD_HEAD_ADD_STYLE]: 'style',
-          [CMD_HEAD_ADD_LINK]: 'link',
-          [CMD_HEAD_ADD_SCRIPT]: 'script',
-          [CMD_HEAD_ADD_META]: 'meta'
-        };
-
-        let elType = elMap[cmdType];
-        let el = createElement(elType);
-        let attributes = command.attributes;
-
-        Object.keys(attributes).forEach(key => {
-          let value = attributes[key];
-
-          if (value) {
-            el.setAttribute(key, attributes[key]);
-          }
-        });
-
-        if (command.text) {
-          el.appendChild(new TextNode(command.text));
-        }
-
-        let onLoad = command.onLoad;
-        let onError = command.onError;
-
-        if (onLoad) {
-          // TODO: check if onload needs to be nullified after the first call
-          // since some browsers will call it multiple times
-          el.onload = () => onLoad();
-        }
-
-        if (onError) {
-          el.onerror = () => onError();
-        }
-
-        headElementsMap.set(command.id, el);
-        head.appendChild(el);
-      }
-    }
-
-    let _processMap = {
-      [CMD_PING]: () => { },
-      [CMD_INIT_WINDOW]: () => {
+    let _processMap = [
+      // 0: CMD_PING
+      () => {
+        console.log('CMD_PING');
+      },
+      // 1: CMD_INSTALL_TEMPLATE
+      _installTemplate2,
+      // 2: CMD_INIT_WINDOW
+      () => {
         processOffset += 21;
         let body = createElement('body');
-        _blocksMap.set(1, new Block(_blocksMap, body, [], [{ el: body }]));
+        _blocksMap.set(1, new Block(_blocksMap, head, [], [{ el: head }]));
+        _blocksMap.set(2, new Block(_blocksMap, body, [], [{ el: body }]));
       },
-      [CMD_INIT_BLOCK]: _initBlock,
-      [CMD_INIT_SEQUENCE]: _initSequence,
-      [CMD_MODIFY_SEQUENCE]: _modifySequence,
-      [CMD_INSTALL_TEMPLATE]: _installTemplate2,
-      [CMD_ATTACH_ANCHOR]: _attachAtAnchorV2,
-      [CMD_ATTACH_EVENT_V2]: _attachEventHandlerV2,
-      [CMD_INSTALL_EVENT_TYPE]: () => {
+      // 3: CMD_ATTACH_ANCHOR
+      _attachAtAnchorV2,
+
+      // 4: CMD_ATTACH_REF,
+      () => {
+        let blockId = getUint16();
+        let targetElIndex = getUint16();
+        let refId = getUint16();
+      },
+
+      // 5: CMD_ATTACH_EVENT
+      _attachEventHandlerV2,
+
+      // 6: CMD_INSTALL_EVENT_TYPE
+      () => {
         let eventType = getUint8();
         let eventName = getString(getUint8());
       },
-      [CMD_ELEMENT_UPDATE]: _elementUpdate,
-      [CMD_REMOVE_BLOCKS]: () => {
+
+      // 7: CMD_ELEMENT_UPDATE
+      _elementUpdate,
+
+      // 8: CMD_INIT_BLOCK
+      _initBlock,
+
+      // 9: CMD_REMOVE_BLOCKS
+      () => {
         let blockId;
 
         while (blockId = getUint16()) {
           _blocksMap.delete(blockId);
         }
       },
-      [CMD_INSTALL_CLIENT_FUNCTION]: () => {
+
+      // 10: CMD_INSTALL_CLIENT_FUNCTION
+      () => {
         let clientFunctionId = getUint16();
         let serverBoundValues = _decodeServerBoundValuesBuffer();
       },
-      [CMD_RUN_CLIENT_FUNCTION]: () => {
+
+      // 11: CMD_RUN_CLIENT_FUNCTION
+      () => {
         let clientFunctionId = getUint16();
         let serverBoundValues = _decodeServerBoundValuesBuffer();
       },
-      [CMD_APPEND_TOKENLIST]: () => {
+
+      // 12: CMD_APPEND_TOKENLIST
+      () => {
         let length;
 
         while (length = getUint8()) {
           GlobalTokenList.push(getString(length));
         }
       },
-      [CMD_MODIFY_HEAD]: _modifyHead,
-      [CMD_PAGE_READY]: () => { },
-      [CMD_CHANNEL_MESSAGE]: () => {
+
+      // 13: CMD_INIT_SEQUENCE
+      _initSequence,
+
+      // 14: CMD_MODIFY_SEQUENCE
+      _modifySequence,
+
+      // 15: CMD_CHANNEL_MESSAGE
+      () => {
         let channelId = getUint16();
         let serverBoundValues = _decodeServerBoundValuesBuffer();
       },
-      [CMD_INIT_MODULE]: () => {
+
+      // 16: CMD_INIT_MODULE
+      () => {
         let moduleId = getUint16();
         let clientFunctionId = getUint16();
         let serverBoundValues = _decodeServerBoundValuesBuffer();
       }
-    };
+    ];
 
     this.onBufferFn = (_buffer) => {
       processOffset = 0;

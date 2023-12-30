@@ -1,4 +1,3 @@
-import process from 'node:process';
 import { FastRateLimit } from 'fast-ratelimit';
 import { nanoid } from 'nanoid';
 import { Window } from './window.js';
@@ -8,8 +7,6 @@ import { CrawlerRenderer } from './crawler/index.js';
 import htmlBuffers from "./_htmlBuffers.js";
 
 import {
-  RSS_LOW_MEMORY_THRESHOLD,
-  RSS_LOW_MEMORY_THRESHOLD_ENABLED,
   RATELIMIT_WINDOW_INPUT_THRESHOLD,
   RATELIMIT_WINDOW_INPUT_TTL_SECONDS,
   RATELIMIT_WINDOW_CREATION_THRESHOLD,
@@ -17,32 +14,7 @@ import {
   ENABLE_CRAWLER_RENDERER,
   MAX_INPUT_EVENT_BUFFER_SIZE
 } from './config.js';
-
-function getMemoryUsage() {
-  const used = process.memoryUsage();
-  return {
-    rss: (used.rss / 1024 / 1024).toFixed(2),
-    heapUsed: (used.heapUsed / 1024 / 1024).toFixed(2),
-    heapTotal: (used.heapTotal / 1024 / 1024).toFixed(2)
-  };
-}
-
-class ExternalPromise {
-  constructor() {
-    this.promise = new Promise((resolve, reject) => {
-      this.resolve = resolve
-      this.reject = reject
-    })
-  }
-
-  then(resolve, reject) {
-    return this.promise.then(resolve, reject)
-  }
-
-  catch(reject) {
-    return this.promise.catch(reject)
-  }
-}
+import { notifyWindowPendingInput } from './state.js';
 
 export function createRoot(rootFn) {
   return new Root(rootFn);
@@ -56,12 +28,6 @@ class Root {
 
     this.crawlerRenderingEnabled = ENABLE_CRAWLER_RENDERER;
     this.crawlerRenderer = ENABLE_CRAWLER_RENDERER ? new CrawlerRenderer() : null;
-
-    this.loopAwaiting = true;
-    this.loopWaitPromise = new ExternalPromise();
-
-    this.pendingWorkWindowList = [];
-    this.pendingInputWindowList = [];
 
     // TODO: we'll want to make this configurable & broadcast
     // this to the client so that they can adjust their message
@@ -89,67 +55,12 @@ class Root {
     }, 2000);
     */
 
-    this.lowMemoryMode = false;
-
     this.disableHtmlCompression = false;
 
-    if (RSS_LOW_MEMORY_THRESHOLD_ENABLED) {
-      // low memory checker loop
-      setInterval(() => {
-        // get RSS memory usage
-        let rss = process.memoryUsage().rss / 1024 / 1024;
-
-        let isLowMemory = rss > RSS_LOW_MEMORY_THRESHOLD;
-
-        if (isLowMemory) {
-          console.log('Low memory detected, RSS:', rss);
-          this.lowMemoryMode = true;
-        } else {
-          this.lowMemoryMode = false;
-        }
-
-      }, 5000);
-    }
-
-    this._runLoop();
   }
 
   hasWindow(windowId) {
     return this.windowMap.has(windowId);
-  }
-
-  async _runLoop() {
-    await this.loopWaitPromise;
-
-    while (true) {
-      // prioritize windows that need input, and allocate (maybe a small) amount of work to them rightaway
-      // so the user at least can see some updates quickly
-      let allocWindow = this._getNextWindowPendingInputAllocation();
-
-      if (allocWindow) {
-        allocWindow.scheduleInput();
-        allocWindow.scheduleWork();
-        continue;
-      }
-
-      // if there is no window that needs input processing, run the regular work scheduling
-      allocWindow = this._getNextWindowPendingWorkAllocation();
-
-      if (allocWindow) {
-        // TODO: pass amount of allowed work to do in this window
-        allocWindow.scheduleWork();
-        continue;
-      }
-
-      //console.log('waiting for work...');
-      this.loopAwaiting = true;
-      this.loopWaitPromise = new ExternalPromise();
-      await this.loopWaitPromise;
-    }
-  }
-
-  setRunningOnCloudflareWorkers() {
-    this.isRunningOnCloudflareWorkers = true;
   }
 
   setRateLimit({ disabled }) {
@@ -167,26 +78,6 @@ class Root {
 
   setDisableHtmlCompression() {
     this.disableHtmlCompression = true;
-  }
-
-  _getNextWindowPendingInputAllocation() {
-
-    if (this.pendingInputWindowList.length === 0) {
-      return null;
-    }
-
-    return this.pendingInputWindowList.shift();
-  }
-
-  _getNextWindowPendingWorkAllocation() {
-
-    let nextWindow = this.pendingWorkWindowList.shift();
-
-    if (!nextWindow) {
-      return null;
-    }
-
-    return nextWindow;
   }
 
   _enqueueMessage(window, message) {
@@ -217,32 +108,7 @@ class Root {
 
     window.enqueueInputMessage(buffer);
 
-    if (!window.hasPendingInput) {
-      this.pendingInputWindowList.push(window);
-      window.hasPendingInput = true;
-    }
-
-    if (this.loopAwaiting) {
-      this.loopAwaiting = false;
-      this.loopWaitPromise.resolve();
-    }
-  }
-
-  requestExecution(window) {
-
-    this.pendingWorkWindowList.push(window);
-
-    /*
-    if (!window.isPending) {
-      this.pendingWindowList.push(window);
-      window.isPending = true;
-    }
-    */
-
-    if (this.loopAwaiting) {
-      this.loopAwaiting = false;
-      this.loopWaitPromise.resolve();
-    }
+    notifyWindowPendingInput(window);
   }
 
   applyNewConnection(ws, { url, headers, ipAddress }) {
@@ -299,7 +165,9 @@ class Root {
     let { windowId } = pageParams;
 
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
-    let window = new Window(this, pageParams, this.rootFn);
+    let window = new Window(this, pageParams, this.rootFn, buf => {
+      ws.send(buf);
+    });
     this.windowMap.set(windowId, window);
 
     window.onDestroy(() => {
@@ -310,10 +178,6 @@ class Root {
       }
     });
 
-    // update the window's buffer push function to refer to the new websocket
-    window.onBuffer(buf => {
-      ws.send(buf);
-    });
 
     window.resetLifecycleInterval();
 
@@ -419,9 +283,7 @@ class Root {
 
     let htmlRenderContext = this.crawlerRenderer.createHtmlRenderingContext();
 
-    let window = new Window(this, pageParams, this.rootFn);
-
-    window.onBuffer(buf => {
+    let window = new Window(this, pageParams, this.rootFn, buf => {
       htmlRenderContext.feedBuffer(buf);
     });
 

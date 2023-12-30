@@ -1,24 +1,18 @@
-import { createContext, onDispose, useContext, untrack, useEffect, createHandler } from "./index.js";
+import { createContext, onDispose, useState, useContext, untrack, useEffect, createHandler } from "./index.js";
 
 export const HeadContext = createContext();
 
-let CMD_HEAD_SET_TITLE = 1;
-let CMD_HEAD_ADD_STYLE = 2;
-let CMD_HEAD_ADD_LINK = 3;
-let CMD_HEAD_ADD_SCRIPT = 4;
-let CMD_HEAD_ADD_META = 5;
-let CMD_HEAD_REMOVE = 6;
-
-export function createHeadContextValue(client) {
+export function createHeadContextValue(sequence) {
   let headElementsId = 1;
   let titleStack = [];
-  let loadedScriptSrcSet = new Set();
+  let [getTitle, setTitle] = useState(null);
 
-  function syncTitle(title) {
-    client._modifyHead({
-      type: CMD_HEAD_SET_TITLE,
-      value: title
-    });
+  sequence.insert(0, [<title>{getTitle()}</title>]);
+
+  let ids = [];
+
+  function push(element) {
+    sequence.push([element]);
   }
 
   return {
@@ -26,7 +20,7 @@ export function createHeadContextValue(client) {
       let id = headElementsId++;
       titleStack.push({ id, title });
 
-      syncTitle(title);
+      setTitle(title);
 
       return id;
     },
@@ -41,7 +35,7 @@ export function createHeadContextValue(client) {
       titleStack[index].title = title;
 
       if (index == titleStack.length - 1) {
-        syncTitle(title);
+        setTitle(title);
       }
     },
 
@@ -56,70 +50,34 @@ export function createHeadContextValue(client) {
 
       // if the removed title is the current title, set the client title to the now topmost title
       if (index == titleStack.length && titleStack.length > 0) {
-        syncTitle(titleStack[titleStack.length - 1].title);
+        setTitle(titleStack[titleStack.length - 1].title);
       }
     },
 
-    addStyle: (styleText) => {
+    add: (element) => {
       let id = headElementsId++;
+      ids.push(id);
 
-      client._modifyHead({
-        type: CMD_HEAD_ADD_STYLE,
-        id,
-        text: styleText,
-        attributes: {}
-      });
-
-      return id;
-    },
-
-    addMeta: (attributes) => {
-      let id = headElementsId++;
-
-      client._modifyHead({
-        type: CMD_HEAD_ADD_META,
-        id,
-        attributes
-      });
-
-      return id;
-    },
-
-    addLink: (attributes) => {
-      let id = headElementsId++;
-
-      client._modifyHead({
-        type: CMD_HEAD_ADD_LINK,
-        id,
-        attributes
-      });
-
-      return id;
-    },
-
-    addScript: (src, onLoad) => {
-      let id = headElementsId++;
-
-      client._modifyHead({
-        type: CMD_HEAD_ADD_SCRIPT,
-        id,
-        attributes: { src },
-        onLoad
-      });
+      push(element);
 
       return id;
     },
 
     remove: (id) => {
-      client._modifyHead({
-        type: CMD_HEAD_REMOVE,
-        id
-      });
-    },
 
-    registerScriptLoaded: (src) => {
-      // TODO: check on the addScript side if the script is already loaded
-      loadedScriptSrcSet.add(src);
+      // find id index in ids
+      let index = ids.findIndex((item) => item == id);
+
+      if (index == -1) {
+        console.error("Element not found");
+        return;
+      }
+
+      // remove from ids
+      ids.splice(index, 1);
+
+      // remove from collection
+      sequence.remove(index, 1);
     }
   };
 }
@@ -145,9 +103,7 @@ export function Title(props) {
 
 export function Style(props) {
   let head = useContext(HeadContext);
-
-  // TODO: enable reactivity
-  let id = head.addStyle(untrack(() => props.text));
+  let id = head.add(<style type={props.type}>{props.text}</style>);
 
   onDispose(() => {
     head.remove(id);
@@ -159,13 +115,12 @@ export function Style(props) {
 export function Meta(props) {
   let head = useContext(HeadContext);
 
-  // TODO: enable reactivity
-  let id = head.addMeta(untrack(() => ({
-    name: props.name,
-    content: props.content,
-    "http-equiv": props.httpEquiv,
-    charset: props.charset
-  })));
+  let id = head.add(<meta
+    name={props.name}
+    content={props.content}
+    http-equiv={props.httpEquiv}
+    charset={props.charset}
+  />);
 
   onDispose(() => {
     head.remove(id);
@@ -177,17 +132,7 @@ export function Meta(props) {
 export function Script(props) {
   let head = useContext(HeadContext);
 
-  let onLoadHandler = createHandler(() => {
-    head.registerScriptLoaded(props.src);
-
-    if (props.onLoad) {
-      props.onLoad();
-    }
-  });
-
-  // TODO: enable reactivity
-  // TODO: support textual script
-  let id = head.addScript(untrack(() => props.src), onLoadHandler);
+  let id = head.add(<script src={props.src} onLoad={props.onLoad}></script>);
 
   onDispose(() => {
     head.remove(id);
@@ -199,15 +144,15 @@ export function Script(props) {
 export function Link(props) {
   let head = useContext(HeadContext);
 
-  // TODO: enable reactivity
-  let id = head.addLink(untrack(() => ({
-    rel: props.rel,
-    href: props.href,
-    type: props.type,
-    as: props.as,
-    crossorigin: props.crossorigin,
-    media: props.media
-  })));
+  let id = head.add(<link
+    rel={props.rel}
+    href={props.href}
+    type={props.type}
+    as={props.as}
+    crossorigin={props.crossorigin}
+    media={props.media}
+    onLoad={props.onLoad}
+  />);
 
   onDispose(() => {
     head.remove(id);
