@@ -131,7 +131,7 @@ To set up Seniman, you need to configure Babel to use Seniman's internal Babel p
 }
 ```
 
-Then, you can run the babel compiler-watcher by running `babel` through `npx`:
+Then, you can run the babel compiler by running `babel` through `npx`:
 
 ```sh
 npx babel src --out-dir dist
@@ -191,11 +191,6 @@ No, only the resulting DOM operations are sent to the client -- your component c
 ### I have some logic I need running on the client. How do I do that?
 
 While most UI patterns are entirely implementable server-side with Seniman, Seniman also supports running custom logic on the client. Things that naturally need to run on the client like Google Single Sign-On, or custom analytics can be implemented using the `$c` and `$s` syntax -- explained in [this](https://seniman.dev/docs/client-functions) docs page.
-
-### Any example of this framework running somewhere? I want to see how a remotely-driven UI feels like.
-
-Yes -- the documentation site for Seniman is built using Seniman itself! You can access the (currently in-development) site at [seniman.dev](https://seniman.dev/).
-
 
 ### TypeScript support?
 Some early users are using TypeScript to build with Seniman -- official support coming soon!
