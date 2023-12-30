@@ -4,6 +4,11 @@ import uglifyjs from 'uglify-js';
 import zlib from 'zlib';
 import crypto from 'crypto';
 
+// throw error if not run in the packages/seniman directory
+if (!process.cwd().endsWith('/packages/seniman')) {
+  throw new Error('This script must be run in the packages/seniman directory');
+}
+
 async function buildClientScaffolding(config) {
 
   let targetDirectory = config.targetDirectory;
