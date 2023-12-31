@@ -1,4 +1,4 @@
-import { useState, onCleanup, createCollection, createHandler, useClient, wrapPromise, createRoot } from 'seniman';
+import { useState, onDispose, createCollection, createHandler, useClient, createRoot } from 'seniman';
 import { serve } from 'seniman/server';
 import { Style } from 'seniman/head';
 import { chatService } from './chat-service.js';
@@ -56,7 +56,7 @@ function ChatStream() {
   });
 
   // make sure to unsubscribe when client disconnects
-  onCleanup(() => {
+  onDispose(() => {
     unsubNewMessageId();
   });
 
@@ -73,7 +73,7 @@ function ChatStream() {
   }
 
   let onDeleteClick = async (item) => {
-    await wrapPromise(chatService.deleteMessage(item));
+    await chatService.deleteMessage(item);
 
     let index = messageIdCollection.indexOf(item);
     messageIdCollection.remove(index, 1);
