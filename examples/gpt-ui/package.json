@@ -17,7 +17,7 @@
     "eventsource-parser": "^1.1.1",
     "lowlight": "^2.8.1",
     "prismjs": "^1.29.0",
-    "seniman": "^0.0.134",
+    "seniman": "^0.0.152",
     "throttle-debounce": "^5.0.0"
   }
 }
