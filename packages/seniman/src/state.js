@@ -13,7 +13,6 @@ let UntrackActive = false;
 
 let ERROR = null;
 
-const EXEC_PROMISE = 3;
 const MEMO = 5;
 const EFFECT = 6;
 
@@ -48,43 +47,18 @@ export class WorkQueue {
   }
 }
 
-class ExternalPromise {
-  constructor() {
-    this.promise = new Promise((resolve, reject) => {
-      this.resolve = resolve
-      this.reject = reject
-    })
-  }
 
-  then(resolve, reject) {
-    return this.promise.then(resolve, reject)
-  }
-
-  catch(reject) {
-    return this.promise.catch(reject)
-  }
-}
-
-export function processInputQueue(window) {
+export function processInputQueue(window, inputBuffer) {
 
   setActiveWindow(window);
 
-  const inputQueue = window.inputMessageQueue;
-
-  while (inputQueue.length) {
-    let inputBuffer = inputQueue.shift();
-
-    untrack(() => {
-      try {
-        window.processInput(inputBuffer);
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }
-
-  // for now, always assume we're done with input, and set this.hasPendingInput to false
-  window.hasPendingInput = false;
+  untrack(() => {
+    try {
+      window.processInput(inputBuffer);
+    } catch (e) {
+      console.error(e);
+    }
+  });
 
   setActiveWindow(null);
 }
@@ -99,115 +73,60 @@ export function processWorkQueue(window) {
   while (!workQueue.isEmpty()) {
     let node = workQueue.poll();
 
-    if (node.type == EXEC_PROMISE) {
-      node.resolver();
-    } else {
-      executeNode(window, node);
-    }
+    executeNode(window, node);
 
     i++;
   }
+
+  window.flushCommandBuffer();
 
   // for now, always assume we're done with work, and set this.hasPendingWork to false
   // later, we'll need to check if there's still work to do since we'll only be allowed to do a certain amount of work per frame
   window.hasPendingWork = false;
 
-  window.flushCommandBuffer();
-
   ActiveWindow = null;
 }
+
+export function processWindowInput(window, buffer) {
+  processInputQueue(window, buffer);
+  processWorkQueue(window);
+}
+
+let workStartTimeout = null;
+let pendingWorkWindowList = [];
 
 function submitWork(window, node) {
   window.workQueue.add(node);
 
   if (!window.hasPendingWork) {
     window.hasPendingWork = true;
-    requestExecution(window);
+
+    pendingWorkWindowList.push(window);
+
+    if (workStartTimeout) {
+      return;
+    }
+
+    workStartTimeout = setTimeout(() => {
+      workStartTimeout = null;
+      _workLoop();
+    }, 0);
   }
 }
 
-let loopAwaiting = true;
-let loopWaitPromise = new ExternalPromise();
+function _workLoop() {
 
-let pendingWorkWindowList = [];
-let pendingInputWindowList = [];
-
-function requestExecution(window) {
-
-  pendingWorkWindowList.push(window);
-
-  if (loopAwaiting) {
-    loopAwaiting = false;
-    loopWaitPromise.resolve();
-  }
-}
-
-// TODO: refactor this loop to not use promise and instead have this fired by the server upon input or upon work submission
-async function _runLoop() {
-
-  await loopWaitPromise;
-
+  // TODO: allow passing of amount of work per loop
   while (true) {
-    // prioritize windows that need input, and allocate (maybe a small) amount of work to them right away
-    // so the user at least can see some updates quickly
-    let allocWindow = _getNextWindowPendingInputAllocation();
+    let window = pendingWorkWindowList.shift();
 
-    if (allocWindow) {
-      processInputQueue(allocWindow);
+    if (window) {
+      processWorkQueue(window);
 
-      // TODO: pass amount of allowed work to do in this window
-      processWorkQueue(allocWindow);
-
-      continue;
+      // TODO: if the we're early preempting the work queue for this window, reinsert the window on the back of the pendingWorkWindowList
+    } else {
+      break;
     }
-
-    // if there is no window that needs input processing, run the regular work scheduling
-    allocWindow = _getNextWindowPendingWorkAllocation();
-
-    if (allocWindow) {
-      // TODO: pass amount of allowed work to do in this window
-      processWorkQueue(allocWindow);
-      continue;
-    }
-
-    loopAwaiting = true;
-    loopWaitPromise = new ExternalPromise();
-    await loopWaitPromise;
-  }
-}
-
-_runLoop();
-
-function _getNextWindowPendingInputAllocation() {
-
-  if (pendingInputWindowList.length === 0) {
-    return null;
-  }
-
-  return pendingInputWindowList.shift();
-}
-
-function _getNextWindowPendingWorkAllocation() {
-
-  let nextWindow = pendingWorkWindowList.shift();
-
-  if (!nextWindow) {
-    return null;
-  }
-
-  return nextWindow;
-}
-
-export function notifyWindowPendingInput(window) {
-
-  if (!window.hasPendingInput) {
-    pendingInputWindowList.push(window);
-    window.hasPendingInput = true;
-  }
-
-  if (loopAwaiting) {
-    loopAwaiting = false;
-    loopWaitPromise.resolve();
   }
 }
 
@@ -269,56 +188,10 @@ export function runInNode(node, fn) {
   ActiveWindow = oldWindow;
 }
 
-
 export function runInCell(cell, fn) {
   runInNode(cell, fn);
 }
-/*
 
-The wrapPromise makes sure that the activeNode that was active before the promise resolves is the same after the promise resolves.
-
-let a = await wrapPromise(fetch(...));
-
-*/
-export function wrapPromise(promise) {
-  let node = ActiveNode;
-  let window = ActiveWindow;
-
-  return promise.then(
-    value => {
-      return schedulePromiseResolve(window)
-        .then(() => {
-          // TODO: see if setting this here is "sync" enough
-          // or if there could be executions in between this
-          // and post-await code that could change the active node
-          // small-scale tests seem to indicate that this is fine
-          // but strong feeling there will be edge cases
-          ActiveNode = node;
-          ActiveWindow = window;
-          return value;
-        });
-    },
-    error => {
-      return schedulePromiseResolve(window)
-        .then(() => {
-          ActiveNode = node;
-          ActiveWindow = window;
-          return error;
-        });
-    }
-  );
-}
-
-function schedulePromiseResolve(window) {
-  return new Promise(resolve => {
-    let promiseEntry = {
-      type: EXEC_PROMISE,
-      resolver: resolve
-    };
-
-    submitWork(window, promiseEntry);
-  });
-}
 
 // createId() returns a unique id for a node
 // this is used to identify nodes in the dependency graph
@@ -380,7 +253,6 @@ const NODE_QUEUED = 2;
 const NODE_DESTROYED = 3;
 
 function _queueNodeForUpdate(window, node) {
-
   if (node.updateState === NODE_FRESH) {
     node.updateState = NODE_QUEUED;
     submitWork(window, node);
@@ -463,23 +335,8 @@ function registerDependency(state) {
 
   state.observers.push(ActiveNode);
   state.observerSlots.push(ActiveNode.sources.length - 1);
-
-  /*
-
-  state.observerSet.push(newObserver);
-
-  console.log('state new observer', state.observers.map(o => o.id));
-  // for performance, we want to keep track where the state is in the effect's sources array
-  // just set it to effect.sources.length - 1 since we just pushed it
-  state.observerSlots.push(newObserver.sources.length - 1);
-
-  newObserver.sources.push(state);
-  // for performance, we want to keep track where effect is in the state's observers array
-  newObserver.sourceObserverSlots.push(state.observers.length - 1);
-
-  console.log('newObserver.sourceObserverSlots', newObserver.sourceObserverSlots);
-  */
 }
+
 
 function createEffect(fn, value) {
 
@@ -590,10 +447,20 @@ export function useCallback(fn) {
 
   let _activeWindow = ActiveWindow;
   let _activeNode = ActiveNode;
+
   return (...args) => {
+    let _prevNode = ActiveNode;
+    let _prevWindow = ActiveWindow;
+
     ActiveNode = _activeNode;
     ActiveWindow = _activeWindow;
-    return fn(...args);
+
+    let res = fn(...args);
+
+    ActiveNode = _prevNode;
+    ActiveWindow = _prevWindow;
+
+    return res;
   }
 }
 

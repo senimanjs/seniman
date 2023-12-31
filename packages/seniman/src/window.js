@@ -218,8 +218,6 @@ export class Window {
     // fill out the 0 index to make it easier for templating system to do 1-indexing
     this.tokenList.set('', 0);
 
-    this.inputMessageQueue = [];
-    this.hasPendingInput = false;
     this.hasPendingWork = false;
     this.workQueue = new WorkQueue();
 
@@ -651,10 +649,6 @@ export class Window {
     this.treeDisposer();
   }
 
-  enqueueInputMessage(msg) {
-    this.inputMessageQueue.push(msg);
-  }
-
   processInput(inputBuffer) {
     let txPortId = inputBuffer.readUInt16LE(0);
 
@@ -685,8 +679,6 @@ export class Window {
   }
 
   _allocPage(headOffset) {
-    //console.log('_allocPage', headOffset);
-    //let pageCount = this.pages.length;
 
     let page = {
       global_headOffset: headOffset,

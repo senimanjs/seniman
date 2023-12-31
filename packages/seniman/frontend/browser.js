@@ -24,8 +24,6 @@
       socket = new WebSocket(`${_window.origin.replace('http', 'ws')}?wi=${windowId}&ro=${readOffset}&vs=${_window.innerWidth}x${_window.innerHeight}&lo=${encodeURIComponent(_location.pathname + _location.search)}&vh=${_versionHash}`);
       socket.binaryType = "arraybuffer";
 
-      socket.onopen = (e) => { };
-
       socket.onmessage = (msg) => {
         lastMessageTime = Date.now();
         _applyMessage(msg);
@@ -855,11 +853,9 @@
     // 2: CMD_INIT_WINDOW
     () => {
       windowId = getString(21);
-      let head = _document.head;
-      let body = _document.body;
 
-      _blocksMap.set(1, new Block(head, [], [{ el: head }]));
-      _blocksMap.set(2, new Block(body, [], [{ el: body }]));
+      _blocksMap.set(1, new Block(_document.head, [], [{ el: _document.head }]));
+      _blocksMap.set(2, new Block(_document.body, [], [{ el: _document.body }]));
     },
     // 3: CMD_ATTACH_ANCHOR
     _attachAtAnchorV2,

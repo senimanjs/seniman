@@ -21,7 +21,5 @@ export function createModule(clientFn) {
     clientFn
   };
 
-  // moduleMap.set(moduleId, module);
-
   return module;
 }

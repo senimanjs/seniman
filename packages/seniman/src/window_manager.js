@@ -14,7 +14,7 @@ import {
   ENABLE_CRAWLER_RENDERER,
   MAX_INPUT_EVENT_BUFFER_SIZE
 } from './config.js';
-import { notifyWindowPendingInput } from './state.js';
+import { processWindowInput } from './state.js';
 
 export function createRoot(rootFn) {
   return new Root(rootFn);
@@ -97,18 +97,16 @@ class Root {
 
     // TODO: apply window & handler specific limits
 
-    let buffer = Buffer.from(message);
-    let txPortId = buffer.readUInt16LE(0);
+    let inputBuffer = Buffer.from(message);
+    let txPortId = inputBuffer.readUInt16LE(0);
 
     // portId of 0 is reserved for the pong command
     if (txPortId == 0) {
-      window.registerPong(buffer);
+      window.registerPong(inputBuffer);
       return;
     }
 
-    window.enqueueInputMessage(buffer);
-
-    notifyWindowPendingInput(window);
+    processWindowInput(window, inputBuffer);
   }
 
   applyNewConnection(ws, { url, headers, ipAddress }) {

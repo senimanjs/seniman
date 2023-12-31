@@ -1,23 +1,25 @@
-import { createContext, onDispose, useState, useContext, untrack, useEffect, createHandler } from "./index.js";
+import { createContext, onDispose, useState, useContext, untrack, useEffect, createHandler, getActiveNode } from "./index.js";
 
 export const HeadContext = createContext();
 
 export function createHeadContextValue(sequence) {
-  let headElementsId = 1;
   let titleStack = [];
   let [getTitle, setTitle] = useState(null);
 
   sequence.insert(0, [<title>{getTitle()}</title>]);
 
-  let ids = [];
+  let ids = [0];
+  let headElementsId = 1;
 
   function push(element) {
     sequence.push([element]);
   }
 
+  let titleId = 1;
+
   return {
     addTitle: (title) => {
-      let id = headElementsId++;
+      let id = titleId++;
       titleStack.push({ id, title });
 
       setTitle(title);
@@ -43,7 +45,7 @@ export function createHeadContextValue(sequence) {
       let index = titleStack.findIndex((item) => item.id == id);
 
       if (index == -1) {
-        throw new Error("Title not found");
+        console.error("Title not found");
       }
 
       titleStack.splice(index, 1);
@@ -55,10 +57,13 @@ export function createHeadContextValue(sequence) {
     },
 
     add: (element) => {
-      let id = headElementsId++;
+      let id = headElementsId;
+
       ids.push(id);
 
       push(element);
+
+      headElementsId += 1;
 
       return id;
     },
@@ -72,6 +77,8 @@ export function createHeadContextValue(sequence) {
         console.error("Element not found");
         return;
       }
+
+      headElementsId -= 1;
 
       // remove from ids
       ids.splice(index, 1);
