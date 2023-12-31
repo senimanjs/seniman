@@ -197,7 +197,7 @@ While most UI patterns are entirely implementable server-side with Seniman, Seni
 Some early users are using TypeScript to build with Seniman -- official support coming soon!
 
 ### How about SEO support?
-There is a separate HTML renderer that can be activated specifically when a request is coming from a search engine crawler. This will allow you to implement SEO support for your Seniman app. We're already using this for our docs site at senimanjs.org -- documentation will also be coming soon!
+There is a separate HTML renderer that can be activated specifically when a request is coming from a search engine crawler. This will allow you to implement SEO support for your Seniman app. We're already using this for our docs site at [seniman.dev](https://seniman.dev) -- documentation will also be coming soon!
 
 ### Is this production ready?
 Not yet, but APIs are starting to stabilize and are already in active use in internal projects of some of our users.
