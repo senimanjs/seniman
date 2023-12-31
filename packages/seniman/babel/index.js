@@ -207,8 +207,6 @@ function processProgram(path) {
           // Allocate a target entry to this element.
           element.isTarget = hasEventHandlers || hasDynamicAttribute || hasRef;
 
-          //console.log('element.isTarget', element.isTarget);// hasEventHandlers, hasDynamicAttribute, hasRef, element.isTarget);
-
           if (element.isTarget) {
             targetId = contextBlock.targetElementCount;
             contextBlock.targetElementCount++;
@@ -924,6 +922,7 @@ function createMultiConditionStyleEffectBodyBlockStatement(styleConditions) {
   }
 
   styleConditions.forEach((cond, index) => {
+
     // _v$2 !== _p$._v$2 && elRef.toggleClass("selected", _p$._v$ = _v$);
     let _arguments;
     let conditionType = cond.type;
@@ -1211,8 +1210,6 @@ function createCallBlockExpression(block) {
 
 function createBlockEventHandlerEntryExpression(targetId, type, fnExpression) {
 
-  //console.log('createBlockEventHandlerEntryExpression', targetId, type);
-
   /*
   // if classList, then wrap the class object expression in a function.
   if (type == 5) {
@@ -1383,11 +1380,6 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
 }
 
 function prepElement(element) {
-
-  // TODO: still need to handle two signals that are not spaced to each other
-  // example: {signal1}{signal2}
-  // this current does not work and signal1 will appear after signal2 in the DOM.
-
   let before = element.children.map(c => [c.type, c.value])
   let hasPrecedingAnchor = false;
   let i = 0;
@@ -1399,7 +1391,6 @@ function prepElement(element) {
     if (childEl.type == '$anchor') {
       hasPrecedingAnchor = true;
       i++;
-      //precedingAnchorIndex = index;
     } else if (childEl.type == '$text') {
 
       if (hasPrecedingAnchor) {
@@ -1415,10 +1406,6 @@ function prepElement(element) {
       hasPrecedingAnchor = false;
       i++;
     }
-  }
-
-  if (before.length != element.children.length) {
-    //console.log('prepElement ', bef, '=>', element.children.map(c => [c.type, c.value]));
   }
 }
 
@@ -1448,11 +1435,8 @@ function _cleanChildren(children) {
   children.forEach(childNode => {
 
     if (childNode.type == 'JSXText') {
-      //childNode.value = replaceNewlinesAndSpaces(childNode.value);//.replace(/\s/g, '') != '';
-      //let str = childNode.value;
-      let newValue = replaceMultipleSpacesWithSingleSpace(replaceNewlinesWithSpace(childNode.value));//.replace(/\s/g, '') != '';;//isAllWhitespace(str) && hasNewline(str) ? '' : replaceNewlinesAndSpaces(childNode.value);
+      let newValue = replaceMultipleSpacesWithSingleSpace(replaceNewlinesWithSpace(childNode.value));
       childNode.value = newValue;
-      //console.log('childNode', JSON.stringify(childNode.value), '=>', JSON.stringify(newValue), newValue != '');
     }
   });
 
@@ -1467,7 +1451,6 @@ function _cleanChildren(children) {
   let filtered = children.filter(childNode => {
 
     if (childNode.type == 'JSXText') {
-      //return childNode.value.replace(/\s/g, '') != '';
       return childNode.value != '';
     }
 
