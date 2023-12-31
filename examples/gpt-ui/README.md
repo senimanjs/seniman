@@ -6,7 +6,7 @@ https://github.com/senimanjs/seniman/assets/510503/d5f4d215-7772-41d8-ba6b-fa241
 
 
 ## Performance
-Compared to OpenAI's native chat.openai.com's frontend, showing the message as shown on the video:
+Compared to OpenAI's native chat.openai.com's frontend, showing the GPT-4 message as shown on the video:
 
 OpenAI
 - Downloads 1.6MB of JS upfront
