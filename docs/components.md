@@ -41,6 +41,7 @@ function MyComponent(props) {
 You can also pass state as props. Let's start with a simple example:
 
 ```js
+import { useState } from 'seniman';
 
 function MyComponent(props) {
   return <div>Count is {props.count}!</div>;
@@ -63,6 +64,8 @@ When you run this, you'll see the following element:
 To have the text change, we can start modifying the state -- this time with a little bit of fun with `setInterval`:
 
 ```js
+import { onDispose, useState } from 'seniman';
+
 function MyComponent(props) {
   return <div>Count is {props.count}!</div>;
 }
@@ -75,7 +78,7 @@ function Body() {
   }, 1000);
 
   // make sure to clear the interval when the user goes away
-  onCleanup(() => {
+  onDispose(() => {
     clearInterval(interval);
   });
 
@@ -83,7 +86,7 @@ function Body() {
 }
 ```
 
-When you run this, you'll see count in the `div` go up every second.
+When you run this, you'll see count in the `div` go up every second. Make sure to clear the interval with `onDispose` so that the interval is cleared when the user goes away and the component tree is disposed on the server.
 
 ## Re-rendering on state changes
 
@@ -148,7 +151,7 @@ function Body() {
     setCount(count => count + 1);
   }, 1000);
 
-  onCleanup(() => {
+  onDispose(() => {
     clearInterval(interval);
   });
 

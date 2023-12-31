@@ -145,19 +145,29 @@ function LoginPage() {
 
 ```
 
-You can see more real-world example of how to use cookie for session management in Seniman in the [express-routing-session](https://github.com/senimanjs/seniman/tree/main/examples/express-routing-session) example.
+You can also pass the expiration time for the cookie as the third argument to `setCookie`:
+
+```js
+// Set the cookie to expire in 7 days
+let expirationDate = new Date();
+expirationDate.setDate(expirationDate.getDate() + 7);
+
+client.setCookie("userId", user.id, expirationDate);
+```
+
+You can see more expanded example of how to use cookie for session management in Seniman in the [login-simple](https://github.com/senimanjs/seniman/tree/main/examples/login-simple) example.
 
 ## Viewport
 
 #### `viewportSize`
 
-The `viewportSize` state is an object that represents the current viewport size of the page. It is a state getter, meaning that you can only read its value, but not change it. The value of the `viewportSize` state is automatically updated when the page's viewport size changes. It is useful for implementing different layouts for different screen sizes.
+The `viewportSize` state is a state getter for the current viewport size of the page in the shape of `{ width, height }`. The value of the `viewportSize` state is automatically updated when the page's viewport size changes. It is useful for implementing different layouts for different screen sizes.
 
 Here's one example of how you can use it to implement a responsive layout:
 
 ```js
 
-import { useClient } from 'seniman'
+import { useClient, useMemo } from 'seniman';
 
 function Body() {
   let client = useClient();

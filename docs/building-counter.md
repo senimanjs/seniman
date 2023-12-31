@@ -1,6 +1,8 @@
 # Building a Counter
 
-In this tutorial, we will create a simple counter application using Seniman. The starting code for this tutorial is available [here](https://github.com/senimanjs/seniman/tree/main/examples/hello-world). You can download the folder to a local directory and start working from there. You need to have Node.js v16 or newer installed on your machine to run the code.
+In this tutorial, we will create a simple counter application using Seniman. The starting code for this tutorial is available [here](https://github.com/senimanjs/seniman/tree/main/examples/hello-world). 
+
+You can download the app's code by running `npx clone-seniman-app` and choosing `counter` from the list of examples. This will create a new local folder with the app code downloaded into it.
 
 Inside the newly created project, let's install the dependencies:
 

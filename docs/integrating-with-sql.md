@@ -2,8 +2,9 @@
 
 (Almost) no apps are complete without a database. Seniman enables teams to simplify their application stack by allowing direct access to backend databases from component code, directly tying interaction between user events and database operations.
 
-In this tutorial, we will go through the source code of a simple todo list application built with Seniman that stores data in an in-memory SQLite database. The starting code for this tutorial is available [here](https://github.com/senimanjs/seniman/tree/main/examples/sqlite-simple). You can download the folder to a local directory and start working from there. 
+In this tutorial, we will go through the source code of a simple todo list application built with Seniman that stores data in an in-memory SQLite database. The starting code for this tutorial is available [here](https://github.com/senimanjs/seniman/tree/main/examples/sqlite-simple). 
 
+You can easily download the app's code by running `npx clone-seniman-app` and choosing `sqlite-simple` from the list of examples. This will create a new local folder with the app code downloaded into it.
 
 Inside the newly created project, let's install the dependencies:
 
