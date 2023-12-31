@@ -106,7 +106,9 @@ function nodeHasDynamicAttribute(node) {
         throw new Error();
       }
     } else {
-      if (value.type == 'JSXExpressionContainer') {
+      if (value == null) {
+        continue;
+      } else if (value.type == 'JSXExpressionContainer') {
         if (!isStaticExpression(value.expression)) {
           return true;
         }
@@ -1090,7 +1092,10 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
       let value = attr.value;
       //compressionRegistry.elementAttributeNames.add(attrName);
 
-      if (value.type == 'StringLiteral') {
+      // if value is null, then it's a value-less attribute. assign an empty string to it.
+      if (value == null) {
+        element.attributes[attrName] = '';
+      } else if (value.type == 'StringLiteral') {
         element.attributes[attrName] = value.value;
       } else if (value.type == 'JSXExpressionContainer') {
         styleConditions.push({ type: 'attribute', key: attrName, condition: value.expression });
