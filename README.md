@@ -153,6 +153,7 @@ Open up your browser and navigate to `http://localhost:3002`, and you should see
 - Simple Autocomplete ([Source](examples/autocomplete), [Demo](https://seniman-autocomplete.garindra.workers.dev/))
 - [Hello World](examples/hello-world) - Smallest possible Seniman app
 - [Basic Routing](examples/routing-basic) - Simple Seniman app with basic routing
+- [SQLite Integration](examples/sqlite-simple) - Simple SQLite integration in a Seniman app
 - [Simple Login](examples/login-simple) & [Google Login](examples/login-google) - Small Seniman apps with session layer and basic & Google login flows
 
 You can run `npx clone-seniman-app` to quickly clone an app from the [examples](examples) folder.
