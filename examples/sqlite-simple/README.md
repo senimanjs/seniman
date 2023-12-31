@@ -1,6 +1,6 @@
-# express-sqlite
+# SQLite & Seniman
 
-In this example, we'll show a simple Todo app using Seniman and SQLite.
+In this example, we'll show a simple To-do app implemented using Seniman and SQLite.
 
 ## Prerequisites
 
