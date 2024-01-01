@@ -1,5 +1,5 @@
 import { createRoot, useState, useClient, onDispose, Anchor, useMemo, useEffect } from 'seniman';
-import { Style, Meta, Title } from "seniman/head";
+import { Style, Title } from "seniman/head";
 import express from "express";
 import { wrapExpress } from "seniman/express";
 //import { createServer } from "seniman/workers";
@@ -34,7 +34,7 @@ function Header() {
 }
 
 function Hero() {
-  return <div style={{ width: '100%' }}>
+  return <div>
     <img alt="Dollanan Hero" style={{ width: '100%', aspectRatio: 1.75 }} src={IMAGE_PREFIX + '/hero2.webp'} />
   </div>
 }
@@ -61,7 +61,7 @@ function HomePage() {
 
   return <div>
     <Header />
-    <div style={{ margin: '0 auto', maxWidth: '480px', width: '100%', position: 'relative' }}>
+    <div style={{ margin: '0 auto', maxWidth: '480px', width: '100%' }}>
       <div>
         <Hero />
         <WelcomePrompt />

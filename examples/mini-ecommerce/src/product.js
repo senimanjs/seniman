@@ -1,5 +1,6 @@
 import { useState, useClient, Anchor, useEffect, createRef } from 'seniman';
 import { IMAGE_PREFIX, batchGetProductsData, getProductData, getRelatedProductRecommendations } from './data.js';
+import { Title } from 'seniman/head';
 
 function formatPrice(priceNumber) {
   // input is rupiah
@@ -172,6 +173,7 @@ export default function ProductPage(props) {
   });
 
   return <div>
+    <Title text={"Dollanan | " + (product() ? product().title : "...")} />
     <ProductHeader title={product() ? product().title : "..."} />
     <div style={{ backgroundColor: '#eee', minHeight: '800px' }}>
       <div style={{ margin: '0 auto', width: '450px' }}>
