@@ -14,7 +14,8 @@ import {
   ENABLE_CRAWLER_RENDERER,
   MAX_INPUT_EVENT_BUFFER_SIZE
 } from './config.js';
-import { processWindowInput } from './state.js';
+import { deregisterWindow, enqueueWindowInput, registerWindow as registerWindow_internal } from './scheduler.js';
+import { getWindow, registerWindow } from './state.js';
 
 export function createRoot(rootFn) {
   return new Root(rootFn);
@@ -24,7 +25,6 @@ class Root {
 
   constructor(rootFn) {
     this.rootFn = rootFn;
-    this.windowMap = new Map();
 
     this.crawlerRenderingEnabled = ENABLE_CRAWLER_RENDERER;
     this.crawlerRenderer = ENABLE_CRAWLER_RENDERER ? new CrawlerRenderer() : null;
@@ -60,7 +60,7 @@ class Root {
   }
 
   hasWindow(windowId) {
-    return this.windowMap.has(windowId);
+    return getWindow(windowId) != null;
   }
 
   setRateLimit({ disabled }) {
@@ -80,13 +80,13 @@ class Root {
     this.disableHtmlCompression = true;
   }
 
-  _enqueueMessage(window, message) {
+  _enqueueMessage(windowId, message) {
 
     // apply global limit
     // TODO: move the length check to the websocket server's max message size
     // do this once we set up client-side rate limiting
     let isUnderLimit =
-      this.messageLimiter.consumeSync(window.id) &&
+      this.messageLimiter.consumeSync(windowId) &&
       message.byteLength < MAX_INPUT_EVENT_BUFFER_SIZE;
 
     // TODO: print on a regular interval the amount of messages that are being dropped
@@ -102,11 +102,15 @@ class Root {
 
     // portId of 0 is reserved for the pong command
     if (txPortId == 0) {
-      window.registerPong(inputBuffer);
+      let window = getWindow(windowId);
+
+      if (window) {
+        window.registerPong(inputBuffer);
+      }
       return;
     }
 
-    processWindowInput(window, inputBuffer);
+    enqueueWindowInput(windowId, inputBuffer);
   }
 
   applyNewConnection(ws, { url, headers, ipAddress }) {
@@ -162,14 +166,19 @@ class Root {
   initWindow(ws, pageParams) {
     let { windowId } = pageParams;
 
+    registerWindow_internal(windowId);
+
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
     let window = new Window(this, pageParams, this.rootFn, buf => {
       ws.send(buf);
     });
-    this.windowMap.set(windowId, window);
+
+    registerWindow(window);
+
+    window.start();
 
     window.onDestroy(() => {
-      this.windowMap.delete(windowId);
+      deregisterWindow(windowId);
 
       if (this.windowDestroyCallback) {
         this.windowDestroyCallback(windowId);
@@ -179,7 +188,7 @@ class Root {
 
     window.resetLifecycleInterval();
 
-    this._setupWsListeners(ws, window);
+    this._setupWsListeners(ws, windowId);
   }
 
   setServer(server) {
@@ -305,7 +314,7 @@ class Root {
   }
 
   reconnectWindow(ws, pageParams) {
-    let window = this.windowMap.get(pageParams.windowId);
+    let window = getWindow(pageParams.windowId);
 
     // update the window's buffer push function to refer to the new websocket
     window.onBuffer(buf => {
@@ -316,16 +325,16 @@ class Root {
 
     window.reconnect(pageParams);
 
-    this._setupWsListeners(ws, window);
+    this._setupWsListeners(ws, pageParams.windowId);
   }
 
-  _setupWsListeners(ws, window) {
+  _setupWsListeners(ws, windowId) {
     ws.on('message', async (message) => {
-      this._enqueueMessage(window, message);
+      this._enqueueMessage(windowId, message);
     });
 
     ws.on('close', () => {
-      this.disconnectWindow(window.id);
+      this.disconnectWindow(windowId);
     });
   }
 
@@ -334,14 +343,11 @@ class Root {
   }
 
   disconnectWindow(windowId) {
-    if (this.windowMap.has(windowId)) {
-      this.windowMap.get(windowId).disconnect();
-    }
-  }
 
-  closeAllWindows() {
-    for (let window of this.windowMap.values()) {
-      window.destroy();
+    let window = getWindow(windowId);
+
+    if (window) {
+      window.disconnect();
     }
   }
 }

@@ -1,6 +1,7 @@
-import { useState, onError } from 'seniman';
+import { useState } from 'seniman';
 import fs from 'node:fs';
 import { parse } from 'stacktrace-parser';
+import { ErrorHandler } from './state.js';
 
 function addFileContentsToStackTraceLine(line) {
 
@@ -55,15 +56,15 @@ export function ErrorViewer(props) {
   </div >
 }
 
-export function ErrorHandler(props) {
+export function DefaultErrorHandler(props) {
   let [runtimeError, set_runtimeError] = useState(null);
 
-  onError((err) => {
+  let onError = (err) => {
     console.error(err);
     set_runtimeError(err);
-  });
+  }
 
-  return <div>
+  return <ErrorHandler onError={onError}>
     {() => {
       let _runtimeError = runtimeError();
 
@@ -75,5 +76,5 @@ export function ErrorHandler(props) {
         return props.children;
       }
     }}
-  </div>
+  </ErrorHandler>;
 }

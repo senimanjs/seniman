@@ -7,166 +7,105 @@
 // ReactJS Github:
 // https://github.com/facebook/react
 
+import { registerDependency_internal, registerEffect, disposeEffect, registerMemo, registerState, postStateWrite } from "./scheduler.js";
+
 let ActiveNode = null;
 let ActiveWindow = null;
+let ActiveNodeMap = null;
 let UntrackActive = false;
 
-let ERROR = null;
+const windowMap = new Map();
+const windowNodeMap = new Map();
 
-const MEMO = 5;
-const EFFECT = 6;
+export function getWindow(windowId) {
+  return windowMap.get(windowId);
+}
 
-export class WorkQueue {
+export function registerWindow(window) {
+  windowMap.set(window.id, window);
+  windowNodeMap.set(window.id, new Map());
+}
 
-  constructor() {
-    this.queue = [];
+export function deregisterWindow(windowId) {
+  windowMap.delete(windowId);
+  windowNodeMap.delete(windowId);
+}
+
+export function setActiveWindowId(id) {
+  if (id) {
+    ActiveWindow = windowMap.get(id);
+    ActiveNodeMap = windowNodeMap.get(id);
+  } else {
+    ActiveWindow = null;
+    ActiveNodeMap = null;
   }
+}
 
-  add(item) {
-    // looping from the end of the list, find the first item that has the similar or less depth,
-    // if so, insert after it. otherwise, insert at the beginning
-    let i = this.queue.length - 1;
-    while (i >= 0) {
-      if (this.queue[i].depth <= item.depth) {
-        this.queue.splice(i + 1, 0, item);
-        return;
-      }
+export function runInput(inputBuffer) {
+  ActiveWindow.processInput(inputBuffer);
+}
 
-      i--;
+export function runMemo(memoId) {
+
+  try {
+    let node = ActiveNodeMap.get(memoId);
+
+    ActiveNode = node;
+
+    let prevValue = node.value;
+    node.value = node.fn(prevValue);
+
+    // if memo, check if value has changed, if so, update observers
+    if (node.value !== prevValue) {
+      postStateWrite(ActiveWindow.id, memoId);
+    }
+  } catch (err) {
+    handleError(err);
+  } finally {
+    ActiveNode = null;
+  }
+}
+
+export function runEffect(effectId) {
+
+  try {
+    let node = ActiveNodeMap.get(effectId);
+
+    ActiveNode = node;
+
+    let prevValue = node.value;
+    node.value = node.fn(prevValue);
+
+  } catch (err) {
+    handleError(err);
+  } finally {
+    ActiveNode = null;
+  }
+}
+
+export function deleteNode(nodeId) {
+  ActiveNodeMap.delete(nodeId);
+}
+
+export function runEffectDisposers(nodeId) {
+
+  let node = ActiveNodeMap.get(nodeId);
+
+  if (node.disposeFns) {
+    let disposeFns = node.disposeFns;
+
+    // loop over the clean ups 
+    for (let i = 0; i < disposeFns.length; i++) {
+      disposeFns[i]();
     }
 
-    this.queue.unshift(item);
-  }
-
-  isEmpty() {
-    return this.queue.length === 0;
-  }
-
-  poll() {
-    return this.queue.shift();
+    node.disposeFns = [];
   }
 }
-
-
-export function processInputQueue(window, inputBuffer) {
-
-  setActiveWindow(window);
-
-  untrack(() => {
-    try {
-      window.processInput(inputBuffer);
-    } catch (e) {
-      console.error(e);
-    }
-  });
-
-  setActiveWindow(null);
-}
-
-export function processWorkQueue(window) {
-  ActiveWindow = window;
-
-  const workQueue = window.workQueue;
-
-  let i = 0;
-
-  while (!workQueue.isEmpty()) {
-    let node = workQueue.poll();
-
-    executeNode(window, node);
-
-    i++;
-  }
-
-  window.flushCommandBuffer();
-
-  // for now, always assume we're done with work, and set this.hasPendingWork to false
-  // later, we'll need to check if there's still work to do since we'll only be allowed to do a certain amount of work per frame
-  window.hasPendingWork = false;
-
-  ActiveWindow = null;
-}
-
-export function processWindowInput(window, buffer) {
-  processInputQueue(window, buffer);
-  processWorkQueue(window);
-}
-
-let workStartTimeout = null;
-let pendingWorkWindowList = [];
-
-function submitWork(window, node) {
-  window.workQueue.add(node);
-
-  if (!window.hasPendingWork) {
-    window.hasPendingWork = true;
-
-    pendingWorkWindowList.push(window);
-
-    if (workStartTimeout) {
-      return;
-    }
-
-    workStartTimeout = setTimeout(() => {
-      workStartTimeout = null;
-      _workLoop();
-    }, 0);
-  }
-}
-
-function _workLoop() {
-
-  // TODO: allow passing of amount of work per loop
-  while (true) {
-    let window = pendingWorkWindowList.shift();
-
-    if (window) {
-      processWorkQueue(window);
-
-      // TODO: if the we're early preempting the work queue for this window, reinsert the window on the back of the pendingWorkWindowList
-    } else {
-      break;
-    }
-  }
-}
-
 ///////////////////////////
 
 export function getActiveWindow() {
   return ActiveWindow;
-}
-
-function setActiveWindow(window) {
-  ActiveWindow = window;
-}
-
-function executeNode(window, node) {
-  try {
-    ActiveNode = node;
-
-    if (node.updateState == NODE_DESTROYED) {
-      ActiveNode = null;
-      return;
-    }
-
-    cleanNode(node);
-    let prevValue = node.value;
-    node.value = node.fn(prevValue);
-
-    if (node.value !== prevValue && node.type == MEMO) {
-      let obs = node.observers;
-      let length = obs.length;
-
-      for (let i = 0; i < length; i++) {
-        _queueNodeForUpdate(window, obs[i]);
-      }
-    }
-  } catch (e) {
-    console.error(e);
-    handleError(e);
-  } finally {
-    ActiveNode = null;
-  }
 }
 
 export function getActiveNode() {
@@ -177,43 +116,56 @@ export function getActiveCell() {
   return ActiveNode;
 }
 
-export function runInNode(node, fn) {
+export function runInScope(scope, fn) {
+
   let oldNode = ActiveNode;
   let oldWindow = ActiveWindow;
 
-  ActiveNode = node;
-  ActiveWindow = node.window;
+  ActiveNode = scope.node;
+  ActiveWindow = scope.window;
   fn();
   ActiveNode = oldNode;
   ActiveWindow = oldWindow;
 }
 
-export function runInCell(cell, fn) {
-  runInNode(cell, fn);
+export function getActiveScope() {
+  return {
+    window: ActiveWindow,
+    node: ActiveNode,
+  };
 }
-
 
 // createId() returns a unique id for a node
 // this is used to identify nodes in the dependency graph
 // and to identify nodes in the work queue
-let _id = 0;
+let _id = 1;
 
 function createId() {
   return _id++;
 }
 
+function registerDependency(stateId) {
+
+  if (UntrackActive || !ActiveNode) {
+    return;
+  }
+
+  registerDependency_internal(ActiveWindow.id, ActiveNode.id, stateId);
+}
+
 export function useState(initialValue) {
 
-  let state = {
-    id: createId(),
-    value: initialValue,
+  let id = createId();
 
-    observers: [],
-    observerSlots: []
+  let state = {
+    id,
+    value: initialValue
   };
 
+  registerState(ActiveWindow.id, ActiveNode.id, id);
+
   function getState() {
-    registerDependency(state);
+    registerDependency(id);
 
     return state.value;
   }
@@ -226,154 +178,55 @@ export function useState(initialValue) {
       newValue = newValue(state.value);
     }
 
-    writeState(_nodeWindow, state, newValue);
+    let current = state.value;
+
+    if (current !== newValue) {
+      state.value = newValue;
+
+      postStateWrite(_nodeWindow.id, id);
+    }
   }
 
   return [getState, setState];
 }
 
-function writeState(window, state, newValue) {
+function createEffect(windowId, id, fn, value) {
 
-  let current = state.value;
-
-  if (current !== newValue) {
-    state.value = newValue;
-
-    let observers = state.observers;
-    let length = observers.length;
-
-    for (let i = 0; i < length; i++) {
-      _queueNodeForUpdate(window, observers[i]);
-    }
-  }
-}
-
-const NODE_FRESH = 0;
-const NODE_QUEUED = 2;
-const NODE_DESTROYED = 3;
-
-function _queueNodeForUpdate(window, node) {
-  if (node.updateState === NODE_FRESH) {
-    node.updateState = NODE_QUEUED;
-    submitWork(window, node);
-  }
-}
-
-function cleanNode(node) {
-  _removeNodeFromSources(node);
-  _runDisposeFns(node);
-
-  _removeNodeSubtree(node);
-
-  node.updateState = NODE_FRESH;
-}
-
-function _removeNodeFromSources(node) {
-
-  if (node.sources) {
-    while (node.sources.length) {
-      const source = node.sources.pop(),
-        index = node.sourceSlots.pop(),
-        obs = source.observers;
-
-      // TODO: we don't need to check for observers list existence?
-      if (obs && obs.length) {
-        const n = obs.pop(),
-          s = source.observerSlots.pop();
-        if (index < obs.length) {
-          n.sourceSlots[s] = index;
-          obs[index] = n;
-          source.observerSlots[index] = s;
-        }
-      }
-    }
-  }
-}
-
-function _runDisposeFns(node) {
-
-  if (node.cleanups && node.cleanups.length) {
-    // loop over the clean ups 
-    for (let i = 0; i < node.cleanups.length; i++) {
-      node.cleanups[i]();
-    }
-
-    node.cleanups = [];
-  }
-}
-
-function _removeNodeSubtree(node) {
-
-  if (node.children) {
-    let childrenCount = node.children.length;
-
-    for (let i = 0; i < childrenCount; i++) {
-      let child = node.children[i];
-      _removeNodeFromSources(child);
-      _runDisposeFns(child);
-
-      child.updateState = NODE_DESTROYED;
-
-      _removeNodeSubtree(child);
-    }
-
-    node.children = [];
-  }
-}
-
-
-function registerDependency(state) {
-
-  if (UntrackActive || !ActiveNode) {
-    return;
-  }
-
-  let sSlot = state.observers ? state.observers.length : 0;
-
-  ActiveNode.sources.push(state);
-  ActiveNode.sourceSlots.push(sSlot);
-
-  state.observers.push(ActiveNode);
-  state.observerSlots.push(ActiveNode.sources.length - 1);
-}
-
-
-function createEffect(fn, value) {
+  let parentNodeId = ActiveNode ? ActiveNode.id : null;
+  let context = ActiveNode ? ActiveNode.context : {};
 
   const effect = {
-    id: createId(),
-    type: EFFECT,
-    value: value,
+    id,
+    value,
     fn,
-    depth: !ActiveNode ? 0 : ActiveNode.depth + 1,
-    window: ActiveWindow,
-
-    updateState: NODE_FRESH,
-    updatedAt: null,
-
-    parent: ActiveNode,
-    children: [],
-
-    sources: [],
-    sourceSlots: [],
-
-    cleanups: null,
-    context: null
+    context,
+    disposeFns: null
   };
 
-  if (ActiveNode) {
-    ActiveNode.children.push(effect);
+  if (!ActiveNodeMap) {
+    windowNodeMap.get(windowId).set(id, effect);
+  } else {
+    ActiveNodeMap.set(id, effect);
   }
 
-  return effect;
+  registerEffect(windowId, parentNodeId, id);
 }
 
-export function useDisposableEffect(fn, value, window) {
-  let effect = createEffect(fn, value);
+export function useEffect(fn, value) {
+  let id = createId();
 
-  submitWork(window || ActiveWindow, effect);
+  createEffect(ActiveWindow.id, id, fn, value);
+}
 
-  return () => untrack(() => cleanNode(effect));
+export function useDisposableEffect(fn, value, windowId) {
+
+  let id = createId();
+
+  windowId = windowId || ActiveWindow.id;
+
+  createEffect(windowId, id, fn, value);
+
+  return () => untrack(() => disposeEffect(windowId, id));
 }
 
 export function untrack(fn) {
@@ -385,43 +238,23 @@ export function untrack(fn) {
   return val;
 }
 
-export function useEffect(fn, value) {
-  let effect = createEffect(fn, value);
-
-  submitWork(ActiveWindow, effect);
-}
-
-
 export function useMemo(fn) {
 
+  let id = createId();
+
   let memo = {
-    id: createId(),
-    type: MEMO,
+    id,
     value: null,
-    fn,
-    depth: !ActiveNode ? 0 : ActiveNode.depth + 1,
-    window: ActiveNode.window,
-
-    parent: ActiveNode,
-
-    updateState: NODE_FRESH,
-    updatedAt: null,
-
-    sources: [],
-    sourceSlots: [],
-
-    observers: [],
-    observerSlots: []
+    context: ActiveNode.context,
+    fn
   };
 
-  if (ActiveNode) {
-    ActiveNode.children.push(memo);
-  }
+  ActiveNodeMap.set(id, memo);
 
-  submitWork(ActiveWindow, memo);
+  registerMemo(ActiveWindow.id, ActiveNode.id, id);
 
   function readMemo() {
-    registerDependency(memo);
+    registerDependency(id);
 
     return memo.value;
   }
@@ -429,19 +262,16 @@ export function useMemo(fn) {
   return readMemo;
 }
 
-export function onCleanup(fn) {
-  onDispose(fn);
-}
 
 export function onDispose(fn) {
-  if (ActiveNode === null) {
-    throw new Error();
-  } else if (ActiveNode.cleanups === null) {
-    ActiveNode.cleanups = [fn];
+  if (ActiveNode.disposeFns === null) {
+    ActiveNode.disposeFns = [fn];
   } else {
-    ActiveNode.cleanups.push(fn);
+    ActiveNode.disposeFns.push(fn);
   }
 }
+
+export const onCleanup = onDispose;
 
 export function useCallback(fn) {
 
@@ -464,17 +294,6 @@ export function useCallback(fn) {
   }
 }
 
-export function onError(fn) {
-  ERROR || (ERROR = Symbol("error"));
-  if (ActiveNode === null) {
-    return;
-  }
-
-  else if (ActiveNode.context === null) ActiveNode.context = { [ERROR]: [fn] };
-  else if (!ActiveNode.context[ERROR]) ActiveNode.context[ERROR] = [fn];
-  else ActiveNode.context[ERROR].push(fn);
-}
-
 function castError(err) {
   if (err instanceof Error || typeof err === "string") return err;
   return new Error("Unknown error");
@@ -483,44 +302,49 @@ function castError(err) {
 function handleError(err) {
   err = castError(err);
 
-  const fns = ERROR && lookup(ActiveNode, ERROR);
-  if (!fns) { throw err }
-  for (const f of fns) f(err);
+  console.error("error", err);
+
+  // get the error handler in the current context
+  let fn = ActiveNode.context[ErrorContext.id];
+
+  fn(err);
 }
 
-function lookup(node, key) {
-  return node
-    ? node.context && node.context[key] !== undefined
-      ? node.context[key]
-      : lookup(node.parent, key)
-    : undefined;
+let ErrorContext = createContext();
+
+export function ErrorHandler(props) {
+  return <ErrorContext.Provider value={props.onError}>
+    {props.children}
+  </ErrorContext.Provider>;
 }
 
-function createProvider(id, options) {
+function createProvider(id, defaultValue) {
 
   return function Provider(props) {
 
-    return () => {
-      //untrack(() => {
-      ActiveNode.context = { [id]: props.value };
-      //});
+    ActiveNode.context = {
+      ...ActiveNode.context,
 
-      return props.children;
+      //get [id]() {
+      //  return props.value || defaultValue;
+      //}
+
+      [id]: untrack(() => props.value || defaultValue)
     };
+
+    return props.children;
   };
 }
 
 export function createContext(
-  defaultValue,
-  options
+  defaultValue
 ) {
   const id = Symbol("context");
-  return { id, Provider: createProvider(id, options), defaultValue };
+  return { id, Provider: createProvider(id, defaultValue) };
 }
 
 export function useContext(context) {
-  let ctx;
-  return (ctx = lookup(ActiveNode, context.id)) !== undefined ? ctx : context.defaultValue;
+  return ActiveNode.context[context.id];
 }
 
 export function children(fn) {

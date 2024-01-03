@@ -43,9 +43,21 @@ async function buildClientScaffolding(config) {
   let brotliBuffer = zlib.brotliCompressSync(htmlBuffer);
   let gzipBuffer = zlib.gzipSync(htmlBuffer);
 
-  console.log('Uncompressed client size:', minifiedCode.length);
-  console.log('Gzip client size:', gzipBuffer.length);
-  console.log('Brotli client size:', brotliBuffer.length);
+  console.log('HTML+JS size:');
+  console.table([
+    {
+      algo: 'uncompressed',
+      size: minifiedCode.length
+    },
+    {
+      algo: 'gzip',
+      size: gzipBuffer.length
+    },
+    {
+      algo: 'brotli',
+      size: brotliBuffer.length
+    }
+  ]);
 
   let templateBuffersString = `
 export default {

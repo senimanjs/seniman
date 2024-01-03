@@ -1,19 +1,17 @@
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveNode, getActiveWindow, useCallback, getActiveCell, runInCell, onDispose, WorkQueue } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveNode, getActiveWindow, useCallback, onDispose, getActiveScope, runInScope } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
 import { bufferPool, PAGE_SIZE } from './buffer-pool.js';
-import { ErrorHandler } from './errors.js';
+import { DefaultErrorHandler } from './errors.js';
 import { HeadContext, createHeadContextValue } from './head.js';
 import { DefaultNetworkStatusView } from './network.js';
-
-const ClientContext = createContext(null);
 
 export function useWindow() {
   return useClient();
 }
 
 export function useClient() {
-  return useContext(ClientContext);
+  return getActiveWindow().clientContext;
 }
 
 const camelCaseToKebabCaseRegex = /([a-z0-9])([A-Z])/g;
@@ -180,14 +178,12 @@ export class Window {
   constructor(windowManager, pageParams, rootFn, bufferFn) {
     this.windowManager = windowManager;
 
-    let { windowId,
-      href,
-      viewportSize,
-      cookieString } = pageParams;
+    this.pageParams = pageParams;
 
-    this.id = windowId;
+    this.id = pageParams.windowId;
     this.destroyFnCallback = null;
     this.connected = true;
+    this.rootFn = rootFn;
 
     this.pages = [];
     this.global_readOffset = 0;
@@ -218,12 +214,20 @@ export class Window {
     // fill out the 0 index to make it easier for templating system to do 1-indexing
     this.tokenList.set('', 0);
 
-    this.hasPendingWork = false;
-    this.workQueue = new WorkQueue();
-
     this.lastPongTime = Date.now();
 
+    this.clientContext = null;
+  }
+
+  start() {
+    let { windowId,
+      href,
+      viewportSize,
+      cookieString } = this.pageParams;
+
     let url = new URL(href);
+
+    let rootFn = this.rootFn;
 
     this.rootDisposer = useDisposableEffect(() => {
       let [getCookie, setCookie] = useState(cookieString);
@@ -387,6 +391,8 @@ export class Window {
         }
       };
 
+      this.clientContext = clientContext;
+
       let onBackButton = (hrefString) => {
         setLocationUrl(new URL(hrefString));
       }
@@ -398,25 +404,24 @@ export class Window {
       let headSequence = new Sequence();
 
       getActiveNode().context = {
-        [ClientContext.id]: clientContext,
         [HeadContext.id]: createHeadContextValue(headSequence)
       };
 
       this._attach(1, 0, headSequence);
 
       this._attach(2, 0,
-        <ErrorHandler>
+        <DefaultErrorHandler>
           {rootFn}
           <BackButtonListener onBackButton={onBackButton} />
           {shouldSendPostScript() ? <WindowResizeListener onResize={onResize} /> : null}
           {shouldSendPostScript() ? <DefaultNetworkStatusView /> : null}
-        </ErrorHandler>
+        </DefaultErrorHandler>
       );
 
       setTimeout(() => {
         setShouldSendPostScript(true);
       }, 1000);
-    }, null, this);
+    }, null, windowId);
   }
 
   resetLifecycleInterval() {
@@ -1419,19 +1424,6 @@ export class Window {
         case Sequence:
           this._attachSequence(blockId, anchorIndex, nodeResult);
           break;
-        /*
-       case Promise:
-         let node = getActiveNode();
- 
-         nodeResult.then(value => {
-           runInNode(node, () => {
-             this._attach(blockId, anchorIndex, value);
-           });
-         }).catch(err => {
-           console.error(err);
-         });
-         break;
-       */
         default:
           console.error('Unknown nodeResult', nodeResult);
       }
@@ -1572,6 +1564,21 @@ class Collection {
     return this.items.filter(fn);
   }
 
+  /*
+  reset() {
+    let itemLength = this.items.length;
+
+    this.views.forEach(view => {
+      this.notifyViewRemoval(view, 0, itemLength);
+    });
+
+    this.items = [];
+    this.itemIds = [];
+    this.disposeFns = [];
+    this._lastItemId = 0;
+  }
+  */
+
   notifyViewInsert(view, startIndex, count) {
 
     let assignItemId = (startIndex) => {
@@ -1629,7 +1636,7 @@ class Collection {
     let isInitial = true;
     let disposeFn = null;
 
-    runInCell(view.cell, () => {
+    runInScope(view.scope, () => {
       disposeFn = useDisposableEffect(() => {
         let currentIndexForItemId = this._getIndexForItemId(itemId);
         let nodeResult = view.renderFn(this.items[currentIndexForItemId]);
@@ -1654,7 +1661,7 @@ class Collection {
 
     let view = {
       renderFn: fn,
-      cell: getActiveCell(),
+      scope: getActiveScope(),
       sequence: new Sequence()
     };
 

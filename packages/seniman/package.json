@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "0.0.152",
+  "version": "0.0.153-alpha.1",
   "description": "",
   "main": "./dist/index.js",
   "type": "module",
@@ -31,8 +31,6 @@
   "license": "ISC",
   "dependencies": {
     "fast-ratelimit": "^3.0.1",
-    "fs-extra": "^11.0.0",
-    "history": "^5.3.0",
     "nanoid": "^4.0.0",
     "stacktrace-parser": "^0.1.10",
     "ws": "^8.12.0"
