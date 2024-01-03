@@ -37,18 +37,17 @@ The entire Counter component -- including the onClick handler -- runs on the ser
 let redisClient = redis.createClient();
 
 function Counter() {
-  let [latestCount, setLatestCount] = useState(0);
+  let [getCount, setCount] = useState(0);
 
   let onClick = async () => {
     let count = await redisClient.incr('count');
-    setLatestCount(count);
+    setCount(count);
   }
 
-  return (
-    <button onClick={onClick}>
-      Add to {latestCount()}
-    </button>
-  );
+  return <div class="counter">
+    My counter: {getCount()}
+    <button onClick={onClick}>Add +</button>
+  </div>;
 }
 ...
 ```
