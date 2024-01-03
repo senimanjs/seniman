@@ -10,37 +10,33 @@ Seniman is a server-driven UI framework for Node.JS that allows you to run your 
 
 Seniman synchronizes the latest UI server state with the browser using custom binary protocol over WebSocket and a thin ~3KB browser runtime, allowing fast-loading, low-latency user interfaces.
 
-Here's an example of a simple counter app built with Seniman, using Redis as data storage, served on port `3002`:
-
-```js
-import redis from "redis";
-import { createRoot } from "seniman";
-import { serve } from "seniman/server";
-
-let redisClient = redis.createClient();
-
-function App() {
-  let onClick = () => redisClient.incr('count');
-
-  return (
-    <button onClick={onClick}>
-      Add +
-    </button>
-  );
-}
-
-let root = createRoot(App);
-serve(root, 3002);
-```
-
-Since the component runs on the server, you can directly access your database and other backend services from your component code. You can also modify the UI state directly based on the result of your database queries, like so:
+Here's an example of a simple counter app built with Seniman:
 
 ```js
 import { createRoot, useState } from "seniman";
 
+function Counter(props) {
+  let [getCount, setCount] = useState(0);
+  let onClick = () => setCount(count => count + 1);
+
+  return <div class="counter">
+    My counter: {getCount()}
+    <button onClick={onClick}>Add +</button>
+  </div>;
+}
+
+let root = createRoot(Counter);
+serve(root, 3002);
+
+```
+The entire Counter component -- including the onClick handler -- runs on the server. This also means you can directly access your database and other backend services from your component code. You can also modify the UI state directly based on the result of your database queries, like so:
+
+```js
 ...
 
-function App() {
+let redisClient = redis.createClient();
+
+function Counter() {
   let [latestCount, setLatestCount] = useState(0);
 
   let onClick = async () => {
