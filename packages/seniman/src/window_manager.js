@@ -14,8 +14,7 @@ import {
   ENABLE_CRAWLER_RENDERER,
   MAX_INPUT_EVENT_BUFFER_SIZE
 } from './config.js';
-import { deregisterWindow, enqueueWindowInput, registerWindow as registerWindow_internal } from './scheduler.js';
-import { getWindow, registerWindow } from './state.js';
+import { enqueueWindowInput, getWindow, registerWindow, deregisterWindow } from './state.js';
 
 export function createRoot(rootFn) {
   return new Root(rootFn);
@@ -25,6 +24,8 @@ class Root {
 
   constructor(rootFn) {
     this.rootFn = rootFn;
+
+    this.externalWindowIdMapping = new Map();
 
     this.crawlerRenderingEnabled = ENABLE_CRAWLER_RENDERER;
     this.crawlerRenderer = ENABLE_CRAWLER_RENDERER ? new CrawlerRenderer() : null;
@@ -56,7 +57,6 @@ class Root {
     */
 
     this.disableHtmlCompression = false;
-
   }
 
   hasWindow(windowId) {
@@ -118,7 +118,7 @@ class Root {
     let params = new URLSearchParams(url.split('?')[1]);
 
     // then, get the values from the params object
-    let windowId = params.get('wi') || '';
+    let externalWindowId = params.get('wi') || '';
     let readOffset = parseInt(params.get('ro'));
     let viewportSize = params.get('vs').split('x').map((num) => parseInt(num));
     let locationString = params.get('lo');
@@ -141,12 +141,14 @@ class Root {
     let href = origin + locationString;
 
     let pageParams = {
-      windowId,
+      windowId: externalWindowId,
       href,
       viewportSize,
       readOffset,
       cookieString,
     };
+
+    let windowId = this._convertExternalWindowIdToInternal(externalWindowId);
 
     if (windowId) {
       if (this.hasWindow(windowId)) {
@@ -157,38 +159,33 @@ class Root {
         return;
       }
     } else {
-      let newWindowId = nanoid();
-      pageParams.windowId = newWindowId;
+      let externalWindowId = nanoid();
+      pageParams.windowId = externalWindowId;
       this.initWindow(ws, pageParams);
     }
   }
 
   initWindow(ws, pageParams) {
-    let { windowId } = pageParams;
-
-    registerWindow_internal(windowId);
 
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
     let window = new Window(this, pageParams, this.rootFn, buf => {
       ws.send(buf);
     });
 
+    this.externalWindowIdMapping.set(pageParams.windowId, window.id);
+
     registerWindow(window);
 
     window.start();
 
     window.onDestroy(() => {
-      deregisterWindow(windowId);
-
-      if (this.windowDestroyCallback) {
-        this.windowDestroyCallback(windowId);
-      }
+      this.externalWindowIdMapping.delete(pageParams.windowId);
+      deregisterWindow(window);
     });
-
 
     window.resetLifecycleInterval();
 
-    this._setupWsListeners(ws, windowId);
+    this._setupWsListeners(ws, window.id);
   }
 
   setServer(server) {
@@ -294,10 +291,15 @@ class Root {
       htmlRenderContext.feedBuffer(buf);
     });
 
+    this.externalWindowIdMapping.set(windowId, window.id);
+
+    registerWindow(window);
+
+    window.start();
+
     window.onDestroy(() => {
-      if (this.windowDestroyCallback) {
-        this.windowDestroyCallback(windowId);
-      }
+      this.externalWindowIdMapping.delete(windowId);
+      deregisterWindow(window);
     });
 
     return new Promise((resolve, reject) => {
@@ -313,8 +315,14 @@ class Root {
     });
   }
 
+  _convertExternalWindowIdToInternal(externalWindowId) {
+    return this.externalWindowIdMapping.get(externalWindowId);
+  }
+
   reconnectWindow(ws, pageParams) {
-    let window = getWindow(pageParams.windowId);
+    let windowId = this._convertExternalWindowIdToInternal(pageParams.windowId);
+
+    let window = getWindow(windowId);
 
     // update the window's buffer push function to refer to the new websocket
     window.onBuffer(buf => {
@@ -325,7 +333,7 @@ class Root {
 
     window.reconnect(pageParams);
 
-    this._setupWsListeners(ws, pageParams.windowId);
+    this._setupWsListeners(ws, windowId);
   }
 
   _setupWsListeners(ws, windowId) {
@@ -336,10 +344,6 @@ class Root {
     ws.on('close', () => {
       this.disconnectWindow(windowId);
     });
-  }
-
-  onWindowDestroy(callback) {
-    this.windowDestroyCallback = callback;
   }
 
   disconnectWindow(windowId) {

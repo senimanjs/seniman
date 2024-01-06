@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveNode, getActiveWindow, useCallback, onDispose, getActiveScope, runInScope } from './state.js';
+import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveNode, getActiveWindow, useCallback, onDispose, getActiveScope, runInScope, runInWindow } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
 import { bufferPool, PAGE_SIZE } from './buffer-pool.js';
 import { DefaultErrorHandler } from './errors.js';
@@ -173,14 +173,16 @@ const pingBuffer = Buffer.from([0]);
 const scratchBuffer = Buffer.alloc(32768);
 const DELETE_BLOCK_BUFFER_SIZE = 2048;
 
+let _allocatedWindowId = 1;
+
 export class Window {
 
   constructor(windowManager, pageParams, rootFn, bufferFn) {
     this.windowManager = windowManager;
 
     this.pageParams = pageParams;
+    this.id = _allocatedWindowId++;
 
-    this.id = pageParams.windowId;
     this.destroyFnCallback = null;
     this.connected = true;
     this.rootFn = rootFn;
@@ -220,7 +222,13 @@ export class Window {
   }
 
   start() {
-    let { windowId,
+    runInWindow(this.id, () => {
+      this._start();
+    });
+  }
+
+  _start() {
+    let {
       href,
       viewportSize,
       cookieString } = this.pageParams;
@@ -418,10 +426,10 @@ export class Window {
         </DefaultErrorHandler>
       );
 
-      setTimeout(() => {
+      this.postScriptTimeout = setTimeout(() => {
         setShouldSendPostScript(true);
       }, 1000);
-    }, null, windowId);
+    }, null);
   }
 
   resetLifecycleInterval() {
@@ -441,7 +449,7 @@ export class Window {
       }
 
       if (!this.connected) {
-        let destroyTimeout = 60000;
+        let destroyTimeout = 10000;
         let lowMemoryMode = this.windowManager.lowMemoryMode;
 
         if (lowMemoryMode || pongDiff >= destroyTimeout) {
@@ -650,10 +658,6 @@ export class Window {
     this.connected = false;
   }
 
-  destroy() {
-    this.treeDisposer();
-  }
-
   processInput(inputBuffer) {
     let txPortId = inputBuffer.readUInt16LE(0);
 
@@ -676,6 +680,7 @@ export class Window {
     this.destroyFnCallback();
 
     clearInterval(this.lifecycleInterval);
+    clearTimeout(this.postScriptTimeout);
 
     // return active pages' buffers to the pool
     this.pages.forEach(page => {
@@ -762,7 +767,7 @@ export class Window {
   _streamInitWindow() {
     let buf = this._allocCommandBuffer(1 + 21)
     buf.writeUInt8(CMD_INIT_WINDOW, 0);
-    buf.write(this.id, 1, 21);
+    buf.write(this.pageParams.windowId, 1, 21);
   }
 
   _streamInstallEventTypeCommand(eventType) {

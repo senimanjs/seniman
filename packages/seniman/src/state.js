@@ -7,7 +7,7 @@
 // ReactJS Github:
 // https://github.com/facebook/react
 
-import { registerDependency_internal, registerEffect, disposeEffect, registerMemo, registerState, postStateWrite } from "./scheduler.js";
+import { scheduler_registerWindow, scheduler_calculateWorkBatch } from "./scheduler.js";
 
 let ActiveNode = null;
 let ActiveWindow = null;
@@ -24,14 +24,29 @@ export function getWindow(windowId) {
 export function registerWindow(window) {
   windowMap.set(window.id, window);
   windowNodeMap.set(window.id, new Map());
+
+  scheduler_registerWindow(window.id);
 }
 
-export function deregisterWindow(windowId) {
-  windowMap.delete(windowId);
-  windowNodeMap.delete(windowId);
+export function deregisterWindow(window) {
+  windowMap.delete(window.id);
+  windowNodeMap.delete(window.id);
+
+  schedulerInputCommand.commands.push({
+    type: 7
+  });
 }
 
-export function setActiveWindowId(id) {
+export function runInWindow(windowId, fn) {
+  // run setActiveWindowId, but keep track of the previous active window
+  let prevActiveWindow = ActiveWindow;
+
+  _setActiveWindowId(windowId);
+  fn();
+  _setActiveWindowId(prevActiveWindow ? prevActiveWindow.id : null);
+}
+
+function _setActiveWindowId(id) {
   if (id) {
     ActiveWindow = windowMap.get(id);
     ActiveNodeMap = windowNodeMap.get(id);
@@ -41,14 +56,10 @@ export function setActiveWindowId(id) {
   }
 }
 
-export function runInput(inputBuffer) {
-  ActiveWindow.processInput(inputBuffer);
-}
 
-export function runMemo(memoId) {
-
+function _runNode(nodeId, isMemo) {
   try {
-    let node = ActiveNodeMap.get(memoId);
+    let node = ActiveNodeMap.get(nodeId);
 
     ActiveNode = node;
 
@@ -56,25 +67,9 @@ export function runMemo(memoId) {
     node.value = node.fn(prevValue);
 
     // if memo, check if value has changed, if so, update observers
-    if (node.value !== prevValue) {
-      postStateWrite(ActiveWindow.id, memoId);
+    if (isMemo && node.value !== prevValue) {
+      _postStateWrite(ActiveWindow.id, nodeId);
     }
-  } catch (err) {
-    handleError(err);
-  } finally {
-    ActiveNode = null;
-  }
-}
-
-export function runEffect(effectId) {
-
-  try {
-    let node = ActiveNodeMap.get(effectId);
-
-    ActiveNode = node;
-
-    let prevValue = node.value;
-    node.value = node.fn(prevValue);
 
   } catch (err) {
     handleError(err);
@@ -83,11 +78,11 @@ export function runEffect(effectId) {
   }
 }
 
-export function deleteNode(nodeId) {
+function _deleteNode(nodeId) {
   ActiveNodeMap.delete(nodeId);
 }
 
-export function runEffectDisposers(nodeId) {
+function _runEffectDisposers(nodeId) {
 
   let node = ActiveNodeMap.get(nodeId);
 
@@ -102,6 +97,170 @@ export function runEffectDisposers(nodeId) {
     node.disposeFns = [];
   }
 }
+
+export function enqueueWindowInput(windowId, inputBuffer) {
+
+  _setActiveWindowId(windowId);
+
+  untrack(() => {
+    try {
+      ActiveWindow.processInput(inputBuffer);
+    } catch (e) {
+      console.error(e);
+    }
+  });
+
+  _setActiveWindowId(null);
+}
+
+
+// let schedulerInputBuffer = Buffer.alloc(8192);
+export let schedulerInputCommand = {
+  windowId: -1,
+  commands: []
+}
+
+// let schedulerOutputBuffer = Buffer.alloc(2048 * 4);
+export let schedulerOutputCommand = {
+  windowId: -1,
+  commands: []
+}
+
+let ExecWorkStartTimeout;
+
+function _scheduleExecWork() {
+
+  if (ExecWorkStartTimeout) {
+    return;
+  }
+
+  ExecWorkStartTimeout = setTimeout(() => {
+    _execWork();
+    ExecWorkStartTimeout = null;
+  }, 0);
+}
+
+function _execWork() {
+
+  let loopCount = 0;
+
+  while (true) {
+    // schedulerOutputCommand will be filled with the work to be done
+    let isWorkAvailable = scheduler_calculateWorkBatch();
+
+    loopCount++;
+
+    if (!isWorkAvailable) {
+      break;
+    }
+
+    _setActiveWindowId(schedulerOutputCommand.windowId);
+
+    schedulerInputCommand.windowId = schedulerOutputCommand.windowId;
+    schedulerInputCommand.commands = [];
+
+    let schedulerCommandCount = schedulerOutputCommand.commands.length;
+
+    for (let i = 0; i < schedulerCommandCount; i++) {
+      let [type, nodeId, deletedNodeIds] = schedulerOutputCommand.commands[i];
+
+      if (deletedNodeIds) {
+        // run loop in reverse
+        for (let j = deletedNodeIds.length - 1; j >= 0; j--) {
+          let nodeId = deletedNodeIds[j];
+          _runEffectDisposers(nodeId);
+          _deleteNode(nodeId);
+        }
+      }
+
+      _runEffectDisposers(nodeId);
+
+      _runNode(nodeId, type === 2);
+    }
+  }
+}
+
+////////////////////////////////////
+
+function _initializeSchedulerInput(windowId) {
+  if (schedulerInputCommand.windowId == -1) {
+    schedulerInputCommand.windowId = windowId;
+  } else if (windowId != schedulerInputCommand.windowId) {
+    throw new Error("windowId mismatch");
+  }
+}
+
+function _registerDependency(windowId, activeNodeId, stateId) {
+
+  if (windowId != schedulerInputCommand.windowId) {
+    throw new Error("windowId mismatch");
+  }
+
+  schedulerInputCommand.commands.push({
+    type: 1,
+    activeNodeId,
+    stateId
+  });
+}
+
+function _registerState(windowId, effectId, stateId) {
+
+  if (windowId != schedulerInputCommand.windowId) {
+    throw new Error("windowId mismatch");
+  }
+
+  schedulerInputCommand.commands.push({
+    type: 2,
+    effectId,
+    stateId
+  });
+}
+
+function _registerEffect(windowId, parentNodeId, effectId) {
+  _initializeSchedulerInput(windowId);
+
+  schedulerInputCommand.commands.push({
+    type: 3,
+    parentNodeId,
+    effectId
+  });
+
+  _scheduleExecWork();
+}
+
+function _disposeEffect(windowId, effectId) {
+  _initializeSchedulerInput(windowId);
+
+  schedulerInputCommand.commands.push({
+    type: 4,
+    windowId,
+    effectId
+  });
+
+  _scheduleExecWork();
+}
+
+function _registerMemo(windowId, parentNodeId, memoId) {
+  _initializeSchedulerInput(windowId);
+
+  schedulerInputCommand.commands.push({
+    type: 5,
+    parentNodeId,
+    memoId
+  });
+}
+
+function _postStateWrite(windowId, stateId) {
+  _initializeSchedulerInput(windowId);
+
+  schedulerInputCommand.commands.push({
+    type: 6,
+    stateId
+  });
+
+  _scheduleExecWork();
+}
+
 ///////////////////////////
 
 export function getActiveWindow() {
@@ -150,27 +309,22 @@ function registerDependency(stateId) {
     return;
   }
 
-  registerDependency_internal(ActiveWindow.id, ActiveNode.id, stateId);
+  _registerDependency(ActiveWindow.id, ActiveNode.id, stateId);
 }
 
 export function useState(initialValue) {
 
   let id = createId();
+  let state = { id, value: initialValue };
+  let ActiveWindowId = ActiveWindow.id;
 
-  let state = {
-    id,
-    value: initialValue
-  };
-
-  registerState(ActiveWindow.id, ActiveNode.id, id);
+  _registerState(ActiveWindowId, ActiveNode.id, id);
 
   function getState() {
     registerDependency(id);
 
     return state.value;
   }
-
-  let _nodeWindow = ActiveWindow;
 
   function setState(newValue) {
 
@@ -183,7 +337,7 @@ export function useState(initialValue) {
     if (current !== newValue) {
       state.value = newValue;
 
-      postStateWrite(_nodeWindow.id, id);
+      _postStateWrite(ActiveWindowId, id);
     }
   }
 
@@ -203,13 +357,9 @@ function createEffect(windowId, id, fn, value) {
     disposeFns: null
   };
 
-  if (!ActiveNodeMap) {
-    windowNodeMap.get(windowId).set(id, effect);
-  } else {
-    ActiveNodeMap.set(id, effect);
-  }
+  ActiveNodeMap.set(id, effect);
 
-  registerEffect(windowId, parentNodeId, id);
+  _registerEffect(windowId, parentNodeId, id);
 }
 
 export function useEffect(fn, value) {
@@ -218,15 +368,14 @@ export function useEffect(fn, value) {
   createEffect(ActiveWindow.id, id, fn, value);
 }
 
-export function useDisposableEffect(fn, value, windowId) {
-
+export function useDisposableEffect(fn, value) {
   let id = createId();
 
-  windowId = windowId || ActiveWindow.id;
+  let ActiveWindowId = ActiveWindow.id;
 
-  createEffect(windowId, id, fn, value);
+  createEffect(ActiveWindowId, id, fn, value);
 
-  return () => untrack(() => disposeEffect(windowId, id));
+  return () => _disposeEffect(ActiveWindowId, id);
 }
 
 export function untrack(fn) {
@@ -251,7 +400,7 @@ export function useMemo(fn) {
 
   ActiveNodeMap.set(id, memo);
 
-  registerMemo(ActiveWindow.id, ActiveNode.id, id);
+  _registerMemo(ActiveWindow.id, ActiveNode.id, id);
 
   function readMemo() {
     registerDependency(id);
@@ -349,17 +498,17 @@ export function useContext(context) {
 
 export function children(fn) {
   const children = useMemo(fn);
-  const memo = useMemo(() => resolveChildren(children()));
+  const memo = useMemo(() => _resolveChildren(children()));
 
   return memo;
 }
 
-function resolveChildren(children) {
-  if (typeof children === "function" && !children.length) return resolveChildren(children());
+function _resolveChildren(children) {
+  if (typeof children === "function" && !children.length) return _resolveChildren(children());
   if (Array.isArray(children)) {
     const results = [];
     for (let i = 0; i < children.length; i++) {
-      const result = resolveChildren(children[i]);
+      const result = _resolveChildren(children[i]);
       Array.isArray(result) ? results.push.apply(results, result) : results.push(result);
     }
     return results;
