@@ -59,6 +59,7 @@ With state management APIs and fine-grained reactivity each inspired by [ReactJS
 - [Basic Usage](#basic-usage)
 - [Example Apps](#example-apps)
 - [FAQ](#faq)
+- [Bug Reports](#bug-reports)
 
 ## How it Works
 
@@ -197,3 +198,7 @@ There is a separate HTML renderer that can be activated specifically when a requ
 
 ### Is this production ready?
 Not yet, but APIs are starting to stabilize and are already in active use in internal projects of some of our users.
+
+
+## Bug Reports
+For bug reports and general questions, please file an [issue](https://github.com/senimanjs/seniman/issues).
