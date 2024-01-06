@@ -141,16 +141,17 @@ class Root {
     let href = origin + locationString;
 
     let pageParams = {
-      windowId: externalWindowId,
+      windowId: null,
       href,
       viewportSize,
       readOffset,
       cookieString,
     };
 
-    let windowId = this._convertExternalWindowIdToInternal(externalWindowId);
+    if (externalWindowId) {
+      let windowId = this._convertExternalWindowIdToInternal(externalWindowId);
+      pageParams.windowId = externalWindowId;
 
-    if (windowId) {
       if (this.hasWindow(windowId)) {
         this.reconnectWindow(ws, pageParams);
       } else {
@@ -271,11 +272,10 @@ class Root {
   }
 
   async renderHtml({ headers, href }) {
-    let windowId = nanoid();
     let cookieString = headers.get('cookie') || '';
 
     let pageParams = {
-      windowId,
+      windowId: nanoid(),
       href,
 
       // TODO: get viewport size from request
@@ -291,14 +291,11 @@ class Root {
       htmlRenderContext.feedBuffer(buf);
     });
 
-    this.externalWindowIdMapping.set(windowId, window.id);
-
     registerWindow(window);
 
     window.start();
 
     window.onDestroy(() => {
-      this.externalWindowIdMapping.delete(windowId);
       deregisterWindow(window);
     });
 
