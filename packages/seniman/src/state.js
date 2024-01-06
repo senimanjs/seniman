@@ -276,20 +276,15 @@ export function getActiveCell() {
 }
 
 export function runInScope(scope, fn) {
-
   let oldNode = ActiveNode;
-  let oldWindow = ActiveWindow;
-
   ActiveNode = scope.node;
-  ActiveWindow = scope.window;
-  fn();
+  runInWindow(scope.windowId, fn);
   ActiveNode = oldNode;
-  ActiveWindow = oldWindow;
 }
 
 export function getActiveScope() {
   return {
-    window: ActiveWindow,
+    windowId: ActiveWindow.id,
     node: ActiveNode,
   };
 }
