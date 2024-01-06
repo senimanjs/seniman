@@ -14,15 +14,17 @@ Here's an example of a simple counter app built with Seniman:
 
 ```js
 import { createRoot, useState } from "seniman";
+import { serve } from "seniman/server";
 
 function Counter(props) {
   let [getCount, setCount] = useState(0);
   let onClick = () => setCount(count => count + 1);
 
-  return <div class="counter">
-    My counter: {getCount()}
-    <button onClick={onClick}>Add +</button>
-  </div>;
+  return (
+    <button onClick={onClick}>
+      Counted: {getCount()}
+    </button>
+  );
 }
 
 let root = createRoot(Counter);
@@ -45,10 +47,11 @@ function Counter() {
     setCount(count);
   }
 
-  return <div class="counter">
-    My counter: {getCount()}
-    <button onClick={onClick}>Add +</button>
-  </div>;
+  return (
+    <button onClick={onClick}>
+      Counted: {getCount()}
+    </button>
+  );
 }
 ...
 ```
