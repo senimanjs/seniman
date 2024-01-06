@@ -29,10 +29,11 @@ let root = createRoot(Counter);
 serve(root, 3002);
 
 ```
-The entire Counter component -- including the `onClick` handler -- runs on the server. This also means you can directly access your database and other backend services from your component code. You can also modify the UI state directly based on the result of your database queries, like so:
+The entire Counter component -- including the `onClick` handler -- runs on the server. This also means you can directly access your database and other backend services from your component code, and even modify the UI state directly based on the result of your database queries. Here's an example with Redis:
 
 ```js
 ...
+import redis from "redis";
 
 let redisClient = redis.createClient();
 
