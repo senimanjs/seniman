@@ -724,6 +724,7 @@ export class Window {
       throw new Error(`Command size is too large. The current page size is ${PAGE_SIZE} bytes, but the command size is ${size} bytes. This is currently unsupported; try setting the env var SENIMAN_PAGE_SIZE=${size} or a larger value.`);
     }
 
+    // if the command buffer hasn't been initialized after the last flush, let's initialize it
     if (!this.mutationGroup) {
       let pageCount = this.pages.length;
       let page = pageCount == 0 ? this._allocPage(this.global_writeOffset) : this.pages[pageCount - 1];
@@ -733,9 +734,9 @@ export class Window {
         pageStartOffset: this.global_writeOffset,
       };
 
-      setTimeout(() => {
+      queueMicrotask(() => {
         this._flushMutationGroup();
-      }, 0);
+      });
     }
 
     let mg = this.mutationGroup;
