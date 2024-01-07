@@ -5,26 +5,31 @@ Changing pages are the bread and butter of any web application. Seniman provides
 
 ### Making anchor links
 
-To create a link to another page in your component, you can use the built-in `Anchor` component:
+To create a link to another page in your component, you can use the built-in `Anchor` component. `Anchor` is a thin wrapper on top of the `<a>` tag with the `onClick` wiring done for you. Here's an example:
 
 ```js
 import { Anchor } from 'seniman';
 
 function MyComponent(props) {
-  return <Anchor href={"/products/" + props.id}>Go to product</Anchor>;
+  return (
+    <Anchor href={"/products/" + props.id}>
+      Go to product
+    </Anchor>
+  );
 }
 ```
 
-Since this is a relative link to another page in the same host, it will execute a `history.pushState` under the hood.
-
-You can also use the `Anchor` component to link to an external page as well:
+Since this is a relative link to another page in the same host, it will execute a `history.pushState` under the hood. You can also use the `Anchor` component to link to an external page as well:
 
 ```js
 import { Anchor } from 'seniman';
 
 function MyComponent() {
-
-  return <Anchor href="http://otherhost.com">External Site</Anchor>;
+  return (
+    <Anchor href="http://otherhost.com">
+      External Site
+    </Anchor>
+  );
 }
 ```
 
@@ -99,7 +104,7 @@ function AboutPage() { ... }
 function NotFoundPage() { ... }
 ```
 
-Now, we have an application that renders different components depending on the page URL using standard if-else statements. Let's now add a few `Anchor` components to make the links. First, let's add a few imports:
+Now, we have an application that renders different components depending on the page URL using standard if-else statements. Let's now add a few `Anchor` components to make the links.
 
 ```js
 import { useClient, Anchor } from 'seniman';
@@ -130,5 +135,7 @@ function NotFoundPage() { ... }
 ```
 
 Voila! We now have an application that renders different components depending on the URL, with links to navigate between them.
+
+If you want to take a look at a simple codebase that implements this pattern, you can take a look at the [Basic Routing](https://github.com/senimanjs/seniman/tree/main/examples/routing-basic) example in the Seniman repository.
 
 Next, we'll take a look at styling our interface using CSS in Seniman [here](/docs/styling).

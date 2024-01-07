@@ -14,6 +14,7 @@ The events themselves, however, are standard browser events. These are the brows
 - [`onKeyUp`](#onkeyup)
 - [`onMouseEnter`](#onmouseenter)
 - [`onMouseLeave`](#onmouseleave)
+- [`onLoad`](#onload)
 
 Let's go through how you'd handle these event types in Seniman. Note: familiarity with [`Client Functions`](/docs/client-functions) is helpful!
 
@@ -74,7 +75,10 @@ This is a handler for the `focus` event, which is triggered when an element rece
 
 ```js
 function MyComponent() {
-  return <input type="text" onFocus={$c((e) => console.log('focused!', e.target.value))} />
+  return <input 
+    type="text" 
+    onFocus={$c((e) => console.log('focused!', e.target.value))}
+  />
 }
 ```
 
@@ -148,5 +152,40 @@ function MyComponent() {
     <div>Hover me!</div>
     {submenuOpen() && <div>Submenu visible!</div>}
   </div>
+}
+```
+
+### onLoad
+This is a handler for the `load` event, which is triggered when an element is loaded.
+
+Here's an example with an `<image>`:
+
+```js
+function MyComponent() {
+  return <img 
+    src="..."
+    onLoad={$c(() => console.log('image loaded!'))} 
+  />
+}
+```
+
+And one with a `<script>`, here's one that loads the Google Sign-In script:
+
+```js
+function GoogleSignInLoader() {
+  return <script 
+    src="https://accounts.google.com/gsi/client"
+    onLoad={$c(() => {
+      console.log('google script loaded! initializing....');
+
+      google.accounts.id.initialize({
+        ...
+        callback: ({ credential }) => {
+          $s(aServerHandler)(credential);
+        }
+      });
+
+    })} 
+  />
 }
 ```

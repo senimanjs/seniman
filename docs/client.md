@@ -85,31 +85,59 @@ These are the primary functions that you can use to change the location of the p
 
 #### `cookie` and `setCookie`
 
-`client.cookie` is a state whose value is a string that represents the current complete cookie value of the page. It is a state getter, meaning that you can only read its value, but not change it. The value of the `cookie` state is automatically updated when the page's cookie changes. To change the cookie, you can use the `setCookie` function.
-
-A primary use case for this in real-world apps are to manage session and authentication. Here's one simple way you can use `cookie` to manage authentication:
+`client.cookie` is a function that returns a state getter for a cookie with the given name. You can then use the cookie key's state getter to react to changes in the cookie value. Here's a simple example:
 
 ```js
+let myCookie = client.cookie("myCookie");
 
+// do something when the cookie value changes
+useEffect(() => {
+  console.log('myCookie:', myCookie());
+});
+```
+
+A primary use case for this in real-world apps are to manage session and authentication. Here's one way you can use `cookie` to manage authentication:
+
+```js
 import { useClient } from 'seniman';
+
+function isValidSessionKey(sessionKey) { ... }
+
+// Extract the session data from the session key -- say with JWT 
+function extractSessionData(sessionKey) { ... }
 
 function MyComponent() {
   const client = useClient();
 
-  let session = useMemo(() => {
-    let _cookie = client.cookie();
+  let mySessionCookie = client.cookie("mySessionKey");
 
-    if (_cookie) {
-      return { userId: parseCookie(_cookie).userId };
-    } else {
+  // memo that abstracts the session data reading -- will reactively change as the cookie value changes
+  let sessionData = useMemo(() => {
+
+    let _cookieValue = mySessionCookie();
+
+    if (!_cookieValue|| !isValidSessionKey(_cookieValue)) {
       return null;
     }
+
+    // might return { userId: 123, ... } encoded with JWT in the cookie value
+    return extractSessionData(_cookieValue);
+  });
+
+  // simple memo to check if the user is logged in by checking if the session data is valid
+  let isLoggedIn = useMemo(() => {
+
+    if (!sessionData()) {
+      return false;
+    }
+
+    return true;
   });
 
   return (
     <div>
-      <p>Current cookie: {client.cookie()}</p>
-      {session() ? <p>Logged in as user {session().userId}</p> : <LoginPage />}
+      <p>Current value of `mySessionKey` cookie: {mySessionCookie()}</p>
+      {isLoggedIn() ? <p>Logged in as user {sessionData().userId}</p> : <LoginPage />}
     </div>
   )
 }
@@ -131,7 +159,7 @@ function LoginPage() {
   let login = async () => {
     let user = await login(username(), password());
 
-    client.setCookie("userId", user.id);
+    client.setCookie("mySessionKey", encodeJWT({ userId: user.id }));
   };
 
   return (
