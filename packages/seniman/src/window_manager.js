@@ -225,7 +225,15 @@ class Root {
       // - the protocol+hostname+port 
       // - pathname
       // - searchParams
-      let href = (isSecure ? 'https://' : 'http://') + headers.get('host') + url;
+
+      // in cloudflare workers Service Worker mode, the url might contain the host
+      // let's pick it out for now
+      // TODO: clean up the flow
+      if (!(url.startsWith('https://') || url.startsWith('http://'))) {
+        url = (isSecure ? 'https://' : 'http://') + headers.get('host') + url;
+      }
+
+      let href = url;
 
       // TODO: check if we have a cached response for this request
       let html = await this.renderHtml({ headers, href });

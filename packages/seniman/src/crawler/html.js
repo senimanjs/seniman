@@ -179,20 +179,6 @@ class Element {
   }
 }
 
-let gatherSequenceNodes = (nodes, seq) => {
-
-  seq.items.forEach(item => {
-    if (item instanceof Sequence) {
-      throw new Error('nested sequence is not yet supported');
-      //gatherSequenceNodes(nodes, item.seqId);
-    } else {
-
-      if (item.node) {
-        nodes.push(item.node);
-      }
-    }
-  });
-}
 
 function createElement(tagName) {
   return new Element(tagName);
@@ -374,6 +360,21 @@ class Sequence {
     }
   }
 }
+
+    let gatherSequenceNodes = (nodes, seq) => {
+
+      seq.items.forEach(item => {
+        if (item instanceof Sequence) {
+          throw new Error('nested sequence is not yet supported');
+          //gatherSequenceNodes(nodes, item.seqId);
+        } else {
+
+          if (item.node) {
+            nodes.push(item.node);
+          }
+        }
+      });
+    }
 
 
     class Block {
@@ -780,53 +781,84 @@ class Sequence {
       }
     }
 
-    let _compileFn2 = (templateId) => {
-      let fnString = "";
+    // we need can't do new Function in this context since CloudFlare workers service worker syntax does not support it
+    let _compileFn3 = (templateId) => {
       let refElementsCount = getUint8();
+      let refEls = [];
+      let anchorEls = [];
+      let targetElIds = [];
 
       for (let i = 0; i < refElementsCount; i++) {
         let rel = getUint8();
         let relRefId = getUint8();
 
-        let FIRST_CHILD = 1;
-
-        // root has no number associated in the variable name (let _) vs (let _1)
-        let refElName = relRefId < 255 ? relRefId : '';
-        let referenceType = rel == FIRST_CHILD ? 'firstChild' : 'nextSibling';
-
-        fnString += `let _${i}=_${refElName}.${referenceType};`;
+        refEls.push({ relRefId, rel });
       }
 
       let anchorCount = getUint8();
 
-      fnString += 'return [[';
-
-      let str = [];
-
       for (let i = 0; i < anchorCount; i++) {
-        let elId = getUint8();// elScript.anchors[i].el;
+        let elId = getUint8();
         let beforeElId = getUint8();
 
         // in beforeEl context, 255 means undefined -- ie. no beforeEl applicable. 
         // 255 that is usually used to refer to rootElement can be reused here since 
         // there is no situation in which rootElement is an anchor's beforeElement.
-        let beforeElStr = beforeElId == 255 ? '' : `,marker:_${beforeElId}`;
-        str.push(`{el:_${(elId < 255 ? elId : '') + beforeElStr}}`);
+        // let beforeElStr = beforeElId == 255 ? '' : `,marker:_${beforeElId}`;
+        // str.push(`{el:_${(elId < 255 ? elId : '') + beforeElStr}}`);
+        anchorEls.push({ elId, beforeElId });
       }
 
-      fnString += str.join(',') + '],[';
-
-      //offset += 2 * anchorCount;
       let targetElementCount = getUint8();
-      //offset++;
 
-      str = [];
       for (let i = 0; i < targetElementCount; i++) {
-        str.push(`_${getUint8()}`);
-      }
-      fnString += str.join(',') + ']];';
 
-      return new Function("_", fnString);
+        let elId = getUint8();
+
+        targetElIds.push(elId);
+      }
+
+      return (rootElement) => {
+        let $els = [];
+
+        for (let i = 0; i < refElementsCount; i++) {
+          let { relRefId, rel } = refEls[i];
+          let FIRST_CHILD = 1;
+          let refEl = relRefId < 255 ? $els[relRefId] : rootElement;
+
+          $els.push(rel == FIRST_CHILD ? refEl.firstChild : refEl.nextSibling);
+        }
+
+        let $anchors = [];
+
+        for (let i = 0; i < anchorCount; i++) {
+          let { elId, beforeElId } = anchorEls[i];
+
+          let $el = elId == 255 ? rootElement : $els[elId];
+          let $beforeEl = beforeElId == 255 ? null : $els[beforeElId];
+
+          if ($beforeEl) {
+            $anchors.push({
+              el: $el,
+              marker: $beforeEl
+            });
+          } else {
+            $anchors.push({
+              el: $el
+            });
+          }
+        }
+
+        let $targets = [];
+
+        for (let i = 0; i < targetElementCount; i++) {
+          let elId = targetElIds[i];
+
+          $targets.push($els[elId]);
+        }
+
+        return [$anchors, $targets];
+      };
     }
 
     let _initSequence = () => {
@@ -855,7 +887,7 @@ class Sequence {
 
       templateDefinitionMap.set(templateId, {
         tpl: templateNode,
-        fn: _compileFn2(templateId)
+        fn: _compileFn3(templateId)
       })
     }
 
