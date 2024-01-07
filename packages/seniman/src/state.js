@@ -142,13 +142,16 @@ function _scheduleExecWork() {
 
 function _execWork() {
 
-  let loopCount = 0;
-
   while (true) {
+    // if command count is 0, then there's no work to do
+    if (schedulerInputCommand.commands.length == 0) {
+      // reset windowId
+      schedulerInputCommand.windowId = -1;
+      break;
+    }
     // schedulerOutputCommand will be filled with the work to be done
     let isWorkAvailable = scheduler_calculateWorkBatch();
 
-    loopCount++;
 
     if (!isWorkAvailable) {
       break;

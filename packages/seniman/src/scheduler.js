@@ -28,18 +28,12 @@ export function scheduler_registerWindow(windowId) {
   });
 }
 
-function deleteWindow(windowId) {
-  windowMap.delete(windowId);
+function deleteWindow() {
+  windowMap.delete(ActiveWindow.id);
 }
 
-function postStateWrite(windowId, stateId) {
-  let window = windowMap.get(windowId);
-
-  if (!window) {
-    console.error("Applying setState to a window that have gone away");
-    return;
-  }
-
+function postStateWrite(stateId) {
+  let window = ActiveWindow; 
   let observerEntry = window.observersMap.get(stateId);
 
   if (!observerEntry) {
@@ -62,11 +56,10 @@ function postStateWrite(windowId, stateId) {
   }
 }
 
-function registerDependency(windowId, activeNodeId, stateId) {
+function registerDependency(activeNodeId, stateId) {
 
   // TODO: make this faster in the new buffer pool approach
-
-  let window = windowMap.get(windowId);
+  let window = ActiveWindow;
 
   let stateObserverEntry = window.observersMap.get(stateId);
 
@@ -82,9 +75,8 @@ function registerDependency(windowId, activeNodeId, stateId) {
   stateObserverEntry.observerSlots.push(activeNodeSourcesLength - 1);
 }
 
-function registerState(windowId, effectId, stateId) {
-
-  let window = windowMap.get(windowId);
+function registerState(effectId, stateId) {
+  let window = ActiveWindow;
 
   window.observersMap.set(stateId, {
     observers: [],
@@ -94,8 +86,8 @@ function registerState(windowId, effectId, stateId) {
   window.effectStatesMap.get(effectId).push(stateId);
 }
 
-function registerMemo(windowId, parentNodeId, memoId) {
-  let window = windowMap.get(windowId);
+function registerMemo(parentNodeId, memoId) {
+  let window = ActiveWindow;
 
   let memo = {
     id: memoId,
@@ -121,9 +113,8 @@ function registerMemo(windowId, parentNodeId, memoId) {
   pushToWorkQueue(window, memo);
 }
 
-function registerEffect(windowId, parentNodeId, effectId) {
-
-  let window = windowMap.get(windowId);
+function registerEffect(parentNodeId, effectId) {
+  let window = ActiveWindow;
   let depth;
 
   if (parentNodeId) {
@@ -156,17 +147,14 @@ function registerEffect(windowId, parentNodeId, effectId) {
   pushToWorkQueue(window, effect);
 }
 
-function disposeEffect(windowId, effectId) {
+function disposeEffect(effectId) {
 
-  let window = windowMap.get(windowId);
-
+  let window = ActiveWindow;
   let effect = window.nodeMap.get(effectId);
 
-  let previousWindowId = ActiveWindow ? ActiveWindow.id : null;
+  // console.log('disposeEffect', effectId);
 
-  _setActiveWindowId(windowId);
   cleanNode(effect);
-  _setActiveWindowId(previousWindowId);
 }
 
 ///////////////////////
@@ -297,25 +285,25 @@ export function scheduler_calculateWorkBatch() {
 
     switch (command.type) {
       case 1:
-        registerDependency(batchWindowId, command.activeNodeId, command.stateId);
+        registerDependency(command.activeNodeId, command.stateId);
         break;
       case 2:
-        registerState(batchWindowId, command.effectId, command.stateId);
+        registerState(command.effectId, command.stateId);
         break;
       case 3:
-        registerEffect(batchWindowId, command.parentNodeId, command.effectId);
+        registerEffect(command.parentNodeId, command.effectId);
         break;
       case 4:
-        disposeEffect(batchWindowId, command.effectId);
+        disposeEffect(command.effectId);
         break;
       case 5:
-        registerMemo(batchWindowId, command.parentNodeId, command.memoId);
+        registerMemo(command.parentNodeId, command.memoId);
         break;
       case 6:
-        postStateWrite(batchWindowId, command.stateId);
+        postStateWrite(command.stateId);
         break;
       case 7:
-        deleteWindow(batchWindowId);
+        deleteWindow();
         break;
     }
   }
@@ -340,8 +328,7 @@ export function scheduler_calculateWorkBatch() {
     }
 
     cleanNode(node);
-    // command's node entry is [nodeType, nodeId,  deletedNodeIds]
-    // isValid denotes whether the entry is still valid or not. can be made invalid if the an inflight state writes touches an in-batch node entry
+    // command's node entry is [nodeType, nodeId, deletedNodeIds]
     schedulerOutputCommand.commands.push([node.type, node.id, node.deletedNodeIds]);
 
     i++;

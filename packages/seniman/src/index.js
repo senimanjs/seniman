@@ -1,5 +1,6 @@
-import { _createBlock, _createComponent, useWindow, useClient, useStream, createCollection, createHandler, createChannel, createRef, Sequence } from './window.js';
+import { _createBlock, _createComponent, useWindow, useClient, createHandler, createChannel, createRef, Sequence } from './window.js';
 import { createModule } from './module.js';
+import { createCollection } from './collection.js';
 import { useState, useMemo, onCleanup, onDispose, useEffect, useDisposableEffect, untrack, createContext, useContext, useCallback, getActiveNode, runInScope, getActiveScope } from './state.js';
 import { _declareBlock, _declareClientFunction } from './declare.js';
 import { MAX_INPUT_EVENT_BUFFER_SIZE } from './config.js';
@@ -60,7 +61,6 @@ export {
   useDisposableEffect,
   useWindow,
   useClient,
-  useStream,
   createHandler,
   createCollection,
   createChannel,
