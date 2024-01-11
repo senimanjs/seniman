@@ -23,7 +23,7 @@ cp package.json tmp
 cd tmp
 
 # publish the package to npm
-npm publish -tag alpha
+npm publish # -tag alpha
 
 # remove the tmp folder
 cd ..

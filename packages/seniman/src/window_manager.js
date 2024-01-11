@@ -309,7 +309,12 @@ class Root {
 
     return new Promise((resolve, reject) => {
       htmlRenderContext.onRenderComplete((html) => {
-        window.destroy();
+        // only CF worker requires this for some timing reason -- this is a quick fix
+        // TODO: clean this up
+        setTimeout(() => {
+          window.destroy();
+        }, 100);
+
         resolve(html);
       });
 
