@@ -150,7 +150,6 @@ function _execWork() {
 
     if (availableSchedulerCommandCount > 0) {
       _setActiveWindowId(batchWindowId);
-      let schedulerCommandCount = schedulerOutputCommand.nodeIds.length;
 
       for (let i = schedulerOutputCommand.deletedNodeIds.length - 1; i >= 0; i--) {
         let nodeId = schedulerOutputCommand.deletedNodeIds[i];
@@ -159,22 +158,19 @@ function _execWork() {
         _deleteNode(nodeId);
       }
 
-      if (schedulerCommandCount > 0) {
+      for (let i = 0; i < availableSchedulerCommandCount; i++) {
+        let nodeId = schedulerOutputCommand.nodeIds[i];
 
-        for (let i = 0; i < schedulerCommandCount; i++) {
-          let nodeId = schedulerOutputCommand.nodeIds[i];
+        _runEffectDisposers(nodeId);
+        _runNode(nodeId);
+      }
 
-          _runEffectDisposers(nodeId);
-          _runNode(nodeId);
-        }
+      // if the window input entry has new input writes in this tick, 
+      // then continue the loop, skipping the window entry deletion below
+      let windowInputEntry = schedulerInputWriter.windowEntryMap.get(batchWindowId);
 
-        // if the window input entry has new input writes in this tick, 
-        // then continue the loop, skipping the window entry deletion below
-        let windowInputEntry = schedulerInputWriter.windowEntryMap.get(batchWindowId);
-
-        if (windowInputEntry.offset > 0) {
-          continue;
-        }
+      if (windowInputEntry.offset > 0) {
+        continue;
       }
     }
 
