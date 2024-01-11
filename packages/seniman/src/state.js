@@ -58,7 +58,7 @@ function _setActiveWindowId(id) {
 }
 
 
-function _runNode(nodeId, isMemo) {
+function _runNode(nodeId) {
   try {
     let node = ActiveNodeMap.get(nodeId);
 
@@ -68,7 +68,7 @@ function _runNode(nodeId, isMemo) {
     node.value = node.fn(prevValue);
 
     // if memo, check if value has changed, if so, update observers
-    if (isMemo && node.value !== prevValue) {
+    if (nodeId % 2 == 1 && node.value !== prevValue) {
       _postStateWrite(ActiveWindow.id, nodeId);
     }
 
@@ -117,8 +117,9 @@ export function enqueueWindowInput(windowId, inputBuffer) {
 // let schedulerOutputBuffer = Buffer.alloc(2048 * 4);
 export let schedulerOutputCommand = {
   windowId: -1,
-  commands: []
-}
+  nodeIds: [],
+  deletedNodeIds: []
+};
 
 let ExecWorkStartTimeout;
 
@@ -144,57 +145,46 @@ function _execWork() {
     // schedulerOutputCommand will be filled with the work to be done
     scheduler_calculateWorkBatch();
 
-    let availableSchedulerCommandCount = schedulerOutputCommand.commands.length;
+    let availableSchedulerCommandCount = schedulerOutputCommand.nodeIds.length;
     let batchWindowId = schedulerOutputCommand.windowId;
 
     if (availableSchedulerCommandCount > 0) {
       _setActiveWindowId(batchWindowId);
+      let schedulerCommandCount = schedulerOutputCommand.nodeIds.length;
 
-      // clear the window's input entry if the output command is empty? otherwise might be able to just reuse the input entry
+      for (let i = schedulerOutputCommand.deletedNodeIds.length - 1; i >= 0; i--) {
+        let nodeId = schedulerOutputCommand.deletedNodeIds[i];
 
-      let schedulerCommandCount = schedulerOutputCommand.commands.length;
+        _runEffectDisposers(nodeId);
+        _deleteNode(nodeId);
+      }
 
       if (schedulerCommandCount > 0) {
-        // reset the window's input entry first to prep for this tick's effects producing the new input commands
-        let windowInputEntry = schedulerInputWriter.windowEntryMap.get(batchWindowId);
-        windowInputEntry.offset = 0;
 
         for (let i = 0; i < schedulerCommandCount; i++) {
-          let [type, nodeId, deletedChildNodeIds] = schedulerOutputCommand.commands[i];
-
-          if (deletedChildNodeIds) {
-            // run disposers & deletions bottom up
-            for (let j = deletedChildNodeIds.length - 1; j >= 0; j--) {
-              let nodeId = deletedChildNodeIds[j];
-              _runEffectDisposers(nodeId);
-              _deleteNode(nodeId);
-            }
-          }
+          let nodeId = schedulerOutputCommand.nodeIds[i];
 
           _runEffectDisposers(nodeId);
-
-          // effect = 1, memo = 2
-          _runNode(nodeId, type === 2);
+          _runNode(nodeId);
         }
 
         // if the window input entry has new input writes in this tick, 
         // then continue the loop, skipping the window entry deletion below
+        let windowInputEntry = schedulerInputWriter.windowEntryMap.get(batchWindowId);
+
         if (windowInputEntry.offset > 0) {
           continue;
         }
       }
     }
 
-    // free the window entry
+    // free the window input entry for reuse
 
-    // remove the input entry & push into the free window indices so it can be reused
+    // remove the active window entry index & push into the free window indices so it can be reused
     schedulerInputWriter.freeEntryIndices.push(schedulerInputWriter.activeWindowIndices.shift());
 
     // reduce the active window count
     schedulerInputWriter.activeWindowCount--;
-
-    // might not need to reset the windowId here -- we'd overwrite it when we reuse it for other windowIds anyway
-    // inputWriter.windowId = -1;
 
     // remove the entry from the map
     schedulerInputWriter.windowEntryMap.delete(batchWindowId);
@@ -337,15 +327,6 @@ export function getActiveScope() {
   };
 }
 
-// createId() returns a unique id for a node
-// this is used to identify nodes in the dependency graph
-// and to identify nodes in the work queue
-let _id = 1;
-
-function createId() {
-  return _id++;
-}
-
 function registerDependency(stateId) {
 
   if (UntrackActive || !ActiveNode) {
@@ -357,7 +338,7 @@ function registerDependency(stateId) {
 
 export function useState(initialValue) {
 
-  let id = createId();
+  let id = memoId += 2;
   let state = { id, value: initialValue };
   let ActiveWindowId = ActiveWindow.id;
 
@@ -405,14 +386,21 @@ function createEffect(windowId, id, fn, value) {
   _registerEffect(windowId, parentNodeId, id);
 }
 
+// effects are even-ID'd nodes -- memo are odd-ID'd nodes
+let _effectId = 2;
+
 export function useEffect(fn, value) {
-  let id = createId();
+  let id = _effectId;
+
+  _effectId += 2;
 
   createEffect(ActiveWindow.id, id, fn, value);
 }
 
 export function useDisposableEffect(fn, value) {
-  let id = createId();
+  let id = _effectId;
+
+  _effectId += 2;
 
   let ActiveWindowId = ActiveWindow.id;
 
@@ -430,9 +418,11 @@ export function untrack(fn) {
   return val;
 }
 
+let memoId = 1;
+
 export function useMemo(fn) {
 
-  let id = createId();
+  let id = memoId += 2;
 
   let memo = {
     id,

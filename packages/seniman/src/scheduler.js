@@ -1,11 +1,7 @@
-
 import { schedulerInputWriter, schedulerOutputCommand } from "./state.js";
 
 // This scheduler module & external call flow (strictly using buffers as high-perf I/O interface)
 // is structured such that we'll be able to move this to a WASM module in the future.
-
-const EFFECT = 1;
-const MEMO = 2;
 
 const NODE_FRESH = 0;
 const NODE_QUEUED = 2;
@@ -91,7 +87,6 @@ function registerMemo(parentNodeId, memoId) {
 
   let memo = {
     id: memoId,
-    type: MEMO,
     depth: window.nodeMap.get(parentNodeId).depth + 1,
     updateState: NODE_FRESH
   };
@@ -125,7 +120,6 @@ function registerEffect(parentNodeId, effectId) {
 
   const effect = {
     id: effectId,
-    type: EFFECT,
     depth,
     updateState: NODE_FRESH
   };
@@ -204,22 +198,20 @@ function _removeEffectStates(nodeId) {
 
 function cleanNode(node) {
   let nodeId = node.id;
-  let deletedNodeIds = [];
-
-  if (node.type == EFFECT) {
+  let isEffect = nodeId % 2 == 0;
+  if (isEffect) {
     // TODO: run this a bit later during calculateWork? or after the complete batch is executed.
     _removeEffectStates(nodeId);
 
-    _removeNodeSubtree(nodeId, deletedNodeIds);
+    _removeNodeSubtree(nodeId);
   }
 
   _removeNodeFromSources(nodeId);
 
   node.updateState = NODE_FRESH;
-  node.deletedNodeIds = deletedNodeIds;
 }
 
-function _removeNodeSubtree(nodeId, deletedNodeIds) {
+function _removeNodeSubtree(nodeId) {
   let children = ActiveWindow.childrenListMap.get(nodeId);
 
   if (!children) {
@@ -231,26 +223,14 @@ function _removeNodeSubtree(nodeId, deletedNodeIds) {
   for (let i = 0; i < childrenCount; i++) {
     let childNodeId = children[i];
     let childNode = ActiveWindow.nodeMap.get(childNodeId);
+    let isEffect = childNodeId % 2 == 0;
 
     childNode.updateState = NODE_EXPIRED;
 
-    deletedNodeIds.push(childNodeId);
+    schedulerOutputCommand.deletedNodeIds.push(childNodeId);
 
-    if (childNode.type == EFFECT) {
-      _removeEffectStates(childNodeId);
-      _removeNodeSubtree(childNodeId, deletedNodeIds);
-    }
-
-    _removeNodeFromSources(childNodeId);
-
-    ActiveWindow.nodeMap.delete(childNodeId);
-    ActiveWindow.sourcesMap.delete(childNodeId);
-
-    if (childNode.type == EFFECT) {
-      ActiveWindow.childrenListMap.delete(childNodeId);
-      ActiveWindow.effectStatesMap.delete(childNodeId);
-    } else {
-      ActiveWindow.observersMap.delete(childNodeId);
+    if (isEffect) {
+      _removeNodeSubtree(childNodeId);
     }
   }
 
@@ -319,6 +299,9 @@ export function scheduler_calculateWorkBatch() {
     }
   }
 
+  // reset the window's input entry for the next tick
+  windowInputEntry.offset = 0;
+
   ////////////////////////////
   // SCHEDULER OUTPUT WRITE STAGE
   const workQueue = ActiveWindow.workQueue;
@@ -326,7 +309,8 @@ export function scheduler_calculateWorkBatch() {
   // tells state.js which window the output is for
   // will also be used to clear the input entry for the window
   schedulerOutputCommand.windowId = batchWindowId;
-  schedulerOutputCommand.commands = [];
+  schedulerOutputCommand.nodeIds = [];
+  schedulerOutputCommand.deletedNodeIds = [];
 
   let i = 0;
 
@@ -338,10 +322,39 @@ export function scheduler_calculateWorkBatch() {
     }
 
     cleanNode(node);
-    // command's node entry is [nodeType, nodeId, deletedNodeIds]
-    schedulerOutputCommand.commands.push([node.type, node.id, node.deletedNodeIds]);
+
+    schedulerOutputCommand.nodeIds.push(node.id);
 
     i++;
+  }
+
+  // run internal clean ups of the deleted nodes
+  _deletedNodeCleanup();
+}
+
+function _deletedNodeCleanup() {
+
+  let schedulerDeletedNodeCount = schedulerOutputCommand.deletedNodeIds.length;
+
+  for (let i = 0; i < schedulerDeletedNodeCount; i++) {
+    let childNodeId = schedulerOutputCommand.deletedNodeIds[i];
+    let isEffect = childNodeId % 2 == 0;
+
+    if (isEffect) {
+      _removeEffectStates(childNodeId);
+    }
+
+    _removeNodeFromSources(childNodeId);
+
+    ActiveWindow.nodeMap.delete(childNodeId);
+    ActiveWindow.sourcesMap.delete(childNodeId);
+
+    if (isEffect) {
+      ActiveWindow.childrenListMap.delete(childNodeId);
+      ActiveWindow.effectStatesMap.delete(childNodeId);
+    } else {
+      ActiveWindow.observersMap.delete(childNodeId);
+    }
   }
 }
 

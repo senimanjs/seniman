@@ -310,7 +310,7 @@ class Root {
     return new Promise((resolve, reject) => {
       htmlRenderContext.onRenderComplete((html) => {
         // only CF worker requires this for some timing reason -- this is a quick fix
-        // TODO: clean this up
+        // TODO: clean this up (hint: ExecWorkStartTimeout isn't being cleared in one of the last _scheduleExecWork's)
         setTimeout(() => {
           window.destroy();
         }, 100);
