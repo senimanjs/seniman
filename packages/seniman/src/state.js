@@ -32,9 +32,10 @@ export function deregisterWindow(window) {
   windowMap.delete(window.id);
   windowNodeMap.delete(window.id);
 
-  schedulerInputCommand.commands.push({
-    type: 7
-  });
+  let buf = _writeInputCommand(window.id, 1);
+  buf.writeUInt8(7, 0);
+
+  _scheduleExecWork();
 }
 
 export function runInWindow(windowId, fn) {
@@ -113,13 +114,6 @@ export function enqueueWindowInput(windowId, inputBuffer) {
   _setActiveWindowId(null);
 }
 
-
-// let schedulerInputBuffer = Buffer.alloc(8192);
-export let schedulerInputCommand = {
-  windowId: -1,
-  commands: []
-}
-
 // let schedulerOutputBuffer = Buffer.alloc(2048 * 4);
 export let schedulerOutputCommand = {
   windowId: -1,
@@ -143,123 +137,174 @@ function _scheduleExecWork() {
 function _execWork() {
 
   while (true) {
-    // if command count is 0, then there's no work to do
-    if (schedulerInputCommand.commands.length == 0) {
-      // reset windowId
-      schedulerInputCommand.windowId = -1;
+    if (schedulerInputWriter.activeWindowCount == 0) {
       break;
     }
+
     // schedulerOutputCommand will be filled with the work to be done
-    let isWorkAvailable = scheduler_calculateWorkBatch();
+    scheduler_calculateWorkBatch();
 
+    let availableSchedulerCommandCount = schedulerOutputCommand.commands.length;
+    let batchWindowId = schedulerOutputCommand.windowId;
 
-    if (!isWorkAvailable) {
-      break;
-    }
+    if (availableSchedulerCommandCount > 0) {
+      _setActiveWindowId(batchWindowId);
 
-    _setActiveWindowId(schedulerOutputCommand.windowId);
+      // clear the window's input entry if the output command is empty? otherwise might be able to just reuse the input entry
 
-    schedulerInputCommand.windowId = schedulerOutputCommand.windowId;
-    schedulerInputCommand.commands = [];
+      let schedulerCommandCount = schedulerOutputCommand.commands.length;
 
-    let schedulerCommandCount = schedulerOutputCommand.commands.length;
+      if (schedulerCommandCount > 0) {
+        // reset the window's input entry first to prep for this tick's effects producing the new input commands
+        let windowInputEntry = schedulerInputWriter.windowEntryMap.get(batchWindowId);
+        windowInputEntry.offset = 0;
 
-    for (let i = 0; i < schedulerCommandCount; i++) {
-      let [type, nodeId, deletedNodeIds] = schedulerOutputCommand.commands[i];
+        for (let i = 0; i < schedulerCommandCount; i++) {
+          let [type, nodeId, deletedChildNodeIds] = schedulerOutputCommand.commands[i];
 
-      if (deletedNodeIds) {
-        // run loop in reverse
-        for (let j = deletedNodeIds.length - 1; j >= 0; j--) {
-          let nodeId = deletedNodeIds[j];
+          if (deletedChildNodeIds) {
+            // run disposers & deletions bottom up
+            for (let j = deletedChildNodeIds.length - 1; j >= 0; j--) {
+              let nodeId = deletedChildNodeIds[j];
+              _runEffectDisposers(nodeId);
+              _deleteNode(nodeId);
+            }
+          }
+
           _runEffectDisposers(nodeId);
-          _deleteNode(nodeId);
+
+          // effect = 1, memo = 2
+          _runNode(nodeId, type === 2);
+        }
+
+        // if the window input entry has new input writes in this tick, 
+        // then continue the loop, skipping the window entry deletion below
+        if (windowInputEntry.offset > 0) {
+          continue;
         }
       }
-
-      _runEffectDisposers(nodeId);
-
-      _runNode(nodeId, type === 2);
     }
+
+    // free the window entry
+
+    // remove the input entry & push into the free window indices so it can be reused
+    schedulerInputWriter.freeEntryIndices.push(schedulerInputWriter.activeWindowIndices.shift());
+
+    // reduce the active window count
+    schedulerInputWriter.activeWindowCount--;
+
+    // might not need to reset the windowId here -- we'd overwrite it when we reuse it for other windowIds anyway
+    // inputWriter.windowId = -1;
+
+    // remove the entry from the map
+    schedulerInputWriter.windowEntryMap.delete(batchWindowId);
   }
 }
 
 ////////////////////////////////////
 
-function _initializeSchedulerInput(windowId) {
-  if (schedulerInputCommand.windowId == -1) {
-    schedulerInputCommand.windowId = windowId;
-  } else if (windowId != schedulerInputCommand.windowId) {
-    throw new Error("windowId mismatch");
+export let schedulerInputWriter = {
+  windowEntryMap: new Map(), // mapping from windowId to bufferIndex
+  activeWindowIndices: [],
+  activeWindowCount: 0,
+  freeEntryIndices: [], // free buffer indices
+  windowInputEntries: [],
+};
+
+// TODO: use buffer pool to allocate these on-demand
+for (let i = 0; i < 128; i++) {
+  schedulerInputWriter.windowInputEntries.push({
+    buffer: Buffer.allocUnsafe(4096),
+    offset: 0,
+    windowId: -1
+  });
+
+  schedulerInputWriter.freeEntryIndices.push(i);
+}
+
+function _writeInputCommand(windowId, size) {
+  let windowInputEntry = schedulerInputWriter.windowEntryMap.get(windowId);
+
+  // acquire a new window input entry if needed
+  if (!windowInputEntry) {
+    // console.log("new window input entry for windowId", windowId);
+    let windowEntryIndex = schedulerInputWriter.freeEntryIndices.pop();
+
+    if (windowEntryIndex == null) {
+      throw new Error("no free buffer");
+    }
+
+    windowInputEntry = schedulerInputWriter.windowInputEntries[windowEntryIndex];
+    schedulerInputWriter.windowEntryMap.set(windowId, windowInputEntry);
+
+    schedulerInputWriter.activeWindowCount++;
+    schedulerInputWriter.activeWindowIndices.push(windowEntryIndex);
+
+    windowInputEntry.windowId = windowId;
+    windowInputEntry.offset = 0;
   }
+
+  let { buffer, offset } = windowInputEntry;
+
+  if (offset + size > buffer.length) {
+    throw new Error("short buffer overflow");
+  }
+
+  let commandBuffer = buffer.subarray(offset, offset + size);
+
+  windowInputEntry.offset += size;
+
+  return commandBuffer;
 }
 
 function _registerDependency(windowId, activeNodeId, stateId) {
 
-  if (windowId != schedulerInputCommand.windowId) {
-    throw new Error("windowId mismatch");
-  }
-
-  schedulerInputCommand.commands.push({
-    type: 1,
-    activeNodeId,
-    stateId
-  });
+  let buf = _writeInputCommand(windowId, 9);
+  buf.writeUInt8(1, 0);
+  buf.writeUInt32LE(activeNodeId, 1);
+  buf.writeUInt32LE(stateId, 5);
 }
 
 function _registerState(windowId, effectId, stateId) {
 
-  if (windowId != schedulerInputCommand.windowId) {
-    throw new Error("windowId mismatch");
-  }
-
-  schedulerInputCommand.commands.push({
-    type: 2,
-    effectId,
-    stateId
-  });
+  let buf = _writeInputCommand(windowId, 9);
+  buf.writeUInt8(2, 0);
+  buf.writeUInt32LE(effectId, 1);
+  buf.writeUInt32LE(stateId, 5);
 }
 
 function _registerEffect(windowId, parentNodeId, effectId) {
-  _initializeSchedulerInput(windowId);
 
-  schedulerInputCommand.commands.push({
-    type: 3,
-    parentNodeId,
-    effectId
-  });
+  let buf = _writeInputCommand(windowId, 9);
+  buf.writeUInt8(3, 0);
+  buf.writeUInt32LE(parentNodeId, 1);
+  buf.writeUInt32LE(effectId, 5);
 
   _scheduleExecWork();
 }
 
 function _disposeEffect(windowId, effectId) {
-  _initializeSchedulerInput(windowId);
 
-  schedulerInputCommand.commands.push({
-    type: 4,
-    windowId,
-    effectId
-  });
+  let buf = _writeInputCommand(windowId, 5);
+  buf.writeUInt8(4, 0);
+  buf.writeUInt32LE(effectId, 1);
 
   _scheduleExecWork();
 }
 
 function _registerMemo(windowId, parentNodeId, memoId) {
-  _initializeSchedulerInput(windowId);
 
-  schedulerInputCommand.commands.push({
-    type: 5,
-    parentNodeId,
-    memoId
-  });
+  let buf = _writeInputCommand(windowId, 9);
+  buf.writeUInt8(5, 0);
+  buf.writeUInt32LE(parentNodeId, 1);
+  buf.writeUInt32LE(memoId, 5);
 }
 
 function _postStateWrite(windowId, stateId) {
-  _initializeSchedulerInput(windowId);
 
-  schedulerInputCommand.commands.push({
-    type: 6,
-    stateId
-  });
+  let buf = _writeInputCommand(windowId, 5);
+  buf.writeUInt8(6, 0);
+  buf.writeUInt32LE(stateId, 1);
 
   _scheduleExecWork();
 }

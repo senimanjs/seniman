@@ -1,5 +1,5 @@
 
-import { schedulerInputCommand, schedulerOutputCommand } from "./state.js";
+import { schedulerInputWriter, schedulerOutputCommand } from "./state.js";
 
 // This scheduler module & external call flow (strictly using buffers as high-perf I/O interface)
 // is structured such that we'll be able to move this to a WASM module in the future.
@@ -33,7 +33,7 @@ function deleteWindow() {
 }
 
 function postStateWrite(stateId) {
-  let window = ActiveWindow; 
+  let window = ActiveWindow;
   let observerEntry = window.observersMap.get(stateId);
 
   if (!observerEntry) {
@@ -273,34 +273,45 @@ Scheduler Input command types:
 */
 export function scheduler_calculateWorkBatch() {
 
-  let batchWindowId = schedulerInputCommand.windowId;
+  // get the window we should process
+  let entryIndex = schedulerInputWriter.activeWindowIndices[0];
+  let windowInputEntry = schedulerInputWriter.windowInputEntries[entryIndex];
+  let batchWindowId = windowInputEntry.windowId;
 
   _setActiveWindowId(batchWindowId);
 
-  let commandsCount = schedulerInputCommand.commands.length;
+  let { buffer, offset } = windowInputEntry;
+  let readOffset = 0;
 
-  for (let i = 0; i < commandsCount; i++) {
+  function readUInt32() {
+    let value = buffer.readUInt32LE(readOffset);
+    readOffset += 4;
+    return value;
+  }
 
-    let command = schedulerInputCommand.commands[i];
+  while (readOffset < offset) {
+    let commandType = buffer.readUInt8(readOffset);
 
-    switch (command.type) {
+    readOffset++;
+
+    switch (commandType) {
       case 1:
-        registerDependency(command.activeNodeId, command.stateId);
+        registerDependency(readUInt32(), readUInt32());
         break;
       case 2:
-        registerState(command.effectId, command.stateId);
+        registerState(readUInt32(), readUInt32());
         break;
       case 3:
-        registerEffect(command.parentNodeId, command.effectId);
+        registerEffect(readUInt32(), readUInt32());
         break;
       case 4:
-        disposeEffect(command.effectId);
+        disposeEffect(readUInt32());
         break;
       case 5:
-        registerMemo(command.parentNodeId, command.memoId);
+        registerMemo(readUInt32(), readUInt32());
         break;
       case 6:
-        postStateWrite(command.stateId);
+        postStateWrite(readUInt32());
         break;
       case 7:
         deleteWindow();
@@ -308,13 +319,12 @@ export function scheduler_calculateWorkBatch() {
     }
   }
 
-  schedulerInputCommand.windowId = -1;
-  schedulerInputCommand.commands = [];
-
   ////////////////////////////
   // SCHEDULER OUTPUT WRITE STAGE
   const workQueue = ActiveWindow.workQueue;
 
+  // tells state.js which window the output is for
+  // will also be used to clear the input entry for the window
   schedulerOutputCommand.windowId = batchWindowId;
   schedulerOutputCommand.commands = [];
 
@@ -333,9 +343,6 @@ export function scheduler_calculateWorkBatch() {
 
     i++;
   }
-
-  // return true if there's work to do
-  return i > 0;
 }
 
 function _setActiveWindowId(windowId) {
