@@ -55,7 +55,7 @@ function Counter() {
 }
 ...
 ```
-With state management APIs and fine-grained reactivity each inspired by [ReactJS](https://github.com/facebook/react) and [SolidJS](https://github.com/solidjs/solid), Seniman allows you to hit the ground running in building JSX-based user interfaces.
+With state management APIs and fine-grained reactivity each inspired by [ReactJS](https://github.com/facebook/react) and [SolidJS](https://github.com/solidjs/solid), Seniman allows you to hit the ground running in building server-side JSX-based user interfaces.
 
 ## Table of Contents
 - [How it Works](#how-it-works)
