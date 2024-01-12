@@ -53,7 +53,9 @@ function Counter() {
 }
 ...
 ```
-With state management APIs and fine-grained reactivity each inspired by [ReactJS](https://github.com/facebook/react) and [SolidJS](https://github.com/solidjs/solid), Seniman allows you to hit the ground running in building server-side JSX-based user interfaces.
+With state management APIs and fine-grained reactivity each inspired by [ReactJS](https://github.com/facebook/react) and [SolidJS](https://github.com/solidjs/solid), Seniman allows you to hit the ground running in building server-side JSX-based user interfaces. 
+
+Seniman is also deployable on edge environments like Cloudflare Workers & Fly.io, allowing you to run your app closer to your users, lowering interaction latency.
 
 ## Table of Contents
 - [How it Works](#how-it-works)
@@ -201,6 +203,8 @@ There is a separate HTML renderer that can be activated specifically when a requ
 ### Is this production ready?
 Not yet, but APIs are starting to stabilize and are already in active use in internal projects of some of our users.
 
+### Can I run a Seniman app on the edge?
+Yes, you can run this on Cloudflare Workers for low-latency global reach -- here's an [example](https://github.com/senimanjs/seniman/tree/main/examples/cloudflare-workers) app to get you started.
 
 ## Bug Reports
 For bug reports and general questions, please file an [issue](https://github.com/senimanjs/seniman/issues).
