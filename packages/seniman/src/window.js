@@ -449,7 +449,7 @@ export class Window {
       }
 
       if (!this.connected) {
-        let destroyTimeout = 10000;
+        let destroyTimeout = 60000;
         let lowMemoryMode = this.windowManager.lowMemoryMode;
 
         if (lowMemoryMode || pongDiff >= destroyTimeout) {
