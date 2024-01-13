@@ -1,7 +1,7 @@
 # SENIMAN
 [![npm version](https://badge.fury.io/js/seniman.svg)](https://badge.fury.io/js/seniman)
 ![downloads](https://img.shields.io/npm/dm/seniman)
-[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/senimanjs.svg?style=social&label=Follow%20%40SenimanJS)](https://twitter.com/senimanjs)
+[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/senimanjs.svg?style=social&label=SenimanJS)](https://twitter.com/senimanjs)
 
 
 ![1500x500](https://github.com/senimanjs/seniman/assets/510503/8eee96ef-09bf-422d-9fd4-dd1633c841bb)
