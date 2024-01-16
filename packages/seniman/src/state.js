@@ -111,6 +111,9 @@ export function enqueueWindowInput(windowId, inputBuffer) {
     }
   });
 
+  _execWork();
+  ExecWorkStartTimeout = null;
+
   _setActiveWindowId(null);
 }
 
@@ -233,7 +236,7 @@ function _writeInputCommand(windowId, size) {
   let { buffer, offset } = windowInputEntry;
 
   if (offset + size > buffer.length) {
-    throw new Error("short buffer overflow");
+    throw new Error(`short buffer overflow, size: ${size}, offset: ${offset}, buffer length: ${buffer.length}`);
   }
 
   let commandBuffer = buffer.subarray(offset, offset + size);
@@ -274,7 +277,6 @@ function _disposeEffect(windowId, effectId) {
   let buf = _writeInputCommand(windowId, 5);
   buf.writeUInt8(4, 0);
   buf.writeUInt32LE(effectId, 1);
-
   _scheduleExecWork();
 }
 

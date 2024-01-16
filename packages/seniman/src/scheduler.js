@@ -20,7 +20,8 @@ export function scheduler_registerWindow(windowId) {
     observersMap: new Map(),
     nodeMap: new Map(),
     effectStatesMap: new Map(),
-    workQueue: new WorkQueue()
+    workQueue: new WorkQueue(),
+    disposeList: []
   });
 }
 
@@ -144,11 +145,8 @@ function registerEffect(parentNodeId, effectId) {
 function disposeEffect(effectId) {
 
   let window = ActiveWindow;
-  let effect = window.nodeMap.get(effectId);
 
-  // console.log('disposeEffect', effectId);
-
-  cleanNode(effect);
+  window.disposeList.push(effectId);
 }
 
 ///////////////////////
@@ -305,12 +303,24 @@ export function scheduler_calculateWorkBatch() {
   ////////////////////////////
   // SCHEDULER OUTPUT WRITE STAGE
   const workQueue = ActiveWindow.workQueue;
+  const disposeList = ActiveWindow.disposeList;
 
   // tells state.js which window the output is for
   // will also be used to clear the input entry for the window
   schedulerOutputCommand.windowId = batchWindowId;
   schedulerOutputCommand.nodeIds = [];
   schedulerOutputCommand.deletedNodeIds = [];
+
+  while (disposeList.length) {
+    let nodeId = disposeList.pop();
+    let node = ActiveWindow.nodeMap.get(nodeId);
+
+    _removeNodeSubtree(nodeId);
+
+    node.updateState = NODE_EXPIRED;
+
+    schedulerOutputCommand.deletedNodeIds.push(nodeId);
+  }
 
   let i = 0;
 

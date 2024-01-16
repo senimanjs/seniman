@@ -1,5 +1,5 @@
 import { Sequence } from "./window.js";
-import { getActiveScope, runInScope, onDispose, useDisposableEffect } from "./state.js";
+import { getActiveScope, runInScope, onDispose, useDisposableEffect, useState, useEffect } from "./state.js";
 
 export function createCollection(initialItems) {
   return new Collection(initialItems);
@@ -8,12 +8,15 @@ export function createCollection(initialItems) {
 class Collection {
 
   constructor(items) {
-    this.items = items;
-    this.views = [];
+
+    if (items) {
+      this.items = items.slice();
+    } else {
+      this.items = [];
+    }
 
     this.itemIds = [];
-    this.disposeFns = [];
-    this._lastItemId = 0;
+    this.views = [];
   }
 
   indexOf(item) {
@@ -44,7 +47,7 @@ class Collection {
     this.items.unshift(...items);
 
     this.views.forEach(view => {
-      this.notifyViewInsert(view, 0, items.length);
+      this.notifyViewInsert(view, 0, items);
     });
   }
 
@@ -54,7 +57,7 @@ class Collection {
     this.items.push(...items);
 
     this.views.forEach(view => {
-      this.notifyViewInsert(view, index, items.length);
+      this.notifyViewInsert(view, index, items);
     });
   }
 
@@ -63,14 +66,41 @@ class Collection {
 
     this.views.forEach(view => {
       this.notifyViewRemoval(view, index, count);
-      this.notifyViewInsert(view, index, items.length);
+      this.notifyViewInsert(view, index, items);
     });
   }
+
+  /*
+  swap(index1, index2) {
+
+    let item1 = this.items[index1];
+    let item2 = this.items[index2];
+    this.items[index1] = item2;
+    this.items[index2] = item1;
+
+    let itemId1 = this.itemIds[index1];
+    let itemId2 = this.itemIds[index2];
+
+    this.itemIds[index1] = itemId2;
+    this.itemIds[index2] = itemId1;
+
+    this.views.forEach(view => {
+
+      // swap the disposeFns of the views
+      let disposeFn1 = view.disposeFns[index1];
+      let disposeFn2 = view.disposeFns[index2];
+
+      view.disposeFns[index1] = disposeFn2;
+      view.disposeFns[index2] = disposeFn1;
+
+      view.sequence.swap(index1, index2);
+    });
+  }
+  */
 
   filter(fn) {
     return this.items.filter(fn);
   }
-
 
   reset() {
     let itemLength = this.items.length;
@@ -81,101 +111,75 @@ class Collection {
 
     this.items = [];
     this.itemIds = [];
-    this.disposeFns = [];
-    this._lastItemId = 0;
   }
 
-  notifyViewInsert(view, startIndex, count) {
-
-    let assignItemId = (startIndex) => {
-      let itemId = ++this._lastItemId;
-      this.itemIds.splice(startIndex, 0, itemId);
-      return itemId;
-    }
+  notifyViewInsert(view, startIndex, items) {
 
     let nodes = [];
-    let readyCount = 0;
+    let count = items.length;
 
-    let onInitial = (node) => {
-      nodes.push(node);
+    runInScope(view.scope, () => {
 
-      readyCount++;
+      // attach items initially
+      for (let i = 0; i < count; i++) {
 
-      if (readyCount == count) {
-        view.sequence.insert(startIndex, nodes);
+        let [nodeRoot, nodeRootSetter] = useState(null);
+        let node = view.containerFn(nodeRoot);
+        let item = items[i];
+
+        let disposeFn = useDisposableEffect(() => {
+          let nodeResult = view.renderFn(item);
+          nodeRootSetter(nodeResult);
+        });
+
+        nodes.push(node);
+
+        // insert the dispose function at the correct index
+        view.disposeFns.splice(startIndex + i, 0, disposeFn);
       }
-    }
 
-    let onChange = (index, node) => {
-      view.sequence.replace(index, node);
-    }
-
-    // attach items initially
-    for (let i = 0; i < count; i++) {
-      let itemId = assignItemId(startIndex + i);
-      let disposeFn = this._initNode(view, itemId, onInitial, onChange);
-
-      // insert the dispose function at the correct index
-      this.disposeFns.splice(startIndex + i, 0, disposeFn);
-    }
+      view.sequence.insert(startIndex, nodes);
+    });
   }
 
   notifyViewRemoval(view, index, count) {
     // run the dispose functions
     for (let i = 0; i < count; i++) {
-      this.disposeFns[index + i]();
+      view.disposeFns[index + i]();
     }
 
     // remove the dispose functions
-    this.disposeFns.splice(index, count);
-
+    view.disposeFns.splice(index, count);
     // remove from the sequence
     view.sequence.remove(index, count);
-  }
 
-  _getIndexForItemId(itemId) {
-    // use better data structure for this
-    return this.itemIds.indexOf(itemId);
-  }
-
-  _initNode(view, itemId, onInitial, onChange) {
-    let isInitial = true;
-    let disposeFn = null;
-
-    runInScope(view.scope, () => {
-      disposeFn = useDisposableEffect(() => {
-        let currentIndexForItemId = this._getIndexForItemId(itemId);
-        let nodeResult = view.renderFn(this.items[currentIndexForItemId]);
-
-        if (isInitial) {
-          isInitial = false;
-          onInitial(nodeResult);
-        } else {
-          onChange(currentIndexForItemId, nodeResult);
-        }
-      });
-    });
-
-    return disposeFn;
   }
 
   view(fn) {
     return this.map(fn);
   }
 
-  map(fn) {
+  map(fn, containerFn) {
+
+    if (!containerFn) {
+      containerFn = (node) => {
+        return <div>{node}</div>;
+      }
+    }
 
     let view = {
       renderFn: fn,
       scope: getActiveScope(),
-      sequence: new Sequence()
+      sequence: new Sequence(),
+      disposeFns: [],
+      containerFn
     };
 
     this.views.push(view);
 
     // handle the case where the collection already has items
     if (this.items.length > 0) {
-      this.notifyViewInsert(view, 0, this.items.length);
+      this.notifyViewInsert(view, 0, this.items);
     }
 
     onDispose(() => {

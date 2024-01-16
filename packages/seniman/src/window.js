@@ -27,8 +27,16 @@ const eventTypeNameMap = {
   7: 'keyup',
   8: 'mouseenter',
   9: 'mouseleave',
-  10: 'load'
-}
+  10: 'load',
+  11: 'unload',
+  12: 'dragstart',
+  13: 'drag',
+  14: 'dragend',
+  15: 'dragenter',
+  16: 'dragleave',
+  17: 'dragover',
+  18: 'drop'
+};
 
 // TODO: use a LRU cache
 const camelCache = new Map();
@@ -1455,6 +1463,14 @@ export class Window {
     this._streamAttachBlockCommand(blockId, anchorIndex, _seqId);
 
     sequence.onChange(useCallback(change => {
+
+      /*
+      if (change.type == MODIFY_SWAP) {
+        this._streamModifySequenceCommand(_seqId, MODIFY_SWAP, change.index1, change.index2);
+        return;
+      }
+      */
+
       let startIndex = change.index;
       let count = change.count;
 
@@ -1495,7 +1511,7 @@ export class Window {
 const MODIFY_INSERT = 3;
 const MODIFY_REMOVE = 4;
 const MODIFY_REPLACE = 5;
-
+const MODIFY_SWAP = 6;
 
 export class Sequence {
 
@@ -1517,6 +1533,17 @@ export class Sequence {
 
     if (this.onChangeFn) {
       this.onChangeFn({ type: MODIFY_REMOVE, index, count });
+    }
+  }
+
+  swap(index1, index2) {
+    let temp = this.nodes[index1];
+
+    this.nodes[index1] = this.nodes[index2];
+    this.nodes[index2] = temp;
+
+    if (this.onChangeFn) {
+      this.onChangeFn({ type: MODIFY_SWAP, index1, index2 });
     }
   }
 

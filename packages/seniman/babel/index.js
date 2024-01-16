@@ -21,7 +21,15 @@ const eventTypeIdMap = {
   'onKeyUp': 7,
   'onMouseEnter': 8,
   'onMouseLeave': 9,
-  'onLoad': 10
+  'onLoad': 10,
+  'onUnload': 11,
+  'onDragStart': 12,
+  'onDrag': 13,
+  'onDragEnd': 14,
+  'onDragEnter': 15,
+  'onDragLeave': 16,
+  'onDragOver': 17,
+  'onDrop': 18
 };
 
 const eventNames = Object.keys(eventTypeIdMap);
