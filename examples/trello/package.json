@@ -1,0 +1,20 @@
+{
+  "name": "seniman-trello",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@babel/cli": "^7.23.4",
+    "@babel/plugin-syntax-jsx": "^7.23.3"
+  },
+  "dependencies": {
+    "immer": "^10.0.3",
+    "seniman": "^0.0.154"
+  }
+}
