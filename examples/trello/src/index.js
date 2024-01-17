@@ -4,6 +4,7 @@ import { serve } from "seniman/workers";
 import { Style, Link, Title } from "seniman/head";
 import { produce } from "immer";
 
+// import tailwind css from .txt extension so we can read it as a string @ cloudflare worker
 import tailwindCssText from "./style.txt";
 import initialData from "./data.json";
 
@@ -83,7 +84,7 @@ function List(props) {
     >
       <div class="text-lg text-white font-bold px-4 py-2.5">{props.name}</div>
       <div>
-        {props.taskCollection.view(task => {
+        {props.taskCollection.map(task => {
           let taskId = untrack(() => task().id);
 
           let onDragStart = createHandler((pixelHeight) => {
@@ -169,7 +170,6 @@ function List(props) {
                 class="fixed top-0 left-0 z-10 w-full h-full bg-black opacity-50"
                 onClick={() => setModalEnabled(false)}></div>
             </div>
-
             }
           </div>
         })}
@@ -373,4 +373,6 @@ function EditIcon() {
 }
 
 let root = createRoot(Board);
+
+// run cloudflare worker on Service Worker mode
 serve(root);
