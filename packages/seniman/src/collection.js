@@ -1,5 +1,5 @@
 import { Sequence } from "./window.js";
-import { getActiveScope, runInScope, onDispose, useDisposableEffect, useState, useEffect } from "./state.js";
+import { getActiveScope, runInScope, onDispose, useDisposableEffect, useState, useMemo, useEffect } from "./state.js";
 
 export function createCollection(initialItems) {
   return new Collection(initialItems);
@@ -15,7 +15,9 @@ class Collection {
       this.items = [];
     }
 
-    this.itemIds = [];
+    this.rootScope = getActiveScope();
+    this.isTracked = false;
+    this.trackedStates = [];
     this.views = [];
   }
 
@@ -38,34 +40,50 @@ class Collection {
   remove(index, count) {
     this.items.splice(index, count);
 
+    if (this.isTracked) {
+      // remove the item states
+      this.trackedStates.splice(index, count);
+    }
+
     this.views.forEach(view => {
       this.notifyViewRemoval(view, index, count);
     });
   }
 
   unshift(...items) {
-    this.items.unshift(...items);
-
-    this.views.forEach(view => {
-      this.notifyViewInsert(view, 0, items);
-    });
+    this.splice(0, 0, ...items);
   }
 
   push(...items) {
     let index = this.items.length;
-
-    this.items.push(...items);
-
-    this.views.forEach(view => {
-      this.notifyViewInsert(view, index, items);
-    });
+    this.splice(index, 0, ...items);
   }
 
-  splice(index, count, ...items) {
-    this.items.splice(index, count, ...items);
+  splice(index, deletionCount, ...items) {
+    this.items.splice(index, deletionCount, ...items);
+
+    if (this.isTracked) {
+
+      if (deletionCount > 0) {
+        // remove the item states
+        this.trackedStates.splice(index, deletionCount);
+      }
+
+      runInScope(this.rootScope, () => {
+        // add the new item states
+        for (let i = 0; i < items.length; i++) {
+          let item = items[i];
+          let [getter, setter] = useState(item);
+          this.trackedStates.splice(index + i, 0, { getter, setter });
+        }
+      });
+    }
 
     this.views.forEach(view => {
-      this.notifyViewRemoval(view, index, count);
+      if (deletionCount > 0) {
+        this.notifyViewRemoval(view, index, deletionCount);
+      }
+
       this.notifyViewInsert(view, index, items);
     });
   }
@@ -122,10 +140,16 @@ class Collection {
 
       // attach items initially
       for (let i = 0; i < count; i++) {
-
         let [nodeRoot, nodeRootSetter] = useState(null);
         let node = view.containerFn(nodeRoot);
-        let item = items[i];
+        let item;
+
+        if (view.tracked) {
+          let { getter } = this.trackedStates[startIndex + i];
+          item = getter;
+        } else {
+          item = items[i];
+        }
 
         let disposeFn = useDisposableEffect(() => {
           let nodeResult = view.renderFn(item);
@@ -152,7 +176,19 @@ class Collection {
     view.disposeFns.splice(index, count);
     // remove from the sequence
     view.sequence.remove(index, count);
+  }
 
+  set(index, fn) {
+    let item = this.items[index];
+    let newItem = fn(item);
+
+    this.items[index] = newItem;
+
+    if (this.isTracked) {
+      let trackedState = this.trackedStates[index];
+      let { setter } = trackedState;
+      setter(newItem);
+    }
   }
 
   view(fn) {
@@ -163,7 +199,7 @@ class Collection {
 
     if (!containerFn) {
       containerFn = (node) => {
-        return <div>{node}</div>;
+        return <div>{node()}</div>;
       }
     }
 
@@ -172,8 +208,24 @@ class Collection {
       scope: getActiveScope(),
       sequence: new Sequence(),
       disposeFns: [],
-      containerFn
+      containerFn,
+      tracked: true
     };
+
+    if (view.tracked) {
+      // if the collection itself hasn't been tracked yet
+      // then run the tracking initialization
+      if (!this.isTracked) {
+        this.isTracked = true;
+
+        runInScope(this.rootScope, () => {
+          this.trackedStates = this.items.map(item => {
+            let [getter, setter] = useState(item);
+            return { getter, setter };
+          });
+        });
+      }
+    }
 
     this.views.push(view);
 
@@ -185,6 +237,7 @@ class Collection {
     onDispose(() => {
       let index = this.views.indexOf(view);
       this.views.splice(index, 1);
+      this.notifyViewRemoval(view, 0, this.items.length);
     });
 
     return view.sequence;
