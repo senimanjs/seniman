@@ -142,11 +142,9 @@ function registerEffect(parentNodeId, effectId) {
   pushToWorkQueue(window, effect);
 }
 
-function disposeEffect(effectId) {
+function disposeEffect(parentId, effectId) {
 
-  let window = ActiveWindow;
-
-  window.disposeList.push(effectId);
+  ActiveWindow.disposeList.push([parentId, effectId]);
 }
 
 ///////////////////////
@@ -283,7 +281,7 @@ export function scheduler_calculateWorkBatch() {
         registerEffect(readUInt32(), readUInt32());
         break;
       case 4:
-        disposeEffect(readUInt32());
+        disposeEffect(readUInt32(), readUInt32());
         break;
       case 5:
         registerMemo(readUInt32(), readUInt32());
@@ -312,12 +310,21 @@ export function scheduler_calculateWorkBatch() {
   schedulerOutputCommand.deletedNodeIds = [];
 
   while (disposeList.length) {
-    let nodeId = disposeList.pop();
+    let [parentId, nodeId] = disposeList.pop();
     let node = ActiveWindow.nodeMap.get(nodeId);
 
     _removeNodeSubtree(nodeId);
 
     node.updateState = NODE_EXPIRED;
+
+    // if parent is not root
+    if (parentId > 0) {
+      // remove from the parent's children list
+      let children = ActiveWindow.childrenListMap.get(parentId);
+      let index = children.indexOf(nodeId);
+
+      children.splice(index, 1);
+    }
 
     schedulerOutputCommand.deletedNodeIds.push(nodeId);
   }

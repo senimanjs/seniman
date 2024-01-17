@@ -272,11 +272,12 @@ function _registerEffect(windowId, parentNodeId, effectId) {
   _scheduleExecWork();
 }
 
-function _disposeEffect(windowId, effectId) {
+function _disposeEffect(windowId, parentNodeId, effectId) {
 
-  let buf = _writeInputCommand(windowId, 5);
+  let buf = _writeInputCommand(windowId, 9);
   buf.writeUInt8(4, 0);
-  buf.writeUInt32LE(effectId, 1);
+  buf.writeUInt32LE(parentNodeId, 1)
+  buf.writeUInt32LE(effectId, 5);
   _scheduleExecWork();
 }
 
@@ -401,10 +402,11 @@ export function useDisposableEffect(fn, value) {
   _effectId += 2;
 
   let ActiveWindowId = ActiveWindow.id;
+  let parentNodeId = ActiveNode ? ActiveNode.id : 0;
 
   createEffect(ActiveWindowId, id, fn, value);
 
-  return () => _disposeEffect(ActiveWindowId, id);
+  return () => _disposeEffect(ActiveWindowId, parentNodeId, id);
 }
 
 export function untrack(fn) {
