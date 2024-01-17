@@ -1,11 +1,46 @@
-import { createRoot, useState, useMemo, createChannel, createRef, createHandler, useClient, createContext, useContext, useEffect, createCollection, untrack, onDispose } from "seniman";
+import { createRoot, useState, useMemo, createChannel, preventDefault, createRef, createHandler, useClient, createContext, useContext, useEffect, createCollection, untrack, onDispose } from "seniman";
 //import { serve } from "seniman/server";
-import { createServer } from "seniman/workers";
+import { serve } from "seniman/workers";
 import { Style, Link, Title } from "seniman/head";
 import { produce } from "immer";
 
 import tailwindCssText from "./style.txt";
 import initialData from "./data.json";
+
+function TaskModal(props) {
+
+  // hold additional data from database
+  let [taskData, setTaskData] = useState({
+    description: null,
+    comments: []
+  });
+
+  // simulate a 10ms server call to fetch the extra task data
+  setTimeout(() => {
+    setTaskData({
+      description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+      comments: [
+        { id: 1, text: "Looks good!" },
+        { id: 2, text: "Needs more je ne sais quoi" }
+      ]
+    });
+  }, 10);
+
+  return <div class="fixed z-20 top-1/2 left-1/2 w-[600px] h-[400px] bg-gray-300 p-4 rounded transform -translate-x-1/2 -translate-y-1/2">
+    <div class="font-bold text-lg mb-2.5">
+      #{props.task.id}: {props.task.text}
+    </div>
+    <div>
+      {taskData().description}
+    </div>
+    <div class="mt-2.5">
+      <div class="font-bold text-md mb-2.5">Comments</div>
+      {taskData().comments.map(comment => <div class="bg-white p-2.5 rounded mb-2.5 w-[300px]">
+        {comment.text}
+      </div>)}
+    </div>
+  </div>;
+}
 
 function List(props) {
   let listId = props.id;
@@ -46,7 +81,7 @@ function List(props) {
         }
       }}
     >
-      <div class="text-lg  text-white font-bold px-4 py-2.5">{props.name}</div>
+      <div class="text-lg text-white font-bold px-4 py-2.5">{props.name}</div>
       <div>
         {props.taskCollection.view(task => {
           let taskId = untrack(() => task().id);
@@ -81,6 +116,8 @@ function List(props) {
 
           let editTextAreaRef = createRef();
 
+          let [modalEnabled, setModalEnabled] = useState(false);
+
           return <div
             class="relative px-2.5 py-1.5"
             onDragEnter={() => {
@@ -88,7 +125,8 @@ function List(props) {
             }}
           >
             <div
-              class="group text-sm p-2.5 border-2 rounded bg-white"
+              onClick={() => setModalEnabled(true)}
+              class="group text-sm p-2.5 border-2 rounded bg-white cursor-pointer hover:border-yellow-500"
               style={{
                 opacity: isDraggedTask() ? "0.3" : "1.0"
               }}
@@ -100,7 +138,7 @@ function List(props) {
               })}
             >
               {task().text}
-              <div onClick={onEditButtonClick} class="opacity-0 bg-white group-hover:opacity-100 hover:bg-gray-300 p-1 rounded-sm cursor-pointer absolute top-4 right-5">
+              <div onClick={preventDefault(onEditButtonClick)} class="opacity-0 bg-white group-hover:opacity-100 hover:bg-gray-300 p-1 rounded-sm cursor-pointer absolute top-4 right-5">
                 <EditIcon />
               </div>
             </div>
@@ -124,6 +162,14 @@ function List(props) {
                 class="fixed top-0 left-0 z-10 w-full h-full bg-black opacity-50"
                 onClick={() => setIsInlineEditMode(false)}></div>
             </div>
+            }
+            {modalEnabled() && <div>
+              <TaskModal task={task()} />
+              <div
+                class="fixed top-0 left-0 z-10 w-full h-full bg-black opacity-50"
+                onClick={() => setModalEnabled(false)}></div>
+            </div>
+
             }
           </div>
         })}
@@ -327,6 +373,4 @@ function EditIcon() {
 }
 
 let root = createRoot(Board);
-//serve(root, 3016);
-
-export default createServer(root);
+serve(root);
