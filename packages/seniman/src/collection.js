@@ -192,15 +192,18 @@ class Collection {
   }
 
   view(fn) {
-    return this.map(fn);
+    return this._map(fn, { isTracked: false });
   }
 
-  map(fn, containerFn) {
+  map(fn) {
+    return this._map(fn, { isTracked: true });
+  }
 
-    if (!containerFn) {
-      containerFn = (node) => {
-        return <div>{node()}</div>;
-      }
+  _map(fn, { isTracked }) {
+
+    // TODO: allow containerFn to be overridden
+    let containerFn = (node) => {
+      return <div>{node()}</div>;
     }
 
     let view = {
@@ -209,7 +212,7 @@ class Collection {
       sequence: new Sequence(),
       disposeFns: [],
       containerFn,
-      tracked: true
+      tracked: isTracked
     };
 
     if (view.tracked) {
@@ -237,7 +240,6 @@ class Collection {
     onDispose(() => {
       let index = this.views.indexOf(view);
       this.views.splice(index, 1);
-      this.notifyViewRemoval(view, 0, this.items.length);
     });
 
     return view.sequence;
