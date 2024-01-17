@@ -4,6 +4,9 @@ import { createServer } from "seniman/workers";
 import { Style, Link, Title } from "seniman/head";
 import { produce } from "immer";
 
+import tailwindCssText from "./style.txt";
+import initialData from "./data.json";
+
 function List(props) {
   let listId = props.id;
   let client = useClient();
@@ -15,8 +18,6 @@ function List(props) {
 
   let onAddClick = createHandler(() => {
     setOnAddCardEnabled(true);
-
-    // taskDataHandler.printItem(listId);
 
     globalClickUnsub = taskDataHandler.listenGlobalClick(() => {
       setOnAddCardEnabled(false);
@@ -34,22 +35,21 @@ function List(props) {
     setOnAddCardEnabled(false);
     globalClickUnsub();
 
-    props.taskCollection.push({ id: 8, text });
+    taskDataHandler.addTask(listId, text);
   });
 
   return (
-    <div
-      onDragOver={$c((e) => {
-        e.preventDefault();
-      })}
-      onDrop={() => taskDataHandler.setDragEnd()}
-      style={{ background: "#bbb", borderRadius: "5px", width: "250px" }}>
-      <div style={{ fontSize: "17px", fontWeight: "bold", padding: "10px 15px" }}>
-        {"test"}
-      </div>
+    <div class="bg-gray-600 rounded w-[250px]"
+      onDragEnter={() => {
+        if (props.taskCollection.items.length == 0) {
+          taskDataHandler.setEmptyListDragEnter(listId);
+        }
+      }}
+    >
+      <div class="text-lg  text-white font-bold px-4 py-2.5">{props.name}</div>
       <div>
         {props.taskCollection.view(task => {
-          let taskId = task.id;
+          let taskId = untrack(() => task().id);
 
           let onDragStart = createHandler((pixelHeight) => {
             taskDataHandler.setDragStart(listId, taskId, pixelHeight);
@@ -59,37 +59,76 @@ function List(props) {
             return taskDataHandler.dragStatus().taskId == taskId;
           });
 
+          let [isInlineEditMode, setIsInlineEditMode] = useState(false);
+
+          let onAddTypeEnter = createHandler((text) => {
+            taskDataHandler.editTaskText(listId, taskId, text);
+            setIsInlineEditMode(false);
+          });
+
+          let onEditButtonClick = () => {
+            setIsInlineEditMode(true);
+            setTimeout(() => {
+              client.exec($c(() => {
+                let textarea = $s(editTextAreaRef).get()
+                textarea.focus();
+                // move the cursor to the end of the text
+                var length = textarea.value.length;
+                textarea.setSelectionRange(length, length);
+              }));
+            }, 0);
+          }
+
+          let editTextAreaRef = createRef();
+
           return <div
-            style={{ padding: "5px 10px" }}
+            class="relative px-2.5 py-1.5"
             onDragEnter={() => {
               taskDataHandler.setTaskDragEnter(listId, taskId);
             }}
           >
-            <div style={{
-              fontSize: "15px",
-              padding: "10px",
-              borderWidth: "2px",
-              borderRadius: "5px",
-              background: "#fff",
-              opacity: isDraggedTask() ? "0.3" : "1.0"
-            }}
+            <div
+              class="group text-sm p-2.5 border-2 rounded bg-white"
+              style={{
+                opacity: isDraggedTask() ? "0.3" : "1.0"
+              }}
               draggable="true"
               onDragStart={$c((e) => {
                 // measure the element height and then report it to the server
                 let pixelHeight = e.target.offsetHeight;
                 $s(onDragStart)(pixelHeight + "px");
               })}
-              onDragEnd={() => {
-                taskDataHandler.setDragEnd();
-              }}
             >
-              {task.text}
-              <button onClick={() => console.log(task)}>+</button>
+              {task().text}
+              <div onClick={onEditButtonClick} class="opacity-0 bg-white group-hover:opacity-100 hover:bg-gray-300 p-1 rounded-sm cursor-pointer absolute top-4 right-5">
+                <EditIcon />
+              </div>
             </div>
+            {isInlineEditMode() && <div>
+              <div class="absolute z-20 top-1 left-2.5">
+                <textarea
+                  class="w-[230px] h-[70px] p-2.5 border-0 rounded text-sm font-sans"
+                  ref={editTextAreaRef}
+                  onClick={$c(e => {
+                    e.preventDefault();
+                  })}
+                  onKeyDown={$c(e => {
+                    // if enter is pressed, then run the onAddTypeEnter server handler
+                    if (e.key === 'Enter') {
+                      $s(onAddTypeEnter)(e.target.value);
+                      e.preventDefault();
+                    }
+                  })}>{task().text}</textarea>
+              </div>
+              <div
+                class="fixed top-0 left-0 z-10 w-full h-full bg-black opacity-50"
+                onClick={() => setIsInlineEditMode(false)}></div>
+            </div>
+            }
           </div>
         })}
       </div>
-      {onAddCardEnabled() && <div style={{ margin: "10px" }}>
+      {onAddCardEnabled() && <div class="m-2.5">
         <textarea
           ref={addTextareaRef}
           onClick={$c(e => {
@@ -103,13 +142,13 @@ function List(props) {
             }
           })}
           placeholder="Enter a title for this card..."
-          style={{ width: "210px", height: "50px", padding: "10px", border: 'none', borderRadius: '5px', fontSize: '15px', resize: "none", fontFamily: 'arial' }}></textarea>
+          class="w-[230px] h-[70px] p-2.5 border-0 rounded text-sm font-sans"></textarea>
       </div>
       }
       <div onClick={$c(e => {
         e.preventDefault();
         $s(onAddClick)();
-      })} style={{ color: "#fff", padding: "10px", borderRadius: "5px", cursor: "pointer" }}>
+      })} class="text-white p-2.5 rounded cursor-pointer">
         + Add Task
       </div>
     </div>
@@ -121,8 +160,9 @@ let TaskDataHandler = createContext();
 function Board(props) {
 
   let [lists, setLists] = useState([
-    { id: 1 },
-    { id: 2 },
+    { id: 1, name: "To Do" },
+    { id: 2, name: "Doing" },
+    { id: 3, name: "Done" }
   ]);
 
   let [dragStatus, setDragStatus] = useState({
@@ -130,32 +170,23 @@ function Board(props) {
     taskId: 0
   });
 
-  let DB = {
-    lists: {
-      1: {
-        id: 1,
-        name: "List 1",
-        tasks: [{ id: 1, text: "Task 1" }, { id: 2, text: "Task 2" }, { id: 3, text: "Task 3" }, { id: 4, text: "Task 4" }, { id: 5, text: "Task 5" }, { id: 6, text: "Task 6" }, { id: 7, text: "Task 7" }]
-      },
-      2: {
-        id: 2,
-        name: "List 2",
-        tasks: [{ id: 8, text: "Task 8" }, { id: 9, text: "Task 9" }, { id: 10, text: "Task 10" }, { id: 11, text: "Task 11" }, { id: 12, text: "Task 12" }, { id: 13, text: "Task 13" }, { id: 14, text: "Task 14" }]
-      }
-    }
-  };
-
+  // initialize the task collections (just 3 statically for now)
   let taskCollections = untrack(() => {
     return lists().map(list => {
-      return createCollection(DB.lists[list.id].tasks);
+      return createCollection([]);
     });
   })
 
-  let dropzoneIndex = 0;
-  let draggedTask = null;
-  let activeListId = null;
-  let isDragging = false;
-  let lastDragEnterTaskId = null;
+  // emulate a 10ms server call to fetch the initial tasks
+  setTimeout(() => {
+    taskCollections.forEach((taskCollection, index) => {
+      let tasks = initialData.lists[index + 1].tasks;
+      taskCollection.push(...tasks);
+    });
+  }, 10);
+
+  let dragVars = { dropzoneIndex: 0, draggedTask: null, activeListId: 0, isDragging: false, lastDragEnterTaskId: 0 };
+  let _incrementId = 16;
 
   let globalClickHandler = () => { };
 
@@ -169,77 +200,89 @@ function Board(props) {
       }
     },
 
-    printItem: (listId) => {
-      console.log('PRINT ITEM listId', listId, taskCollections[listId - 1].items);
+    addTask: (listId, text) => {
+      let taskCollection = taskCollections[listId - 1];
+      let id = _incrementId++;
+
+      taskCollection.push({ id, text });
+    },
+
+    editTaskText: (listId, taskId, text) => {
+
+      let taskCollection = taskCollections[listId - 1];
+      let taskIndex = taskCollection.items.findIndex(task => task.id == taskId);
+
+      taskCollection.set(taskIndex, produce(task => {
+        task.text = text;
+      }));
     },
 
     setDragStart: (listId, taskId, pixelHeight) => {
 
-      if (isDragging) {
+      if (dragVars.isDragging) {
         return;
       }
-
-      isDragging = true;
-
-      activeListId = listId;
 
       setDragStatus(produce(dragStatus => {
         dragStatus.height = pixelHeight;
         dragStatus.taskId = taskId;
       }));
 
-      // remove the task from the collection
-      let tasks = DB.lists[listId].tasks;
+      let taskCollection = taskCollections[listId - 1];
+      let taskIndex = taskCollection.items.findIndex(task => task.id == taskId);
 
-      let taskIndex = tasks.findIndex(task => task.id == taskId);
-      draggedTask = tasks[taskIndex];// tasks[taskIndex];
+      dragVars.isDragging = true;
+      dragVars.activeListId = listId;
+      dragVars.draggedTask = taskCollection.items[taskIndex];
+      dragVars.dropzoneIndex = taskIndex;
+    },
 
-      dropzoneIndex = taskIndex;
+    setEmptyListDragEnter: (listId) => {
+
+      if (!dragVars.isDragging || dragVars.activeListId == listId) {
+        return;
+      }
+
+      let taskCollection = taskCollections[listId - 1];
+      let taskIndex = taskCollection.items.length;
+
+      let oldTaskCollection = taskCollections[dragVars.activeListId - 1];
+      oldTaskCollection.splice(dragVars.dropzoneIndex, 1);
+      taskCollection.splice(taskIndex, 0, dragVars.draggedTask);
+
+      dragVars.activeListId = listId;
+      dragVars.dropzoneIndex = taskIndex;
     },
 
     setTaskDragEnter: (listId, taskId) => {
 
-      if (!isDragging || lastDragEnterTaskId == taskId) {
+      if (!dragVars.isDragging || dragVars.lastDragEnterTaskId == taskId) {
         return;
       }
 
-      lastDragEnterTaskId = taskId;
-
-      let isJumpingList = activeListId != listId;
+      let isJumpingList = dragVars.activeListId != listId;
 
       // start inserting the dropzone entry into the new list
-      let tasks = DB.lists[listId].tasks;
-
       let taskCollection = taskCollections[listId - 1];
-      let taskIndex = tasks.findIndex(task => task.id == taskId);
+      let taskIndex = taskCollection.items.findIndex(task => task.id == taskId);
 
       if (isJumpingList) {
-
-        // remove the dropzone entry from the previous list
-        DB.lists[activeListId].tasks.splice(dropzoneIndex, 1);
-
-        let oldTaskCollection = taskCollections[activeListId - 1];
-        oldTaskCollection.splice(dropzoneIndex, 1);
-
-        taskCollection.splice(taskIndex, 0, draggedTask);
-        tasks.splice(taskIndex, 0, draggedTask);
+        let oldTaskCollection = taskCollections[dragVars.activeListId - 1];
+        oldTaskCollection.splice(dragVars.dropzoneIndex, 1);
+        taskCollection.splice(taskIndex, 0, dragVars.draggedTask);
       } else {
-        let targetTask = tasks[taskIndex];
-
-        tasks.splice(dropzoneIndex, 1, targetTask);
-        tasks.splice(taskIndex, 1, draggedTask);
-
-        taskCollection.splice(dropzoneIndex, 1, targetTask);
-        taskCollection.splice(taskIndex, 1, draggedTask);
+        let targetTask = taskCollection.items[taskIndex];
+        taskCollection.splice(dragVars.dropzoneIndex, 1, targetTask);
+        taskCollection.splice(taskIndex, 1, dragVars.draggedTask);
       }
 
-      activeListId = listId;
-      dropzoneIndex = taskIndex;
+      dragVars.lastDragEnterTaskId = taskId;
+      dragVars.activeListId = listId;
+      dragVars.dropzoneIndex = taskIndex;
     },
 
     setDragEnd: () => {
-
-      if (!isDragging) {
+      if (!dragVars.isDragging) {
         return;
       }
 
@@ -248,42 +291,39 @@ function Board(props) {
         dragStatus.taskId = 0;
       }));
 
-      draggedTask = null;
-      isDragging = false;
+      dragVars.draggedTask = null;
+      dragVars.isDragging = false;
     }
   }
 
   return (
-    <div style={{ height: '100%' }} onClick={() => globalClickHandler()}>
-      <Link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reset.css@2.0.2/reset.min.css" />
-      <Link rel="stylesheet" href="https://unpkg.com/prismjs@0.0.1/themes/prism-tomorrow.css" />
+    <div
+      class="bg-gray-400 h-screen"
+      onClick={() => globalClickHandler()}
+      onDragOver={$c((e) => {
+        e.preventDefault();
+      })}
+      onDrop={() => taskDataHandlerContextValue.setDragEnd()}
+    >
       <Title text="Senimanello" />
-      <Style text={`
-        body {
-          background:#444;
-          font-family: arial;
-          height: 800px;
-        }
-
-        textarea::-webkit-input-placeholder {
-          color: #999;
-        }
-
-        textarea:focus {
-          outline: none;
-        }
-      `} />
-      <div style={{ padding: '10px', background: '#888', color: "#fff" }}>Seniman</div>
+      <Style text={tailwindCssText} />
+      <div class="p-2.5 bg-gray-700 text-white text-lg font-bold">SENIMAN</div>
       <TaskDataHandler.Provider value={taskDataHandlerContextValue}>
         <div style={{ padding: '10px' }}>
           {lists().map(list => <div style={{ float: "left", marginRight: "15px" }}>
-            <List id={list.id} taskCollection={taskCollections[list.id - 1]} />
+            <List id={list.id} name={list.name} taskCollection={taskCollections[list.id - 1]} />
           </div>
           )}
         </div>
       </TaskDataHandler.Provider>
     </div>
   );
+}
+
+function EditIcon() {
+  return <svg width="1em" height="1em" viewBox="64 64 896 896" focusable="false" fill="currentColor" >
+    <path d="M257.7 752c2 0 4-.2 6-.5L431.9 722c2-.4 3.9-1.3 5.3-2.8l423.9-423.9a9.96 9.96 0 000-14.1L694.9 114.9c-1.9-1.9-4.4-2.9-7.1-2.9s-5.2 1-7.1 2.9L256.8 538.8c-1.5 1.5-2.4 3.3-2.8 5.3l-29.5 168.2a33.5 33.5 0 009.4 29.8c6.6 6.4 14.9 9.9 23.8 9.9zm67.4-174.4L687.8 215l73.3 73.3-362.7 362.6-88.9 15.7 15.6-89zM880 836H144c-17.7 0-32 14.3-32 32v36c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-36c0-17.7-14.3-32-32-32z"></path>
+  </svg>
 }
 
 let root = createRoot(Board);
