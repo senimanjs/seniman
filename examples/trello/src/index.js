@@ -68,6 +68,9 @@ function List(props) {
   });
 
   let onAddTypeEnter = createHandler((text) => {
+    if (text.length == 0) {
+      return;
+    }
     setOnAddCardEnabled(false);
     globalClickUnsub();
 
@@ -75,10 +78,10 @@ function List(props) {
   });
 
   return (
-    <div class="bg-gray-600 rounded w-[250px]"
+    <div class="bg-gray-600 rounded"
       onDragEnter={() => {
         if (props.taskCollection.items.length == 0) {
-          taskDataHandler.setEmptyListDragEnter(listId);
+          taskDataHandler.setDraggedTaskToEndOfList(listId);
         }
       }}
     >
@@ -87,10 +90,6 @@ function List(props) {
         {props.taskCollection.map(task => {
           let taskId = untrack(() => task().id);
 
-          let onDragStart = createHandler((pixelHeight) => {
-            taskDataHandler.setDragStart(listId, taskId, pixelHeight);
-          });
-
           let isDraggedTask = useMemo(() => {
             return taskDataHandler.dragStatus().taskId == taskId;
           });
@@ -98,6 +97,9 @@ function List(props) {
           let [isInlineEditMode, setIsInlineEditMode] = useState(false);
 
           let onAddTypeEnter = createHandler((text) => {
+            if (text.length == 0) {
+              return;
+            }
             taskDataHandler.editTaskText(listId, taskId, text);
             setIsInlineEditMode(false);
           });
@@ -132,11 +134,7 @@ function List(props) {
                 opacity: isDraggedTask() ? "0.3" : "1.0"
               }}
               draggable="true"
-              onDragStart={$c((e) => {
-                // measure the element height and then report it to the server
-                let pixelHeight = e.target.offsetHeight;
-                $s(onDragStart)(pixelHeight + "px");
-              })}
+              onDragStart={() => taskDataHandler.setDragStart(listId, taskId)}
             >
               {task().text}
               <div onClick={preventDefault(onEditButtonClick)} class="opacity-0 bg-white group-hover:opacity-100 hover:bg-gray-300 p-1 rounded-sm cursor-pointer absolute top-4 right-5">
@@ -191,7 +189,7 @@ function List(props) {
           class="w-[230px] h-[70px] p-2.5 border-0 rounded text-sm font-sans"></textarea>
       </div>
       }
-      <div onClick={$c(e => {
+      <div onDragEnter={() => taskDataHandler.setDraggedTaskToEndOfList(listId)} onClick={$c(e => {
         e.preventDefault();
         $s(onAddClick)();
       })} class="text-white p-2.5 rounded cursor-pointer">
@@ -232,7 +230,7 @@ function Board(props) {
   }, 10);
 
   let dragVars = { dropzoneIndex: 0, draggedTask: null, activeListId: 0, isDragging: false, lastDragEnterTaskId: 0 };
-  let _incrementId = 16;
+  let _incrementId = 17;
 
   let globalClickHandler = () => { };
 
@@ -263,14 +261,13 @@ function Board(props) {
       }));
     },
 
-    setDragStart: (listId, taskId, pixelHeight) => {
+    setDragStart: (listId, taskId) => {
 
       if (dragVars.isDragging) {
         return;
       }
 
       setDragStatus(produce(dragStatus => {
-        dragStatus.height = pixelHeight;
         dragStatus.taskId = taskId;
       }));
 
@@ -283,7 +280,7 @@ function Board(props) {
       dragVars.dropzoneIndex = taskIndex;
     },
 
-    setEmptyListDragEnter: (listId) => {
+    setDraggedTaskToEndOfList: (listId) => {
 
       if (!dragVars.isDragging || dragVars.activeListId == listId) {
         return;
@@ -333,7 +330,6 @@ function Board(props) {
       }
 
       setDragStatus(produce(dragStatus => {
-        dragStatus.height = "0px";
         dragStatus.taskId = 0;
       }));
 
@@ -343,8 +339,7 @@ function Board(props) {
   }
 
   return (
-    <div
-      class="bg-gray-400 h-screen"
+    <div class="flex flex-col bg-gray-400 h-screen"
       onClick={() => globalClickHandler()}
       onDragOver={$c((e) => {
         e.preventDefault();
@@ -355,11 +350,12 @@ function Board(props) {
       <Style text={tailwindCssText} />
       <div class="p-2.5 bg-gray-700 text-white text-lg font-bold">SENIMAN</div>
       <TaskDataHandler.Provider value={taskDataHandlerContextValue}>
-        <div style={{ padding: '10px' }}>
-          {lists().map(list => <div style={{ float: "left", marginRight: "15px" }}>
-            <List id={list.id} name={list.name} taskCollection={taskCollections[list.id - 1]} />
-          </div>
-          )}
+        <div class="flex-grow overflow-auto flex items-start overflow-x-scroll p-3 h-screen">
+          {lists().map(list => (
+            <div class="w-[250px] mr-4 shrink-0">
+              <List id={list.id} name={list.name} taskCollection={taskCollections[list.id - 1]} />
+            </div>
+          ))}
         </div>
       </TaskDataHandler.Provider>
     </div>

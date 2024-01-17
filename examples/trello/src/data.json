@@ -3,33 +3,33 @@
       "1": {
         "id": 1,
         "tasks": [
-          { "id": 1, "text": "Email team meeting agenda" },
-          { "id": 2, "text": "Review quarterly financial report" },
-          { "id": 3, "text": "Call supplier for order update" },
-          { "id": 4, "text": "Prepare presentation for client meeting" },
-          { "id": 5, "text": "Update project timeline" },
-          { "id": 6, "text": "Organize team building activity" },
-          { "id": 7, "text": "Finalize marketing plan draft" }
+          { "id": 1, "text": "Buy tempeh from local pasar" },
+          { "id": 2, "text": "Pay PLN electricity bill" },
+          { "id": 3, "text": "Watch latest episode of 'Cinta Karena Cinta'" },
+          { "id": 4, "text": "Prepare Nasi Goreng for family dinner" },
+          { "id": 5, "text": "Pick up batik order from Thamrin City" },
+          { "id": 6, "text": "Book train tickets for trip to Yogyakarta" },
+          { "id": 7, "text": "Attend Dangdut concert in Senayan" }
         ]
       },
       "2": {
         "id": 2,
         "tasks": [
-          { "id": 8, "text": "Schedule performance reviews" },
-          { "id": 9, "text": "Draft new hiring protocol" },
-          { "id": 10, "text": "Plan budget meeting with finance department" },
-          { "id": 11, "text": "Conduct customer satisfaction survey" },
-          { "id": 12, "text": "Update employee training manual" },
-          { "id": 13, "text": "Research latest industry trends" },
-          { "id": 14, "text": "Evaluate new software tools for team" }
+          { "id": 8, "text": "Register for Jakarta Marathon" },
+          { "id": 9, "text": "Visit Taman Mini Indonesia Indah with family" },
+          { "id": 10,"text": "Reserve seats for Wayang Kulit show in Solo" },
+          { "id": 11, "text": "Start learning traditional Javanese dance" },
+          { "id": 12, "text": "Pick up Sambal from Pak Eko's warung" },
+          { "id": 13, "text": "Plan weekend getaway to Bali" },
+          { "id": 14, "text": "Organize Arisan meeting with neighbors" }
         ]
       },
       "3": {
         "id": 3,
         "tasks": [
-          { "id": 15, "text": "Organize files on shared drive" }
+          { "id": 15,"text": "Apply for KTP online through dukcapil website" },
+          { "id": 16, "text": "Prepare for Mudik, ensure car maintenance is done" }
         ]
       }
     }
   }
-  
