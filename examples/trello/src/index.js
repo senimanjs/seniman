@@ -1,7 +1,6 @@
 import { createRoot, useState, useMemo, createChannel, preventDefault, createRef, createHandler, useClient, createContext, useContext, useEffect, createCollection, untrack, onDispose } from "seniman";
 import { serve } from "seniman/workers";
-import { Style, Link, Title } from "seniman/head";
-import { produce } from "immer";
+import { Style, Title } from "seniman/head";
 
 // import tailwind css from .txt extension so we can read it as a string @ cloudflare worker
 import tailwindCssText from "./style.txt";
@@ -90,7 +89,7 @@ function List(props) {
           let taskId = untrack(() => task().id);
 
           let isDraggedTask = useMemo(() => {
-            return taskDataHandler.dragStatus().taskId == taskId;
+            return taskDataHandler.draggedTaskId() == taskId;
           });
 
           let [isInlineEditMode, setIsInlineEditMode] = useState(false);
@@ -208,10 +207,7 @@ function Board(props) {
     { id: 3, name: "Done" }
   ]);
 
-  let [dragStatus, setDragStatus] = useState({
-    height: "0px",
-    taskId: 0
-  });
+  let [draggedTaskId, setDraggedTaskId] = useState(0);
 
   // initialize the task collections (just 3 statically for now)
   let taskCollections = untrack(() => {
@@ -234,7 +230,7 @@ function Board(props) {
   let globalClickHandler = () => { };
 
   let taskDataHandlerContextValue = {
-    dragStatus,
+    draggedTaskId,
     listenGlobalClick: (cb) => {
       globalClickHandler = cb;
 
@@ -251,13 +247,13 @@ function Board(props) {
     },
 
     editTaskText: (listId, taskId, text) => {
-
       let taskCollection = taskCollections[listId - 1];
       let taskIndex = taskCollection.items.findIndex(task => task.id == taskId);
 
-      taskCollection.set(taskIndex, produce(task => {
-        task.text = text;
-      }));
+      taskCollection.set(taskIndex, task => {
+        // set the new text
+        return { ...task, text };
+      });
     },
 
     setDragStart: (listId, taskId) => {
@@ -266,9 +262,7 @@ function Board(props) {
         return;
       }
 
-      setDragStatus(produce(dragStatus => {
-        dragStatus.taskId = taskId;
-      }));
+      setDraggedTaskId(taskId);
 
       let taskCollection = taskCollections[listId - 1];
       let taskIndex = taskCollection.items.findIndex(task => task.id == taskId);
@@ -328,9 +322,7 @@ function Board(props) {
         return;
       }
 
-      setDragStatus(produce(dragStatus => {
-        dragStatus.taskId = 0;
-      }));
+      setDraggedTaskId(0);
 
       dragVars.draggedTask = null;
       dragVars.isDragging = false;
