@@ -1,9 +1,10 @@
 # Trello <> Seniman
 
-In this example, we'll show you a Trello sample app built with Seniman. We use Tailwind CSS for styling & Cloudflare Workers for deployment.
+A Trello clone app built with Seniman, Tailwind CSS for styling, and Cloudflare Workers for deployment.
+
+All rendering including task reordering while dragging are driven by the server in realtime via WebSocket. All data access are delayed by 10ms to simulate DB calls.
 
 Live instance at: [trello.examples.seniman.dev](https://trello.examples.seniman.dev)
-
 
 https://github.com/senimanjs/seniman/assets/510503/b59a7c47-3997-407b-983e-4c843b98fe35
 
