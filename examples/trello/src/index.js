@@ -1,4 +1,4 @@
-import { createRoot, useState, useMemo, createChannel, preventDefault, createRef, createHandler, useClient, createContext, useContext, useEffect, createCollection, untrack, onDispose } from "seniman";
+import { createRoot, useState, useMemo, preventDefault, createRef, createHandler, useClient, createContext, useContext, useEffect, createCollection, untrack } from "seniman";
 import { serve } from "seniman/workers";
 import { Style, Title } from "seniman/head";
 
