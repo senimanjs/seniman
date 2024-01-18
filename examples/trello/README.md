@@ -4,7 +4,9 @@ In this example, we'll show you a Trello sample app built with Seniman. We use T
 
 Live instance at: [trello.examples.seniman.dev](https://trello.examples.seniman.dev)
 
-<img width="835" alt="Screenshot 2024-01-17 at 4 44 19 PM" src="https://github.com/senimanjs/seniman/assets/510503/b35f432e-7ddc-4680-9e86-8937299cc2b2">
+
+https://github.com/senimanjs/seniman/assets/510503/b59a7c47-3997-407b-983e-4c843b98fe35
+
 
 ## Installation
 
