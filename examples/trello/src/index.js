@@ -1,5 +1,4 @@
 import { createRoot, useState, useMemo, createChannel, preventDefault, createRef, createHandler, useClient, createContext, useContext, useEffect, createCollection, untrack, onDispose } from "seniman";
-//import { serve } from "seniman/server";
 import { serve } from "seniman/workers";
 import { Style, Link, Title } from "seniman/head";
 import { produce } from "immer";
@@ -16,7 +15,7 @@ function TaskModal(props) {
     comments: []
   });
 
-  // simulate a 10ms server call to fetch the extra task data
+  // simulate a 10ms DB call to fetch the extra task data
   setTimeout(() => {
     setTaskData({
       description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
@@ -221,7 +220,7 @@ function Board(props) {
     });
   })
 
-  // emulate a 10ms server call to fetch the initial tasks
+  // emulate a 10ms DB call to fetch the initial tasks
   setTimeout(() => {
     taskCollections.forEach((taskCollection, index) => {
       let tasks = initialData.lists[index + 1].tasks;
