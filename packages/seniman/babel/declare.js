@@ -26,7 +26,7 @@ export function createDeclareBlockExpression2(blockId, rootElement) {
         class: ['mg-2', 'bg-red-500', 'text-white', 'rounded-lg', 'p-2', 'cursor-pointer'],
         children: [
           {type: '$text', text: 'Hello world'},
-          {type: '$anchor', index: 0},
+          {type: '$anchor'},
         ]
       }
     });

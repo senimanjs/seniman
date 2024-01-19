@@ -151,12 +151,21 @@ function processProgram(path) {
 
     if (node.type == 'JSXFragment') {
       let children = _cleanChildren(node.children);
-      return {
+
+      let arrayExpression = {
         "type": "ArrayExpression",
         "elements": children.map(child => {
           return processJSX(child, null, null);
         })
       };
+
+      if (contextBlock) {
+        contextBlock.anchors.push(arrayExpression);
+        parentElement.children.push({ type: '$anchor' });
+        return null;
+      } else {
+        return arrayExpression;
+      }
 
     } else if (node.type == 'JSXElement') {
       let isHTMLElement = node.openingElement.name.type == 'JSXIdentifier' &&
@@ -303,10 +312,8 @@ function processProgram(path) {
 
         if (!isNewBlockEnclosingElement) {
           // add new anchor to the currently active UI block
-          let anchorIndex = contextBlock.anchors.length;
-
           contextBlock.anchors.push(createComponentExpression);
-          parentElement.children.push({ type: '$anchor', value: anchorIndex });
+          parentElement.children.push({ type: '$anchor' });
 
           return node;
         } else {
@@ -418,11 +425,9 @@ function processProgram(path) {
       }
 
       if (contextBlock) {
-        let anchorIndex = contextBlock.anchors.length;
-
         contextBlock.anchors.push(anchorExpression);
+        parentElement.children.push({ type: '$anchor' });
 
-        parentElement.children.push({ type: '$anchor', value: anchorIndex });
         return null;
       } else {
         return anchorExpression;
@@ -1438,7 +1443,6 @@ function trimRight(str) {
 }
 
 function _cleanChildren(children) {
-
 
   children.forEach(childNode => {
 
