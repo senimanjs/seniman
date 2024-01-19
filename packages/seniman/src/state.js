@@ -83,19 +83,22 @@ function _deleteNode(nodeId) {
   ActiveNodeMap.delete(nodeId);
 }
 
-function _runEffectDisposers(nodeId) {
+function _runEffectDisposers(nodeId, isDeletion) {
 
   let node = ActiveNodeMap.get(nodeId);
 
   if (node.disposeFns) {
     let disposeFns = node.disposeFns;
+    let disposeFnsCount = disposeFns.length;
 
     // loop over the clean ups 
-    for (let i = 0; i < disposeFns.length; i++) {
+    for (let i = 0; i < disposeFnsCount; i++) {
       disposeFns[i]();
     }
 
-    node.disposeFns = [];
+    if (!isDeletion) {
+      node.disposeFns = [];
+    }
   }
 }
 
@@ -157,14 +160,14 @@ function _execWork() {
       for (let i = schedulerOutputCommand.deletedNodeIds.length - 1; i >= 0; i--) {
         let nodeId = schedulerOutputCommand.deletedNodeIds[i];
 
-        _runEffectDisposers(nodeId);
+        _runEffectDisposers(nodeId, true);
         _deleteNode(nodeId);
       }
 
       for (let i = 0; i < availableSchedulerCommandCount; i++) {
         let nodeId = schedulerOutputCommand.nodeIds[i];
 
-        _runEffectDisposers(nodeId);
+        _runEffectDisposers(nodeId, false);
         _runNode(nodeId);
       }
 
@@ -337,7 +340,7 @@ function registerDependency(stateId) {
 
 export function useState(initialValue) {
 
-  let id = memoId += 2;
+  let id = ActiveWindow.lastReadableId += 2;
   let state = { id, value: initialValue };
   let ActiveWindowId = ActiveWindow.id;
 
@@ -385,21 +388,15 @@ function createEffect(windowId, id, fn, value) {
   _registerEffect(windowId, parentNodeId, id);
 }
 
-// effects are even-ID'd nodes -- memo are odd-ID'd nodes
-let _effectId = 2;
 
 export function useEffect(fn, value) {
-  let id = _effectId;
-
-  _effectId += 2;
+  let id = ActiveWindow.lastEffectId += 2;
 
   createEffect(ActiveWindow.id, id, fn, value);
 }
 
 export function useDisposableEffect(fn, value) {
-  let id = _effectId;
-
-  _effectId += 2;
+  let id = ActiveWindow.lastEffectId += 2;
 
   let ActiveWindowId = ActiveWindow.id;
   let parentNodeId = ActiveNode ? ActiveNode.id : 0;
@@ -418,11 +415,8 @@ export function untrack(fn) {
   return val;
 }
 
-let memoId = 1;
-
 export function useMemo(fn) {
-
-  let id = memoId += 2;
+  let id = ActiveWindow.lastReadableId += 2;
 
   let memo = {
     id,

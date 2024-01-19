@@ -215,10 +215,15 @@ export class Window {
     this.clientEventTypeInstallationSet = new Set();
     this.clientModuleInstallationSet = new Set();
 
+    // effects are even-ID'd nodes -- memos are odd-ID'd nodes
+    this.lastReadableId = 1; // memos & states
+    this.lastEffectId = 2;
+
     this.lastEventHandlerId = 0;
-    this.eventHandlers = new Map();
     this.lastRefId = 0;
     this.lastChannelId = 0;
+
+    this.eventHandlers = new Map();
 
     this.tokenList = new Map();
     // fill out the 0 index to make it easier for templating system to do 1-indexing

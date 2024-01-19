@@ -31,6 +31,11 @@ function deleteWindow() {
 
 function postStateWrite(stateId) {
   let window = ActiveWindow;
+
+  if (!window) {
+    throw new Error('Writing state on a window that has gone away. Make sure you are using onDispose() to clean up any resources when the user navigates away from the page.');
+  }
+
   let observerEntry = window.observersMap.get(stateId);
 
   if (!observerEntry) {
