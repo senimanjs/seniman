@@ -1,5 +1,5 @@
 import { createInternalModule, createModule } from "./module.js";
-import { useClient } from './window.js';
+import { createRef, useClient } from './window.js';
 
 export const CoreNetworkModule = createInternalModule(1);
 
@@ -95,13 +95,15 @@ export let NetworkManagerModule = createModule($c(() => {
 
 export function DefaultNetworkStatusView() {
   let client = useClient();
+  let reconnectRef = createRef();
+  let disconnectRef = createRef();
 
   setTimeout(() => {
 
     client.exec($c(() => {
       let networkStatus = $s(NetworkManagerModule);
-      let reconn = document.getElementById('reconn');
-      let disconn = document.getElementById('disconn');
+      let reconn = $s(reconnectRef).current;
+      let disconn = $s(disconnectRef).current;
 
       networkStatus.on('reconnecting', () => {
         reconn.style.display = 'block';
@@ -121,12 +123,12 @@ export function DefaultNetworkStatusView() {
   }, 0);
 
   return <div>
-    <div id='reconn' style={{ display: 'none', position: 'fixed', bottom: '10%', padding: '10px', 'font-size': '15px', background: '#eee', border: '1px solid #ccc', left: 'calc(50% - 60px)' }}>
+    <div ref={reconnectRef} style={{ display: 'none', position: 'fixed', color: "#fff", bottom: '10%', padding: '10px', fontSize: '13px', fontWeight: "bold", borderRadius: "3px", background: '#222', opacity: "0.8", left: 'calc(50% - 60px)', fontFamily: 'sans-serif' }}>
       Reconnecting...
     </div>
-    <div id='disconn' style={{ display: 'none', position: 'fixed', bottom: '10%', padding: '10px', 'font-size': '15px', background: '#eee', border: '1px solid #ccc', left: 'calc(50% - 60px)' }}>
+    <div ref={disconnectRef} style={{ display: 'none', position: 'fixed', color: "#fff", bottom: '10%', padding: '10px', fontSize: '13px', fontWeight: "bold", borderRadius: "3px", background: '#222', opacity: "0.8", left: 'calc(50% - 60px)', fontFamily: 'sans-serif' }}>
       Disconnected
-      <button onclick="location.reload();">Reload</button>
+      <button onclick="location.reload();" style={{ cursor: "pointer", fontSize: "13px", marginLeft: "5px" }}>Reload</button>
     </div>
   </div>
 }
