@@ -194,10 +194,10 @@
 
     if (!refObject) {
       refObject = {
-        value: null,
-        get: () => refObject.value,
+        current: null,
+        get: () => refObject.current,
         set: (value) => {
-          refObject.value = value;
+          refObject.current = value;
         }
       };
       refObjectMap.set(refId, refObject);
