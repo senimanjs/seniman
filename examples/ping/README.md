@@ -1,5 +1,9 @@
 # Seniman + CloudFlare Workers + DigitalOcean Ping
 
+Measures the latency between your local Cloudflare Workers POP to DigitalOcean's NYC3 region.
+
+Live instance at: https://ping.examples.seniman.dev
+
 ## Installation
 
 Run the following command to install the dependencies:
