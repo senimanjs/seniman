@@ -1,6 +1,6 @@
 # Seniman + CloudFlare Workers + DigitalOcean Ping
 
-Measures the latency between your local Cloudflare Workers POP to DigitalOcean's NYC3 region.
+Measures the latency from your local Cloudflare Workers POP to DigitalOcean's NYC3 region.
 
 Live instance at: https://ping.examples.seniman.dev
 
