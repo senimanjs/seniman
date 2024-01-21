@@ -169,11 +169,22 @@ function MyComponent() {
 }
 ```
 
-And one with a `<script>`, here's one that loads the Google Sign-In script:
+And here's one of `<Script>` (from the `seniman/head` package) that loads the Google Sign-In script:
 
 ```js
-function GoogleSignInLoader() {
-  return <script 
+import { createHandler } from 'seniman';
+import { Script } from 'seniman/head';
+
+function GoogleSignInLoader(props) {
+
+  let aServerHandler = createHandler((credential) => {
+   
+    // do something with the credential, like check if the user is already registered
+    console.log('credential', credential);
+    ...
+  });
+
+  return <Script 
     src="https://accounts.google.com/gsi/client"
     onLoad={$c(() => {
       console.log('google script loaded! initializing....');
@@ -189,3 +200,5 @@ function GoogleSignInLoader() {
   />
 }
 ```
+
+You can take a look at the [Google Login](https://github.com/senimanjs/seniman/tree/main/examples/login-google) sample app for a more complete example of this.

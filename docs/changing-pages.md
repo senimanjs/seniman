@@ -11,6 +11,7 @@ To create a link to another page in your component, you can use the built-in `An
 import { Anchor } from 'seniman';
 
 function MyComponent(props) {
+
   return (
     <Anchor href={"/products/" + props.id}>
       Go to product
@@ -25,6 +26,7 @@ Since this is a relative link to another page in the same host, it will execute 
 import { Anchor } from 'seniman';
 
 function MyComponent() {
+  
   return (
     <Anchor href="http://otherhost.com">
       External Site

@@ -9,11 +9,14 @@ import { createRoot } from 'seniman';
 import { serve } from "seniman/server";
 
 function App() {
-  return <div>
-    <button onClick={() => console.log('Button clicked')}>
-      Click Me
-    </button>
-  </div>;
+
+  return (
+    <div>
+      <button onClick={() => console.log('Button clicked')}>
+        Click Me
+      </button>
+    </div>
+  );
 }
 
 let root = createRoot(App);
@@ -28,11 +31,14 @@ import { serve } from 'seniman/server';
 
 function App() {
   let [getCount, setCount] = useState(0);
-  return <div>
-    <button onClick={() => console.log('Clicked')}>
-      Click Me
-    </button>
-  </div>;
+
+  return (
+    <div>
+      <button onClick={() => console.log('Clicked')}>
+        Click Me
+      </button>
+    </div>
+  );
 }
 ```
 
@@ -44,11 +50,14 @@ Now, let's start using `getCount()` to show the value of the counter in the UI:
 
 function App() {
   let [getCount, setCount] = useState(0);
-  return <div>
-    <button onClick={() => console.log('Clicked')}>
-      Click Me: {getCount()}
-    </button>
-  </div>;
+
+  return (
+    <div>
+      <button onClick={() => console.log('Clicked')}>
+        Click Me: {getCount()}
+      </button>
+    </div>
+  );
 }
 ```
 
@@ -58,12 +67,15 @@ If you compile and run the app, you will see that the counter is not changing wh
 
 function App() {
   let [getCount, setCount] = useState(0);
-  return <div>
-    <button onClick={() => setCount(getCount() + 1)}>
-      Click Me
-    </button>
-    {getCount()}
-  </div>;
+
+  return (
+    <div>
+      <button onClick={() => setCount(getCount() + 1)}>
+        Click Me
+      </button>
+      {getCount()}
+    </div>
+  );
 }
 ```
 

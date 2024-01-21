@@ -24,9 +24,11 @@ You can also use dynamic values for the individual style properties:
 function Counter(props) {
   let [getCount, setCount] = useState(0);
   
-  return <div style={{ color: getCount() > 0 ? 'green' : 'red', background: 'white' }}>
-    {getCount}
-  </div>;
+  return (
+    <div style={{ color: getCount() > 0 ? 'green' : 'red', background: 'white' }}>
+      {getCount}
+    </div>
+  );
 }
 ```
 
@@ -44,9 +46,11 @@ function generateStyle(count) {
 function Counter(props) {
   let [getCount, setCount] = useState(0);
   
-  return <div style={generateStyle(getCount())}>
-    {getCount}
-  </div>;
+  return (
+    <div style={generateStyle(getCount())}>
+      {getCount}
+    </div>
+  );
 }
 ```
 
@@ -59,9 +63,11 @@ You can also use CSS classes to style your elements. You can use the `class` att
 function Counter(props) {
   let [getCount, setCount] = useState(0);
   
-  return <div class="counter">
-    {getCount}
-  </div>;
+  return (
+    <div class="counter">
+      {getCount}
+    </div>
+  );
 }
 ```
 
@@ -70,7 +76,7 @@ You can then define the CSS class using the built-in `<Style>` component, puttin
 
 import Style from 'seniman/head';
 
-function Body(props) {
+function Root() {
   return <div>
     <Style text={`
       .counter {
@@ -93,9 +99,11 @@ You can also use dynamic values for the CSS class names:
 function Counter(props) {
   let [getCount, setCount] = useState(0);
   
-  return <div class={`counter ${getCount() > 0 ? 'active' : 'inactive'}`}>
-    {getCount}
-  </div>;
+  return (
+    <div class={`counter ${getCount() > 0 ? 'active' : 'inactive'}`}>
+      {getCount}
+    </div>
+  );
 }
 ```
 

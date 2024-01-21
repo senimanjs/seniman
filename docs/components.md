@@ -10,12 +10,15 @@ function MyComponent() {
 }
 ```
 
-This is a component that renders a `div` element with the text "Hello World!" inside it. To use this component, you can add it in the `Body` component:
+This is a component that renders a `div` element with the text "Hello World!" inside it. To use this component, you can add it in the root component you passed to `createRoot`:
  
 ```js
-function Body() {
+function Root() {
   return <MyComponent />;
 }
+
+let root = createRoot(Root);
+...
 ```
 
 ## Passing Props
@@ -23,7 +26,7 @@ function Body() {
 Component can accept props, which are values that are passed by the parent to the component. To pass props to a component, you can write them as attributes in the component tag, like so:
 
 ```js
-function Body() {
+function Root() {
   return <MyComponent name="John" />;
 }
 ```
@@ -47,7 +50,7 @@ function MyComponent(props) {
   return <div>Count is {props.count}!</div>;
 }
 
-function Body() {
+function Root() {
   let [getCount, setCount] = useState(0);
 
   return <MyComponent count={getCount()} />;
@@ -70,7 +73,7 @@ function MyComponent(props) {
   return <div>Count is {props.count}!</div>;
 }
 
-function Body() {
+function Root() {
   let [getCount, setCount] = useState(0);
 
   let interval = setInterval(() => {
@@ -144,7 +147,7 @@ function Level1(props) {
   return <Level2 count={props.count} />;
 }
 
-function Body() {
+function Root() {
   let [getCount, setCount] = useState(0);
 
   let interval = setInterval(() => {
@@ -320,7 +323,7 @@ function MyComponent(props) {
 You can pass elements, text, or components as a children to a component, like so:
 
 ```js
-function Body() {
+function Root() {
   return <MyComponent>
     Hello World!
   </MyComponent>;

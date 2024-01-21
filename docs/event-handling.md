@@ -44,7 +44,9 @@ function App() {
 }
 ```
 
-Compile and run the application:
+When the user clicks the button in the browser, Seniman's client runtime takes care of the event handling and the sending of the event to the server. The `onClick` function we just defined on the server will then be called in response to the event.
+
+Let's now compile and run the application:
 
 ```bash
 npx babel src --out-dir dist
@@ -54,7 +56,10 @@ node dist/index.js
 
 Open [http://localhost:3002](http://localhost:3002) in your browser. When you click the button, you should see the message in the server console. 
 
-You can also run the `babel` process in watch mode in another terminal window so that it automatically recompiles the code when you make changes:
+In the next tutorial, we'll start modifying the interface in response to events [here](/docs/managing-state).
+
+----
+Tip: You can also run the `babel` process in watch mode in another terminal window so that it automatically recompiles the code when you make changes:
 
 ```bash
 npx babel src --out-dir dist --watch
@@ -67,5 +72,3 @@ npx nodemon dist/index.js
 ```
 
 This way, you can make changes to the code and see the changes in the browser without having to manually restart the server.
-
-In the next tutorial, we'll start modifying the interface in response to events [here](/docs/managing-state).

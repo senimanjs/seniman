@@ -11,7 +11,9 @@ The most basic form of client functions are event handlers. Here is the most bas
 ```js
 function MyComponent() {
   return (
-    <button onClick={$c(() => console.log('Clicked!'))}>Click me!</button>
+    <button onClick={$c(() => console.log('Clicked!'))}>
+      Click me!
+    </button>
   );
 }
 ```
@@ -33,7 +35,9 @@ function MyComponent() {
   });
 
   return (
-    <button onClick={$c(() => $s(onClick)())}>Click me!</button>
+    <button onClick={$c(() => $s(onClick)())}>
+      Click me!
+    </button>
   );
 }
 ```
@@ -51,7 +55,9 @@ function MyComponent() {
   }
 
   return (
-    <button onClick={onClick}>Click me!</button>
+    <button onClick={onClick}>
+      Click me!
+    </button>
   );
 }
 ```
@@ -61,7 +67,9 @@ Much simpler! You can even pass it as an inline function -- without the `$c` wra
 ```js
 function MyComponent() {
   return (
-    <button onClick={() => console.log('Clicked!')}>Click me!</button>
+    <button onClick={() => console.log('Clicked!')}>
+      Click me!
+    </button>
   );
 }
 ```
@@ -145,7 +153,9 @@ function MyComponent() {
   });
 
   return (
-    <button onClick={onClick}>Click me!</button>
+    <div>
+      ...
+    </div>
   );
 }
 ```
@@ -166,7 +176,9 @@ function MyComponent() {
   };
 
   return (
-    <button onClick={onClick}>Click me!</button>
+    <button onClick={onClick}>
+      Click me!
+    </button>
   );
 }
 ```
