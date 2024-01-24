@@ -149,8 +149,9 @@ class Root {
     };
 
     if (externalWindowId) {
-      let windowId = this._convertExternalWindowIdToInternal(externalWindowId);
       pageParams.windowId = externalWindowId;
+
+      let windowId = this._convertExternalWindowIdToInternal(externalWindowId);
 
       if (this.hasWindow(windowId)) {
         this.reconnectWindow(ws, pageParams);
@@ -182,9 +183,10 @@ class Root {
     window.onDestroy(() => {
       this.externalWindowIdMapping.delete(pageParams.windowId);
       deregisterWindow(window);
+      ws.close();
     });
 
-    window.resetLifecycleInterval();
+    window.startPingLoop(false);
 
     this._setupWsListeners(ws, window.id);
   }
@@ -335,15 +337,12 @@ class Root {
     let window = getWindow(windowId);
 
     // update the window's buffer push function to refer to the new websocket
-    window.onBuffer(buf => {
-      ws.send(buf);
-    });
-
-    window.resetLifecycleInterval();
-
-    window.reconnect(pageParams);
+    window.onBuffer(buf => ws.send(buf));
 
     this._setupWsListeners(ws, windowId);
+
+    window.startPingLoop(true);
+    window.reconnect(pageParams);
   }
 
   _setupWsListeners(ws, windowId) {

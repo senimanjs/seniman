@@ -61,6 +61,8 @@
 
     connectSocket();
 
+    _addEventListener(window, "beforeunload", () => _portSend(0, 0));
+
     return {
       lastMessageTime: () => lastMessageTime,
       send: (msg) => {

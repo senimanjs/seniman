@@ -232,6 +232,8 @@ export class Window {
     this.lastPongTime = Date.now();
 
     this.clientContext = null;
+
+    this.reconnectionId = 1;
   }
 
   start() {
@@ -400,15 +402,6 @@ export class Window {
           buf.writeUInt16BE(clientFnId, 1);
 
           sbvBuffer.copy(buf, 3);
-        },
-
-        _modifyHead: (command) => {
-          let sbvBuffer = this._encodeServerBoundValues([command]);
-
-          let buf = this._allocCommandBuffer(1 + sbvBuffer.length);
-
-          buf.writeUInt8(CMD_MODIFY_HEAD, 0);
-          sbvBuffer.copy(buf, 1);
         }
       };
 
@@ -445,16 +438,14 @@ export class Window {
     }, null);
   }
 
-  resetLifecycleInterval() {
+  startPingLoop(immediateFire) {
+    let reconnectionId = ++this.reconnectionId;
 
-    if (this.lifecycleInterval) {
-      clearInterval(this.lifecycleInterval);
-    }
+    let _pingFunction = function pingFunction() {
+      if (reconnectionId != this.reconnectionId) {
+        return;
+      }
 
-    // send ping right away -- resets client's ping wait counter as soon as possible
-    this.sendPing();
-
-    this.lifecycleInterval = setInterval(() => {
       let pongDiff = Date.now() - this.lastPongTime;
 
       if (pongDiff >= 6000) {
@@ -476,7 +467,15 @@ export class Window {
       if (this.deleteBlockCount > 300) {
         this.flushBlockDeleteQueue();
       }
-    }, 2500);
+
+      setTimeout(_pingFunction, 2500);
+    }.bind(this);
+
+    if (immediateFire) {
+      _pingFunction();
+    } else {
+      setTimeout(_pingFunction, 2500);
+    }
   }
 
   _streamModuleInstallCommand(serverBoundValues) {
@@ -585,7 +584,12 @@ export class Window {
     this.connected = true;
 
     let readOffset = senimanDecode(pongBuffer.subarray(2))[0];
-    this.registerReadOffset(readOffset);
+
+    if (readOffset == 0) {
+      this.destroy();
+    } else {
+      this.registerReadOffset(readOffset);
+    }
   }
 
   registerReadOffset(readOffset) {
@@ -692,7 +696,9 @@ export class Window {
     this.rootDisposer();
     this.destroyFnCallback();
 
-    clearInterval(this.lifecycleInterval);
+    // this terminates the ping loop
+    this.reconnectionId = 0;
+
     clearTimeout(this.postScriptTimeout);
 
     // return active pages' buffers to the pool
