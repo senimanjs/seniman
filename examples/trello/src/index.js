@@ -126,13 +126,19 @@ function List(props) {
             }}
           >
             <div
-              onClick={() => setModalEnabled(true)}
+              onClick={() => {
+                taskDataHandler.setDragEnd();
+                setModalEnabled(true);
+              }}
               class="group text-sm p-2.5 border-2 rounded bg-white cursor-pointer hover:border-yellow-500"
               style={{
                 opacity: isDraggedTask() ? "0.3" : "1.0"
               }}
               draggable="true"
               onDragStart={() => taskDataHandler.setDragStart(listId, taskId)}
+              onDragEnd={() => {
+                taskDataHandler.setDragEnd();
+              }}
             >
               {task().text}
               <div onClick={preventDefault(onEditButtonClick)} class="opacity-0 bg-white group-hover:opacity-100 hover:bg-gray-300 p-1 rounded-sm cursor-pointer absolute top-4 right-5">
@@ -157,7 +163,10 @@ function List(props) {
               </div>
               <div
                 class="fixed top-0 left-0 z-10 w-full h-full bg-black opacity-50"
-                onClick={() => setIsInlineEditMode(false)}></div>
+                onClick={() => {
+                  taskDataHandler.setDragEnd();
+                  setIsInlineEditMode(false);
+                }}></div>
             </div>
             }
             {modalEnabled() && <div>
