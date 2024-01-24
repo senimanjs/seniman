@@ -75,6 +75,12 @@ function List(props) {
     taskDataHandler.addTask(listId, text);
   });
 
+  let onDragEndHandler = createHandler(() => taskDataHandler.setDragEnd());
+
+  let onDragStartHandler = createHandler((listId, taskId) => {
+    taskDataHandler.setDragStart(listId, taskId);
+  });
+
   return (
     <div class="bg-gray-600 rounded"
       onDragEnter={() => {
@@ -135,10 +141,16 @@ function List(props) {
                 opacity: isDraggedTask() ? "0.3" : "1.0"
               }}
               draggable="true"
-              onDragStart={() => taskDataHandler.setDragStart(listId, taskId)}
-              onDragEnd={() => {
-                taskDataHandler.setDragEnd();
-              }}
+              onDragStart={$c(() => {
+                // I'm leaving this client debugging code here for posterity https://twitter.com/ryanflorence/status/1750005151719657683
+                console.log("------ onDragStartHandler ------");
+                $s(onDragStartHandler)($s(listId), $s(taskId));
+              })}
+              onDragEnd={$c(() => {
+                // I'm leaving this client debugging code here for posterity https://twitter.com/ryanflorence/status/1750005151719657683
+                console.log("onDragEndHandler");
+                $s(onDragEndHandler)();
+              })}
             >
               {task().text}
               <div onClick={preventDefault(onEditButtonClick)} class="opacity-0 bg-white group-hover:opacity-100 hover:bg-gray-300 p-1 rounded-sm cursor-pointer absolute top-4 right-5">
@@ -338,13 +350,20 @@ function Board(props) {
     }
   }
 
+  let onDragEndHandler = createHandler(() => {
+    taskDataHandlerContextValue.setDragEnd();
+  });
+
   return (
     <div class="flex flex-col bg-gray-400 h-screen"
       onClick={() => globalClickHandler()}
       onDragOver={$c((e) => {
         e.preventDefault();
       })}
-      onDrop={() => taskDataHandlerContextValue.setDragEnd()}
+      onDrop={$c(() => {
+        // I'm leaving this client debugging code here for posterity https://twitter.com/ryanflorence/status/1750005151719657683
+        $s(onDragEndHandler)();
+      })}
     >
       <Title text="Senimanello" />
       <Style text={tailwindCssText} />
