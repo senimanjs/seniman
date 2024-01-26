@@ -985,6 +985,9 @@
       let data = clickEventHandlerIdWeakMap.get(node);
 
       if (data) {
+        // make sure the currentTarget is set to the node that has the click handler
+        e.currentTarget = node;
+
         // data[0] is clientFunctionId
         // data[1] is serverBoundValues
         applyClientFunction(data[0], data[1], [e]);
