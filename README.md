@@ -75,7 +75,7 @@ At a high-level, the Seniman runtime is divided into the server and client-side 
 
 Seniman's server-side runtime manages the lifecycle of the JSX component tree during the user's browsing session, tracks state changes, and handles the connection to the browser window. It generates UI update commands to ensure the latest state is rendered in the browser, and also implements a remote event system to allow browser events like mouse clicks and keyboard inputs to be sent to the live component instances & event handlers on the server.
 
-To optimize network efficiency, Seniman's server communicates with the browsers using a custom binary protocol over WebSocket. A lightweight (~3kb) browser runtime interprets these commands into actual DOM operations -- in addition to handling user events and sending it back to the server. The result is a low-latency, quick-loading, remotely-driven user interface that feels local even on a standard 4G connection.
+To optimize network efficiency, Seniman's server communicates with the browsers using a custom binary protocol over WebSocket. A lightweight (~3kb) browser runtime interprets these commands into actual DOM operations. The result is a low-latency, quick-loading, remotely-driven user interface that feels local even on a standard 4G connection.
 
 ## Installation
 
