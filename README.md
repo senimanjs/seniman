@@ -158,7 +158,7 @@ Open up your browser and navigate to `http://localhost:3002`, and you should see
 - [SQLite Integration](examples/sqlite-simple) - Simple SQLite integration in a Seniman app
 - [Simple Login](examples/login-simple) & [Google Login](examples/login-google) - Small Seniman apps with session layer and basic & Google login flows
 
-You can run `npx clone-seniman-app` to quickly clone an app from the [examples](examples) folder.
+You can run `npx create seniman` to quickly clone an app from the [examples](examples) folder.
 
 ## FAQ
 
