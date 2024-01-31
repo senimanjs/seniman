@@ -986,7 +986,8 @@
 
       if (data) {
         // make sure the currentTarget is set to the node that has the click handler
-        e.currentTarget = node;
+        Object.defineProperty(e, "currentTarget", { configurable: true, value: node });
+
 
         // data[0] is clientFunctionId
         // data[1] is serverBoundValues

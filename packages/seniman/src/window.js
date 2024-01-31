@@ -586,7 +586,9 @@ export class Window {
     let readOffset = senimanDecode(pongBuffer.subarray(2))[0];
 
     if (readOffset == 0) {
-      this.destroy();
+      setTimeout(() => {
+        this.destroy();
+      }, 100);
     } else {
       this.registerReadOffset(readOffset);
     }
@@ -694,7 +696,11 @@ export class Window {
 
   destroy() {
     this.rootDisposer();
-    this.destroyFnCallback();
+
+    // give time for the root disposer tree to complete run
+    setTimeout(() => {
+      this.destroyFnCallback();
+    }, 0);
 
     // this terminates the ping loop
     this.reconnectionId = 0;

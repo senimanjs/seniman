@@ -152,12 +152,13 @@ function _execWork() {
     scheduler_calculateWorkBatch();
 
     let availableSchedulerCommandCount = schedulerOutputCommand.nodeIds.length;
+    let deletedNodeIdsCount = schedulerOutputCommand.deletedNodeIds.length;
     let batchWindowId = schedulerOutputCommand.windowId;
 
-    if (availableSchedulerCommandCount > 0) {
+    if (availableSchedulerCommandCount > 0 || deletedNodeIdsCount > 0) {
       _setActiveWindowId(batchWindowId);
 
-      for (let i = schedulerOutputCommand.deletedNodeIds.length - 1; i >= 0; i--) {
+      for (let i = deletedNodeIdsCount - 1; i >= 0; i--) {
         let nodeId = schedulerOutputCommand.deletedNodeIds[i];
 
         _runEffectDisposers(nodeId, true);
@@ -202,6 +203,7 @@ export let schedulerInputWriter = {
   freeEntryIndices: [], // free buffer indices
   windowInputEntries: [],
 };
+
 
 // TODO: use buffer pool to allocate these on-demand
 for (let i = 0; i < 128; i++) {
@@ -276,7 +278,6 @@ function _registerEffect(windowId, parentNodeId, effectId) {
 }
 
 function _disposeEffect(windowId, parentNodeId, effectId) {
-
   let buf = _writeInputCommand(windowId, 9);
   buf.writeUInt8(4, 0);
   buf.writeUInt32LE(parentNodeId, 1)
@@ -415,12 +416,12 @@ export function untrack(fn) {
   return val;
 }
 
-export function useMemo(fn) {
+export function useMemo(fn, initialValue) {
   let id = ActiveWindow.lastReadableId += 2;
 
   let memo = {
     id,
-    value: null,
+    value: initialValue,
     context: ActiveNode.context,
     fn
   };
