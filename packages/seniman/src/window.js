@@ -587,8 +587,11 @@ export class Window {
 
     if (readOffset == 0) {
       setTimeout(() => {
-        this.destroy();
-      }, 100);
+        // reconnectionId prop is set to 0 after the window is destroyed through the ping loop
+        if (this.reconnectionId != 0) {
+          this.destroy();
+        }
+      }, 1000);
     } else {
       this.registerReadOffset(readOffset);
     }

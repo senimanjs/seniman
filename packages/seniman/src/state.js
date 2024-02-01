@@ -7,7 +7,8 @@
 // ReactJS Github:
 // https://github.com/facebook/react
 
-import { scheduler_registerWindow, scheduler_calculateWorkBatch } from "./scheduler.js";
+
+import { scheduler_registerWindow, scheduler_deregisterWindow, scheduler_calculateWorkBatch } from "./scheduler.js";
 
 let ActiveNode = null;
 let ActiveWindow = null;
@@ -32,10 +33,7 @@ export function deregisterWindow(window) {
   windowMap.delete(window.id);
   windowNodeMap.delete(window.id);
 
-  let buf = _writeInputCommand(window.id, 1);
-  buf.writeUInt8(7, 0);
-
-  _scheduleExecWork();
+  scheduler_deregisterWindow(window.id);
 }
 
 export function runInWindow(windowId, fn) {

@@ -25,8 +25,8 @@ export function scheduler_registerWindow(windowId) {
   });
 }
 
-function deleteWindow() {
-  windowMap.delete(ActiveWindow.id);
+export function scheduler_deregisterWindow(windowId) {
+  windowMap.delete(windowId);
 }
 
 function postStateWrite(stateId) {
@@ -293,9 +293,6 @@ export function scheduler_calculateWorkBatch() {
         break;
       case 6:
         postStateWrite(readUInt32());
-        break;
-      case 7:
-        deleteWindow();
         break;
     }
   }

@@ -191,16 +191,6 @@ class Root {
     this._setupWsListeners(ws, window.id);
   }
 
-  setServer(server) {
-    const wsServer = new WebSocketServer({ noServer: true });
-
-    server.on('upgrade', (request, socket, head) => {
-      wsServer.handleUpgrade(request, socket, head, ws => {
-        this.applyNewConnection(ws, request);
-      });
-    });
-  }
-
   async getHtmlResponse({ url, headers, ipAddress, isSecure }) {
     let isUnderRateLimit = this.windowCreationLimiter.consumeSync(ipAddress);
 

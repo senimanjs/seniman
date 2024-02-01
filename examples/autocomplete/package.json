@@ -9,7 +9,7 @@
     "dev": "npx concurrently \"npx babel src --out-dir dist --watch\" \"npx nodemon --delay 5ms dist/index.js\""
   },
   "dependencies": {
-    "seniman": "^0.0.152",
+    "seniman": "^0.0.160",
     "trie-search": "^2.0.0"
   },
   "devDependencies": {
