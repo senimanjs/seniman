@@ -1,4 +1,4 @@
-import { useState, useClient, createCollection, createModule, createContext, useContext, createHandler, untrack, createRef } from "seniman";
+import { useState, useClient, createCollection, createModule, createContext, useContext, createHandler, untrack, createRef, onDispose } from "seniman";
 import { LoveIcon, ReplyIcon, RetweetIcon, ShareIcon } from "./icons.js";
 import { Link } from "./router.js";
 import { getStreamTweets } from "./data.js";
@@ -44,7 +44,6 @@ export function TweetInfiniteStream(props) {
 
   let tweetsContainerRef = createRef();
   let scrollerRef = useScroller();
-  let streamPath = untrack(() => props.streamPath);
 
   let batchHeightList = [];
   let tweetDataList = [];
@@ -98,7 +97,7 @@ export function TweetInfiniteStream(props) {
 
   let loadBatch = () => {
 
-    getStreamTweets(streamPath, offset, countPerLoad).then(tweets => {
+    getStreamTweets(props.streamPath, offset, countPerLoad).then(tweets => {
       let endOffset = offset + countPerLoad;
 
       tweetCollection.push(...tweets);
@@ -182,12 +181,16 @@ export function TweetInfiniteStream(props) {
     }));
   }, 0);
 
-  loadBatch();
+
+  setTimeout(() => {
+    loadBatch();
+  }, 0);
+
 
   return <div>
     <div style={{ height: `${topPlaceholderHeight()}px` }}></div>
     <div ref={tweetsContainerRef}>
-      {tweetCollection.map(tweet => {
+      {tweetCollection.view((tweet) => {
         return <TweetCompactView tweet={tweet} />
       })}
     </div>

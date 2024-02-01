@@ -1,9 +1,9 @@
-import { useContext, createContext, getActiveNode, runInNode, useState, useClient, useEffect, useMemo, untrack, useDisposableEffect, createHandler } from "seniman";
+import { useContext, createContext, runInScope, getActiveScope, useState, useClient, useEffect, useMemo, untrack, useDisposableEffect, createHandler } from "seniman";
 import { produce } from "immer";
 import { useScroller } from "./scroller.js";
 
 /**
- * This is a custom router that's adapted from Seniman's built-in router. 
+ * This is a custom router that's adapted from the seniman-mini-router package.
  * To support infinite scrolling, some changes are made to the router:
  * - <Link> component that pushes last scrolling position to a "Page Stack" when clicked
  * - a Page Stack within Router that stores references to multiple live pages in the history stack 
@@ -49,12 +49,12 @@ class Router {
       return !!page ? new URLSearchParams(page.route.queryString) : null;
     });
 
-    let routerCell = getActiveNode();
+    let scope = getActiveScope();
     let router = this;
 
     let createRouteNode = (route, extractor) => {
 
-      runInNode(routerCell, () => {
+      runInScope(scope, () => {
         let disposeFn = useDisposableEffect(() => {
 
           extractor(<div>
