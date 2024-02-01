@@ -22,9 +22,9 @@ async function* streamAsyncIterable(stream) {
 
 export async function API_requestCompletionStream(apiKey, messages, onDeltaArrival) {
   const body = {
-    //model: "gpt-3.5-turbo",
-    // use gpt4 turbo for more accurate results
-    model: "gpt-4-1106-preview",
+    model: "gpt-3.5-turbo",
+    // or use gpt4 turbo for more accurate results
+    //model: "gpt-4-1106-preview",
 
     messages,
     stream: true
@@ -46,7 +46,7 @@ export async function API_requestCompletionStream(apiKey, messages, onDeltaArriv
   const parser = createParser((event) => {
     if (event.type === 'event') {
       if (event.data === '[DONE]') {
-        onDeltaArrival(event.data);
+        onDeltaArrival(null);
       } else {
         let delta = JSON.parse(event.data).choices[0].delta;
 

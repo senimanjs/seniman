@@ -16,8 +16,9 @@
   "dependencies": {
     "eventsource-parser": "^1.1.1",
     "lowlight": "^2.8.1",
+    "mistral-tokenizer-js": "^1.0.0",
     "prismjs": "^1.29.0",
-    "seniman": "^0.0.152",
+    "seniman": "^0.0.158",
     "throttle-debounce": "^5.0.0"
   }
 }

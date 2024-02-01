@@ -1,10 +1,11 @@
 import { serve } from 'seniman/server';
-import { createRoot, useState, useClient, createHandler, createCollection } from 'seniman';
+import { createRoot, useState, useClient, createHandler, createCollection, onDispose } from 'seniman';
 import { Link, Style } from 'seniman/head';
 import { throttle } from 'throttle-debounce';
 import { API_requestCompletionStream } from './api.js';
 import { Tokenizer } from './token.js';
-import { createContainer } from './containers.js';
+import { Message } from './message.js';
+import mistralTokenizer from 'mistral-tokenizer-js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
 
@@ -12,132 +13,116 @@ if (!API_KEY) {
   throw new Error('OPENAI_API_KEY environment variable is not set');
 }
 
-async function fetchMessageHistory() {
-  // TODO: actually fetch message history
-  return [];
-}
-
-function Message(props) {
-  let { role, tokenizer } = props;
-  let [isWaiting, setIsWaiting] = useState(true);
-
-  let rootContainer = createContainer('root');
-  let activeContainer = rootContainer;
-  let containerParentStack = [];
-
-  // What we do here is basically handle incoming (properly buffer-tokenized) tokens
-  // and route it to "containers" that handle different types of content, such as 
-  // code blocks, paragraphs, etc. with their own internal state and rendering logic.
-  tokenizer.onResultTokens(tokens => {
-    setIsWaiting(false);
-
-    for (let i = 0; i < tokens.length; i++) {
-      if (tokens[i] == '[DONE]') {
-        break;
-      }
-
-      let result = activeContainer.pushToken(tokens[i]);
-
-      // the active container can return a non-null result to indicate that it wants to
-      // exit or enter a new container (establishing new levels of nesting)
-      if (result) {
-        if (result.type == 'enter') {
-          let newContainer = result.container;
-          containerParentStack.push(activeContainer);
-          activeContainer = newContainer;
-        } else if (result.type == 'exit') {
-          activeContainer = containerParentStack.pop();
-        }
-      }
-    }
-  });
-
-  return <div style={{ fontSize: '13px', color: '#fff', background: role == "assistant" ? "#555" : "#444", lineHeight: '1.5' }}>
-    <div style={{ padding: "0 15px", margin: "0 auto", maxWidth: "600px", color: "#ddd" }}>
-      {isWaiting() ? <div style={{ padding: "15px 0" }}>...</div> : <rootContainer.componentFn />}
-    </div>
-  </div>;
-}
-
-function* iterateCodePoints(str) {
-  for (let i = 0; i < str.length; ++i) {
-    const charCode = str.codePointAt(i);
-    if (charCode === undefined) {
-      break;
-    }
-    yield String.fromCodePoint(charCode);
-    if (charCode > 0xFFFF) {
-      i++; // Skip the trailing surrogate pair.
-    }
-  }
-}
-
 function createTokenizerFromText(text) {
-  let tokenizer = new Tokenizer();
 
-  for (const character of iterateCodePoints(text)) {
-    tokenizer.feedInputToken(character);
+  let tokenizer = new Tokenizer();
+  let llmTokens = mistralTokenizer.encode(text);
+  let tokenLength = llmTokens.length;
+
+  for (let i = 1; i < tokenLength; i++) {
+    let tokenText = mistralTokenizer.decode([llmTokens[i]], false, false);
+
+    tokenizer.feedInputToken(tokenText);
   }
 
-  tokenizer.feedInputToken('[DONE]');
+  tokenizer.feedInputToken(null);
+
   return tokenizer;
 }
 
+class Conversation {
+  constructor(id, initialMessages) {
+    this.id = id;
+    this.pastMessages = initialMessages || [];
+
+    this.typingState = useState(false);
+    this.collection = null;
+  }
+
+  getConversationMessagesContext() {
+    return this.pastMessages;
+  }
+
+  generate(userText, onToken, onFinished) {
+    this.pastMessages.push({
+      role: 'user',
+      content: userText
+    });
+
+    let context = this.getConversationMessagesContext();
+    let tokenizer = new Tokenizer();
+
+    let typingSetter = this.typingState[1];
+    typingSetter(true);
+
+    let arrivedTokens = [];
+
+    // Assuming API_requestCompletionStream is defined elsewhere
+    API_requestCompletionStream(API_KEY, context, (rawToken) => {
+
+      tokenizer.feedInputToken(rawToken);
+
+      onToken();
+
+      if (rawToken == null) {
+        this.pastMessages.push({ role: 'assistant', content: arrivedTokens.join('') });
+
+        typingSetter(false);
+        onFinished();
+      } else {
+        arrivedTokens.push(rawToken);
+      }
+    });
+
+    this.collection.push({
+      role: 'user',
+      tokenizer: createTokenizerFromText(userText)
+    });
+
+    this.collection.push({
+      role: 'assistant',
+      tokenizer: tokenizer
+    });
+  }
+
+  getTypingState() {
+    return this.typingState[0];
+  }
+
+  getCollection() {
+    let messageCollection = createCollection([]);
+
+    this.collection = messageCollection;
+
+    this.pastMessages.forEach(message => {
+      messageCollection.push({
+        role: message.role,
+        tokenizer: createTokenizerFromText(message.content)
+      });
+    });
+
+    return messageCollection;
+  }
+}
+
+
 function ConversationThread(props) {
   let [isThreadEmpty, set_isThreadEmpty] = useState(true);
-  let [isBotTyping, set_isBotTyping] = useState(false);
-  let messageCollection = createCollection([]);
-  let conversationMessagesContext = [];
+  let conversation = new Conversation(1, []);
+
+  let isBotTyping = conversation.getTypingState();
+  let messageCollection = conversation.getCollection();
+
   let client = useClient();
 
   let onSubmit = createHandler(async (userText) => {
     scrollToBottom();
     set_isThreadEmpty(false);
-    set_isBotTyping(true);
 
-    conversationMessagesContext.push({
-      role: 'user',
-      content: userText
-    })
-
-    let assistantMessageContext = {
-      role: 'assistant',
-      content: ''
-    };
-
-    let tokenizer = new Tokenizer();
-
-    API_requestCompletionStream(API_KEY, conversationMessagesContext, (rawToken) => {
-      tokenizer.feedInputToken(rawToken);
-
-      scrollToBottom();
-
-      if (rawToken != '[DONE]') {
-        assistantMessageContext.content += rawToken;
-      } else {
-        onFinished();
-      }
-    });
-
-    conversationMessagesContext.push(assistantMessageContext);
-
-    // add the user message to the stream
-    messageCollection.push({
-      role: 'user',
-      tokenizer: createTokenizerFromText(userText)
-    });
-
-    // add the bot message to the stream
-    messageCollection.push({
-      role: 'assistant',
-      tokenizer: tokenizer
-    });
+    conversation.generate(userText, scrollToBottom, onFinished);
   });
 
   let onFinished = () => {
-    set_isBotTyping(false);
-
-    // TODO: do this in a post-render hook of the setState above (so we don't need the setTimeout)
     client.exec($c(() => {
       setTimeout(() => {
         document.getElementById("textbox").focus();
@@ -155,6 +140,10 @@ function ConversationThread(props) {
     }));
   });
 
+  setTimeout(() => {
+    scrollToBottom();
+  }, 100);
+
   return <>
     <div style={{ background: "#555" }}>
       <div style={{ margin: "0 auto", width: "100%", maxWidth: "600px", padding: '10px' }}>
@@ -167,7 +156,7 @@ function ConversationThread(props) {
       </div>
     </div> : null}
     <div style={{ paddingBottom: "120px" }}>
-      {messageCollection.map(message => <Message role={message.role} tokenizer={message.tokenizer} />)}
+      {messageCollection.view(message => <Message role={message.role} tokenizer={message.tokenizer} />)}
     </div>
     <div style={{ width: "100%", maxWidth: "600px", margin: '0 auto', position: 'fixed', bottom: '0px', left: '50%', transform: 'translateX(-50%)' }}>
       <div style={{

@@ -19,7 +19,7 @@ export class Tokenizer {
 
   tokenize2(textToken) {
 
-    if (textToken === '[DONE]') {
+    if (textToken == null) {
       return [this.tokenBuffer, textToken];
     }
 
@@ -74,18 +74,23 @@ export class Tokenizer {
   processToken(textToken) {
     let tokens = this.tokenize2(textToken);
 
-    if (!tokens) {
+    if (!tokens || !this.callback) {
       return;
     }
-
-    this.callback(tokens);
+    tokens.forEach(token => {
+      this.callback(token);
+    });
   }
 
-  onResultTokens(callback) {
+  onToken(callback) {
     this.callback = callback;
 
     while (this.queue.length > 0) {
       this.processToken(this.queue.shift());
+    }
+
+    return () => {
+      this.callback = null;
     }
   }
 
