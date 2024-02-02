@@ -576,6 +576,7 @@
       this.anchors = anchorDefs.map(anchor =>
         new BlockAnchor(anchor.el, anchor.marker)
       );
+      this.onUnmounts = [];
     }
 
     _attachText(index, text) {
@@ -864,11 +865,11 @@
     // 4: CMD_ATTACH_REF
     () => {
       let blockId = getUint16();
-      let targetElIndex = getUint16();
-      let refId = getUint16();
+      let targetElIndex = getUint8();
       let el = _getBlockTargetElement(blockId, targetElIndex);
 
-      getRefObject(refId).set(el);
+      let refId = getUint16();
+      getRefObject(refId).current = el;
     },
     // 5: CMD_ATTACH_EVENT
     _attachEventHandlerV2,
@@ -950,6 +951,26 @@
         moduleId,
         applyClientFunction(clientFunctionId, serverBoundValues)
       );
+    },
+
+    // 17: CMD_RUN_LIFECYCLE
+    () => {
+      let blockId = getUint16();
+      let targetElIndex = getUint8();
+      let type = getUint8();
+
+      let el = _getBlockTargetElement(blockId, targetElIndex);
+
+      // on mount
+      let clientFunctionId = getUint16();
+      let serverBoundValues = _decodeServerBoundValuesBuffer();
+      let retVal = applyClientFunction(clientFunctionId, serverBoundValues, [el]);
+
+      if (retVal && retVal instanceof Function) {
+
+        // TODO: implement onUnmount execution
+        // getBlock(blockId).onUnmounts.push(retVal);
+      }
     }
   ];
 
@@ -987,7 +1008,6 @@
       if (data) {
         // make sure the currentTarget is set to the node that has the click handler
         Object.defineProperty(e, "currentTarget", { configurable: true, value: node });
-
 
         // data[0] is clientFunctionId
         // data[1] is serverBoundValues

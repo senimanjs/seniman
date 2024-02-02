@@ -1,3 +1,4 @@
+import t from '@babel/types';
 import parser from '@babel/parser';
 import traverse from '@babel/traverse';
 import _generate from '@babel/generator';
@@ -29,12 +30,24 @@ const eventTypeIdMap = {
   'onDragEnter': 15,
   'onDragLeave': 16,
   'onDragOver': 17,
-  'onDrop': 18
+  'onDrop': 18,
+  'onContextMenu': 19,
+  'onMouseMove': 20,
+  'onMouseDown': 21,
+  'onMouseUp': 22,
 };
+
+const lifecycleTypeIdMap = {
+  'onMount': 1
+}
+
 
 const eventNames = Object.keys(eventTypeIdMap);
 const eventNamesSet = new Set(eventNames);
 const styleAttributeNames = ['classList', 'style', 'class'];
+
+const lifecycleNames = Object.keys(lifecycleTypeIdMap);
+const lifecycleNamesSet = new Set(lifecycleNames);
 
 function getAttribute(node, name) {
   let index = node.openingElement.attributes.findIndex(attrNode => attrNode.name.name == name);
@@ -54,6 +67,16 @@ function getAttributeNames(node) {
 function eventNameInAttributeNames(names) {
   for (let i = 0; i < eventNames.length; i++) {
     if (names.has(eventNames[i])) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function lifecycleNameInAttributeNames(names) {
+  for (let i = 0; i < lifecycleNames.length; i++) {
+    if (names.has(lifecycleNames[i])) {
       return true;
     }
   }
@@ -180,6 +203,7 @@ function processProgram(path) {
         let hasAttributes = attributeNames.size > 0;
         let hasEventHandlers = hasAttributes && eventNameInAttributeNames(attributeNames);
         let hasRef = attributeNames.has('ref');
+        let hasLifecycles = hasAttributes && lifecycleNameInAttributeNames(attributeNames);
         //let hasStyling = hasAttributes && stylingAttributeInAttributeNames(attributeNames);
 
         let element = {
@@ -209,7 +233,8 @@ function processProgram(path) {
             targetElementCount: 0,
             eventHandlers: [],
             styleEffects: [],
-            refs: []
+            refs: [],
+            lifecycles: []
           };
           gatheredUIBlocks.push(contextBlock);
 
@@ -222,7 +247,7 @@ function processProgram(path) {
           let hasDynamicAttribute = nodeHasDynamicAttribute(node);
 
           // Allocate a target entry to this element.
-          element.isTarget = hasEventHandlers || hasDynamicAttribute || hasRef;
+          element.isTarget = hasEventHandlers || hasDynamicAttribute || hasRef || hasLifecycles;
 
           if (element.isTarget) {
             targetId = contextBlock.targetElementCount;
@@ -240,7 +265,10 @@ function processProgram(path) {
           handleCreateElementRefsExpression(contextBlock, targetId, node);
         }
 
-        //console.log('-------------');
+        if (hasLifecycles) {
+          handleCreateElementLifecycleExpression(contextBlock, targetId, node, process);
+        }
+
         if (node.children.length > 0) {
           let children = _cleanChildren(node.children);
 
@@ -339,7 +367,8 @@ function processProgram(path) {
           targetElementCount: 0,
           eventHandlers: [],
           styleEffects: [],
-          refs: []
+          refs: [],
+          lifecycles: []
         };
 
         gatheredUIBlocks.push(contextBlock);
@@ -570,8 +599,12 @@ function processProgram(path) {
               name: 'serverBindFns'
             },
             value: {
-              type: 'ArrayExpression',
-              elements: cParsed.serverBindNodes
+              type: 'ArrowFunctionExpression',
+              params: [],
+              body: {
+                type: 'ArrayExpression',
+                elements: cParsed.serverBindNodes
+              }
             }
           })
         }
@@ -812,6 +845,23 @@ function handleCreateElementRefsExpression(contextBlock, targetId, node) {
   });
 }
 
+function handleCreateElementLifecycleExpression(contextBlock, targetId, node, process) {
+
+  // get the onMount attribute expression
+  let onMountAttribute = getAttribute(node, 'onMount');
+
+  contextBlock.lifecycles.push(
+    createBlockLifecycleEntryExpression(targetId, lifecycleTypeIdMap['onMount'], process(onMountAttribute.expression)));
+}
+
+function createBlockLifecycleEntryExpression(targetId, type, fnExpression) {
+  return t.objectExpression([
+    t.objectProperty(t.identifier('targetId'), t.numericLiteral(targetId)),
+    t.objectProperty(t.identifier('type'), t.numericLiteral(type)),
+    t.objectProperty(t.identifier('fn'), fnExpression),
+  ]);
+}
+
 function _buildStyleConditionKeyExpression(cond) {
   return { type: "StringLiteral", value: cond.key };
 
@@ -1022,7 +1072,7 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
     let attrName = attr.name.name;
 
     // skip known attributes
-    if (eventNamesSet.has(attrName) || attrName == 'ref') {
+    if (eventNamesSet.has(attrName) || attrName == 'ref' || lifecycleNamesSet.has(attrName)) {
       continue;
     }
 
@@ -1200,7 +1250,6 @@ function createCallBlockExpression(block) {
     "elements": block.eventHandlers
   } : { type: "NullLiteral" });
 
-
   arguments_.push(block.styleEffects.length > 0 ? {
     "type": "ArrayExpression",
     "elements": block.styleEffects
@@ -1209,6 +1258,11 @@ function createCallBlockExpression(block) {
   arguments_.push(block.refs.length > 0 ? {
     "type": "ArrayExpression",
     "elements": block.refs
+  } : { type: "NullLiteral" });
+
+  arguments_.push(block.lifecycles.length > 0 ? {
+    "type": "ArrayExpression",
+    "elements": block.lifecycles
   } : { type: "NullLiteral" });
 
   return {
@@ -1267,7 +1321,6 @@ function createBlockEventHandlerEntryExpression(targetId, type, fnExpression) {
         },
         "value": fnExpression
       },
-
     ]
   }
 }

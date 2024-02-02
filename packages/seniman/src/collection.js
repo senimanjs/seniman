@@ -152,7 +152,7 @@ class Collection {
         }
 
         let disposeFn = useDisposableEffect(() => {
-          let nodeResult = view.renderFn(item);
+          let nodeResult = view.renderFn(item, startIndex + i);
           nodeRootSetter(nodeResult);
         });
 
@@ -203,7 +203,7 @@ class Collection {
 
     // TODO: allow containerFn to be overridden
     let containerFn = (node) => {
-      return <div>{node()}</div>;
+      return <span>{node()}</span>;
     }
 
     let view = {

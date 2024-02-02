@@ -35,7 +35,11 @@ const eventTypeNameMap = {
   15: 'dragenter',
   16: 'dragleave',
   17: 'dragover',
-  18: 'drop'
+  18: 'drop',
+  19: 'contextmenu',
+  20: 'mousemove',
+  21: 'mousedown',
+  22: 'mouseup',
 };
 
 // TODO: use a LRU cache
@@ -176,6 +180,7 @@ const CMD_INIT_SEQUENCE = 13;
 const CMD_MODIFY_SEQUENCE = 14;
 const CMD_CHANNEL_MESSAGE = 15;
 const CMD_INIT_MODULE = 16;
+const CMD_RUN_LIFECYCLE = 17;
 
 const pingBuffer = Buffer.from([0]);
 const scratchBuffer = Buffer.alloc(32768);
@@ -224,6 +229,8 @@ export class Window {
     this.lastChannelId = 0;
 
     this.eventHandlers = new Map();
+
+    this.blockOnMountFns = new Map();
 
     this.tokenList = new Map();
     // fill out the 0 index to make it easier for templating system to do 1-indexing
@@ -392,6 +399,12 @@ export class Window {
         exec: (clientFnSpec) => {
           let { clientFnId, serverBindFns } = clientFnSpec;
 
+          // if the serverBindFns value is a function, it means it's the new compiler output
+          // we need to run untrack() on it to get the actual serverBindFns value at this point of execution
+          if (serverBindFns instanceof Function) {
+            serverBindFns = untrack(() => serverBindFns());
+          }
+
           this._streamFunctionInstallCommand(clientFnId);
           this._streamModuleInstallCommand(serverBindFns);
 
@@ -486,7 +499,7 @@ export class Window {
     for (let i = 0; i < length; i++) {
       let serverBoundValue = serverBoundValues[i];
 
-      if (serverBoundValue.type === 'module') {
+      if (serverBoundValue && serverBoundValue.type === 'module') {
         let moduleId = serverBoundValue.id;
 
         // check if the module is not an internal module (moduleId >= 10) and if it has not been installed yet
@@ -497,12 +510,18 @@ export class Window {
           let clientFn = serverBoundValue.clientFn;
           this._streamFunctionInstallCommand(clientFn.clientFnId);
 
+          let serverBindFns = clientFn.serverBindFns;
+
+          if (serverBindFns instanceof Function) {
+            serverBindFns = untrack(() => serverBindFns());
+          }
+
           // recursively stream the module install command (module can have other module dependencies)
           // TODO: handle circular dependencies & max depth?
-          this._streamModuleInstallCommand(clientFn.serverBindFns);
+          this._streamModuleInstallCommand(serverBindFns);
 
           // stream the module install command
-          let sbvBuffer = this._encodeServerBoundValues(clientFn.serverBindFns || []);
+          let sbvBuffer = this._encodeServerBoundValues(serverBindFns || []);
           let buf = this._allocCommandBuffer(1 + 2 + 2 + sbvBuffer.length);
 
           buf.writeUInt8(CMD_INIT_MODULE, 0);
@@ -703,7 +722,7 @@ export class Window {
     // give time for the root disposer tree to complete run
     setTimeout(() => {
       this.destroyFnCallback();
-    }, 0);
+    }, 10);
 
     // this terminates the ping loop
     this.reconnectionId = 0;
@@ -812,25 +831,6 @@ export class Window {
     this.clientEventTypeInstallationSet.add(eventType);
   }
 
-  _streamEventInitCommandV2(blockId, targetId, eventType, clientFnId, serverBindFns) {
-
-    // Ignore click (eventType = 1) since client handling is special
-    if (eventType > 1 && !this.clientEventTypeInstallationSet.has(eventType)) {
-      this._streamInstallEventTypeCommand(eventType);
-    }
-
-    let sbvBuffer = this._encodeServerBoundValues(serverBindFns);
-
-    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + sbvBuffer.length);
-
-    buf.writeUInt8(CMD_ATTACH_EVENT_V2, 0);
-    buf.writeUInt16BE(blockId, 1);
-    buf.writeUInt8(targetId, 3);
-    buf.writeUInt8(eventType, 4);
-    buf.writeUInt16BE(clientFnId, 5);
-
-    sbvBuffer.copy(buf, 7);
-  }
 
   _encodeServerBoundValues(serverBindFns) {
     // create a buffer to hold the encoded server bound values
@@ -851,6 +851,8 @@ export class Window {
     const ARGTYPE_CHANNEL = 11;
     const ARGTYPE_MODULE = 12;
     const ARGTYPE_ARRAY_BUFFER = 13;
+
+    serverBindFns = serverBindFns || [];
 
     let argsCount = serverBindFns.length;
 
@@ -1091,10 +1093,29 @@ export class Window {
     buf2.writeUInt16BE(parentBlockId, 1);
     buf2.writeUInt16BE(anchorIndex, 3);
 
-    buf2.writeUInt16BE(blockId |= (1 << 15), 5);
+    let modifiedBlockId = blockId;
+
+    buf2.writeUInt16BE(modifiedBlockId |= (1 << 15), 5);
+
+    if (this.blockOnMountFns.has(blockId)) {
+      let onMountFns = this.blockOnMountFns.get(blockId);
+
+      for (let i = 0; i < onMountFns.length; i++) {
+        let [targetId, clientFnId, serverBindFns] = onMountFns[i];
+
+        if (serverBindFns instanceof Function) {
+          serverBindFns = untrack(() => serverBindFns());
+        }
+        this._streamFunctionInstallCommand(clientFnId);
+        this._streamModuleInstallCommand(serverBindFns);
+        this._streamRunLifecycleCommand(blockId, targetId, clientFnId, serverBindFns);
+      }
+
+      this.blockOnMountFns.delete(blockId);
+    }
   }
 
-  _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects, elementRefs) {
+  _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects, elementRefs, lifecycles) {
 
     let newBlockId = this._createBlockId();
 
@@ -1104,6 +1125,7 @@ export class Window {
     eventHandlers && this._handleBlockEventHandlers(newBlockId, eventHandlers);
     elementEffects && this._handleElementEffects(newBlockId, elementEffects);
     elementRefs && this._handleRefs(newBlockId, elementRefs);
+    lifecycles && this._handleLifecycles(newBlockId, lifecycles);
 
     anchors && anchors.map((anchorNodeResult, anchorIndex) => {
       this._attach(newBlockId, anchorIndex, anchorNodeResult);
@@ -1120,19 +1142,51 @@ export class Window {
     let refsCount = elementRefs.length;
 
     for (let i = 0; i < refsCount; i++) {
-      let { ref, targetId } = elementRefs[i];
+      let ref = elementRefs[i];
 
-      this._streamAttachRefCommand(blockId, targetId, ref.id);
+      this._streamAttachRefCommand(blockId, ref.targetId, ref.ref.id);
+    }
+  }
+
+  _handleLifecycles(blockId, lifecycles) {
+    let count = lifecycles.length;
+
+    for (let i = 0; i < count; i++) {
+      let { targetId, type, fn } = lifecycles[i];
+
+      let clientFnId = fn.clientFnId;
+      let serverBindFns = fn.serverBindFns;
+
+      if (this.blockOnMountFns.has(blockId)) {
+        this.blockOnMountFns.get(blockId).push([targetId, clientFnId, serverBindFns]);
+      } else {
+        this.blockOnMountFns.set(blockId, [[targetId, clientFnId, serverBindFns]]);
+      }
     }
   }
 
   _streamAttachRefCommand(blockId, targetId, refId) {
-    let buf = this._allocCommandBuffer(1 + 2 + 2 + 2);
+    let buf = this._allocCommandBuffer(1 + 2 + 1 + 2);
 
     buf.writeUInt8(CMD_ATTACH_REF, 0);
     buf.writeUInt16BE(blockId, 1);
-    buf.writeUInt16BE(targetId, 3);
-    buf.writeUInt16BE(refId, 5);
+    buf.writeUInt8(targetId, 3);
+    buf.writeUInt16BE(refId, 4);
+  }
+
+  _streamRunLifecycleCommand(blockId, targetId, clientFnId, serverBindFns) {
+
+    let sbvBuffer = this._encodeServerBoundValues(serverBindFns);
+
+    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + sbvBuffer.length);
+
+    buf.writeUInt8(CMD_RUN_LIFECYCLE, 0);
+    buf.writeUInt16BE(blockId, 1);
+    buf.writeUInt8(targetId, 3);
+    buf.writeUInt8(1, 4); // type: ref || onMount
+    buf.writeUInt16BE(clientFnId, 5);
+
+    sbvBuffer.copy(buf, 7);
   }
 
   _handleBlockEventHandlers(newBlockId, eventHandlers) {
@@ -1143,49 +1197,78 @@ export class Window {
       let clientFnId;
       let serverBindFns;
 
-      // 4 possible cases:
-      // 1. eventHandler.fn is undefined / null
-      // 2. eventHandler.fn is a function instance -- e.g. <... onClick={() => { ... }}
-      // 3. eventHandler.fn is a handler instance 
-      //    e.g. let handler = createHandler(() => { ... });
-      //         <... onClick={handler}
-      // 4. eventHandler.fn is a client function instance
+      useEffect(() => {
+        // 4 possible cases:
+        // 1. eventHandler.fn is undefined / null
+        // 2. eventHandler.fn is a function instance -- e.g. <... onClick={() => { ... }}
+        // 3. eventHandler.fn is a handler instance
+        //    e.g. let handler = createHandler(() => { ... });
+        //         <... onClick={handler}
+        // 4. eventHandler.fn is a client function instance
 
-      // ultimately we want to operate against a client function instance
-      // #2 and #3 handling is basically turning either the function instance or the handler instance
-      // into a client function instance
+        // ultimately we want to operate against a client function instance
+        // #2 and #3 handling is basically turning either the function instance or the handler instance
+        // into a client function instance
 
-      // do nothing if the event handler is undefined
-      if (!eventHandler.fn) {
-        continue;
-      } else if (eventHandler.fn instanceof Function) {
-        // this is a shortcut for the case where the event handler is just a function instance
-        // in which case we automatically create a no-argument client function that wraps the event handler
-        // and calls it directly.
-        // for other cases, the developer must create a client function explicitly
-        let handler = this._allocateHandler(eventHandler.fn);
-        let clientFn = createNoArgClientFunction(handler);
+        // do nothing if the event handler is undefined
+        if (!eventHandler.fn) {
+          // TODO: still send something to the client to remove the event handler
+          // in case there was an event handler previously
+          return;
+        } else if (eventHandler.fn instanceof Function) {
+          // this is a shortcut for the case where the event handler is just a function instance
+          // in which case we automatically create a no-argument client function that wraps the event handler
+          // and calls it directly.
+          // for other cases, the developer must create a client function explicitly
+          let handler = this._allocateHandler(eventHandler.fn);
+          let clientFn = createNoArgClientFunction(handler);
 
-        // if the event handler is just a function instance, 
-        // assign a client function that wraps the event handler
-        // and calls it directly without arguments
-        clientFnId = clientFn.clientFnId;
-        serverBindFns = clientFn.serverBindFns;
+          // if the event handler is just a function instance, 
+          // assign a client function that wraps the event handler
+          // and calls it directly without arguments
+          clientFnId = clientFn.clientFnId;
+          serverBindFns = clientFn.serverBindFns;
 
-      } else if (eventHandler.fn.type === 'handler') {
-        let clientFn = createNoArgClientFunction(eventHandler.fn);
+        } else if (eventHandler.fn.type === 'handler') {
+          let clientFn = createNoArgClientFunction(eventHandler.fn);
 
-        clientFnId = clientFn.clientFnId;
-        serverBindFns = clientFn.serverBindFns;
-      } else if (eventHandler.fn.clientFnId) {
-        clientFnId = eventHandler.fn.clientFnId;
-        serverBindFns = eventHandler.fn.serverBindFns || [];
-      }
+          clientFnId = clientFn.clientFnId;
+          serverBindFns = clientFn.serverBindFns;
+        } else if (eventHandler.fn.clientFnId) {
+          clientFnId = eventHandler.fn.clientFnId;
+          serverBindFns = eventHandler.fn.serverBindFns || [];
+        }
 
-      this._streamFunctionInstallCommand(clientFnId);
-      this._streamModuleInstallCommand(serverBindFns);
-      this._streamEventInitCommandV2(newBlockId, eventHandler.targetId, eventHandler.type, clientFnId, serverBindFns);
+        // if the serverBindFns value is a function, it means it's the new compiler output
+        // we need to run untrack() on it to get the actual serverBindFns value at this point of execution
+        if (serverBindFns instanceof Function) {
+          serverBindFns = untrack(() => serverBindFns());
+        }
+        this._streamFunctionInstallCommand(clientFnId);
+        this._streamModuleInstallCommand(serverBindFns);
+        this._streamEventInitCommandV2(newBlockId, eventHandler.targetId, eventHandler.type, clientFnId, serverBindFns);
+      });
     }
+  }
+
+  _streamEventInitCommandV2(blockId, targetId, eventType, clientFnId, serverBindFns) {
+
+    // Ignore click (eventType = 1) since client handling is special
+    if (eventType > 1 && !this.clientEventTypeInstallationSet.has(eventType)) {
+      this._streamInstallEventTypeCommand(eventType);
+    }
+
+    let sbvBuffer = this._encodeServerBoundValues(serverBindFns);
+
+    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + sbvBuffer.length);
+
+    buf.writeUInt8(CMD_ATTACH_EVENT_V2, 0);
+    buf.writeUInt16BE(blockId, 1);
+    buf.writeUInt8(targetId, 3);
+    buf.writeUInt8(eventType, 4);
+    buf.writeUInt16BE(clientFnId, 5);
+
+    sbvBuffer.copy(buf, 7);
   }
 
   _allocateHandler(fn) {
@@ -1603,8 +1686,8 @@ export function _createComponent(componentFunction, props) {
   return new Component(componentFunction, props);
 }
 
-export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffects, refs) {
-  return getActiveWindow()._createBlock3(blockTemplateId, anchors, eventHandlers, styleEffects, refs);
+export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffects, refs, lifecycles) {
+  return getActiveWindow()._createBlock3(blockTemplateId, anchors, eventHandlers, styleEffects, refs, lifecycles);
 }
 
 export function createHandler(fn) {
