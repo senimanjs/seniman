@@ -936,7 +936,7 @@ class Sequence {
       // 4: CMD_ATTACH_REF,
       () => {
         let blockId = getUint16();
-        let targetElIndex = getUint16();
+        let targetElIndex = getUint8();
         let refId = getUint16();
       },
 
