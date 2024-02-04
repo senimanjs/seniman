@@ -6,15 +6,10 @@ export function createHeadContextValue(sequence) {
   let titleStack = [];
   let [getTitle, setTitle] = useState(null);
 
-  sequence.insert(0, [<title>{getTitle()}</title>]);
+  sequence.push(<title>{getTitle()}</title>);
 
   let ids = [0];
   let headElementsId = 1;
-
-  function push(element) {
-    sequence.push([element]);
-  }
-
   let titleId = 1;
 
   return {
@@ -61,7 +56,7 @@ export function createHeadContextValue(sequence) {
 
       ids.push(id);
 
-      push(element);
+      sequence.push(element);
 
       headElementsId += 1;
 

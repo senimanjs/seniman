@@ -1650,25 +1650,18 @@ export class Sequence {
     }
   }
 
-  push(items) {
+  push(...items) {
     let index = this.nodes.length;
 
-    this.insert(index, items);
+
+    this.insert(index, ...items);
   }
 
-  insert(index, items) {
+  insert(index, ...items) {
     this.nodes.splice(index, 0, ...items);
 
     if (this.onChangeFn) {
       this.onChangeFn({ type: MODIFY_INSERT, index, count: items.length });
-    }
-  }
-
-  replace(index, items) {
-    this.nodes.splice(index, items.length, ...items);
-
-    if (this.onChangeFn) {
-      this.onChangeFn({ type: MODIFY_REPLACE, index, count: items.length });
     }
   }
 }

@@ -162,7 +162,7 @@ class Collection {
         view.disposeFns.splice(startIndex + i, 0, disposeFn);
       }
 
-      view.sequence.insert(startIndex, nodes);
+      view.sequence.insert(startIndex, ...nodes);
     });
   }
 
