@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "0.0.162",
+  "version": "0.0.163",
   "description": "",
   "main": "./dist/index.js",
   "type": "module",
