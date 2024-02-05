@@ -1559,10 +1559,10 @@ export class Window {
 
       switch (change.type) {
         case MODIFY_REMOVE:
-          this._remove_sequenceItems(newSeqId, change.index, change.count);
+          this._remove_sequenceItems(sequence, change.index, change.count);
           break;
         case MODIFY_INSERT:
-          this._insert_sequenceItems(newSeqId, change.startIndex, change.startItemId, change.nodes);
+          this._insert_sequenceItems(sequence, change.startIndex, change.startItemId, change.nodes);
           break;
       }
     }));
@@ -1595,7 +1595,8 @@ export class Window {
     this._streamAttachBlockCommand(blockId, anchorIndex, sequence.id);
   }
 
-  _remove_sequenceItems(seqId, startIndex, count) {
+  _remove_sequenceItems(sequence, startIndex, count) {
+    let seqId = sequence.id;
 
     let buf = this._allocCommandBuffer(1 + 2 + 2 + 2);
 
@@ -1644,7 +1645,9 @@ export class Window {
     return 2;
   }
 
-  _insert_sequenceItems(sequenceId, startIndex, startItemId, nodeResults) {
+  _insert_sequenceItems(sequence, startIndex, startItemId, nodeResults) {
+
+    let sequenceId = sequence.id;
 
     scratchBuffer.writeUInt8(CMD_SEQUENCE_INSERT_ITEMS, 0);
     scratchBuffer.writeUInt16BE(sequenceId, 1);
@@ -1653,9 +1656,12 @@ export class Window {
 
     let offset = 7;
 
+    let disposeFns = [];
+
     for (let i = 0; i < nodeResults.length; i++) {
       let nodeResult = nodeResults[i];
       let itemId = startItemId + i;
+      let disposeFn = null;
 
       if (typeof nodeResult == 'string') {
         offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, nodeResult);
@@ -1667,13 +1673,13 @@ export class Window {
         switch (nodeResult.constructor) {
           case Block:
             offset += this._createSequenceAppendBlockCommand(scratchBuffer, offset, nodeResult.id);
-
+            // TODO: handle manually removing the block on removal
             break;
           case Component: {
             // append an empty textnode at the component's index -- the next scheduler loop will then replace it with the actual component
             offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, '');
 
-            let disposeFn = useDisposableEffect(() => {
+            disposeFn = useDisposableEffect(() => {
               this._attach(sequenceId, itemId, nodeResult.fn(nodeResult.props));
             });
             break;
@@ -1682,7 +1688,7 @@ export class Window {
             // append and empty textnode at the function's index -- the next scheduler loop will then replace it with the actual function result
             offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, '');
 
-            let disposeFn = useDisposableEffect(() => {
+            disposeFn = useDisposableEffect(() => {
               let value = nodeResult();
               this._attach(sequenceId, itemId, value);
             });
@@ -1700,7 +1706,11 @@ export class Window {
             console.error('Unknown nodeResult', nodeResult);
         }
       }
+
+      disposeFns.push(disposeFn);
     }
+
+    sequence.registerDisposeFns(startIndex, disposeFns);
 
     let buf = this._allocCommandBuffer(offset);
 
