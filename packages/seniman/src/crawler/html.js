@@ -15,11 +15,15 @@ function escape(s) {
   return s.replace(/[&"'<>]/g, c => lookup[c]);
 }
 
-class TextNode {
+class Text {
 
   constructor(text) {
     this.text = text == '<!>' ? '' : escape(text);
     this.parentElement = null;
+  }
+
+  insertInto(parentEl, marker) {
+    parentEl.insertBefore(this, marker);
   }
 
   toString() {
@@ -27,7 +31,7 @@ class TextNode {
   }
 
   cloneNode() {
-    return new TextNode(this.text);
+    return new Text(this.text);
   }
 
   after(child) {
@@ -42,7 +46,7 @@ class TextNode {
 
       child.parentElement = this.parentElement;
     } else {
-      throw new Error('Cannot call after() on a TextNode that is not attached to a parent');
+      throw new Error('Cannot call after() on a Text that is not attached to a parent');
     }
   }
 
@@ -222,249 +226,142 @@ export class HtmlRenderingContext {
 
   start() {
 
-class SequenceItem {
-  constructor(seq) {
-    this.seq = seq;
-    this.node = null;
-    this.seqId = -1;
-  }
-}
+    class Sequence {
+      constructor(seqId) {
+        this.id = seqId;
 
-class Sequence {
-  constructor(blocksMap, itemLength) {
-    this.blocksMap = blocksMap;
-    this.items = [];
-    this.parent = null;
+        this.endMarker = new Text('');
+        this.itemIds = [];
+        this.items = [];
+        this.incId = 1;
+        this.mounted = false;
+      }
 
-    for (let i = 0; i < itemLength; i++) {
-      this.items.push(new SequenceItem(this));
-    }
-  }
+      insertInto(parentEl, marker) {
+        parentEl.insertBefore(this.endMarker, marker);
 
-  _modify() {
-    // modify code
-    // 3: insert, 4: remove
-    let modifyCode = getUint8();
-    let index = getUint16();
-    let count = getUint16();
+        this.mounted = true;
 
-    switch (modifyCode) {
-      case 3: // INSERT 
-        for (let i = 0; i < count; i++) {
-          this.items.splice(index + i, 0, new SequenceItem(this));
+        for (let i = 0; i < this.items.length; i++) {
+          this.items[i].insertInto(parentEl, this.endMarker);
         }
-        break;
-      case 4:  // REMOVE
-        for (let i = 0; i < count; i++) {
-          this.items[index + i].node.remove();
+      }
+
+      remove() {
+        this.endMarker.remove();
+        this.mounted = false;
+
+        for (let i = 0; i < this.items.length; i++) {
+          this.items[i].remove();
         }
-
-        this.items.splice(index, count);
-        break;
-    }
-  }
-
-  _setParent(parent) {
-    this.parent = parent;
-  }
-
-  _getBeforeSiblingInsertReference(index) {
-    while (--index >= 0) {
-      let item = this.items[index];
-
-      if (item.node) {
-        return item.node;
       }
 
-      // TODO: check if item is a sequence
-    }
-  }
-
-  _getAfterSiblingInsertReference(index) {
-    while (++index < this.items.length) {
-      let item = this.items[index];
-
-      if (item.node) {
-        return item.node;
+      _findItemIdIndex(itemId) {
+        // TODO: use a faster data structure for this
+        return this.itemIds.indexOf(itemId);
       }
 
-      // TODO: check if item is a sequence
-    }
-  }
+      _attachItem(itemId, item) {
 
-  _getParentInsertReference() {
-    return {
-      el: this.parent.el,
-      marker: this.parent.marker
-    }
-  }
+        let index = this._findItemIdIndex(itemId);
 
-  _attachSingle(index, newNode) {
-    let prevNode = this.items[index].node;
-
-    // if the sequence item has an existing node, just replace it
-    if (prevNode) {
-      prevNode.replaceWith(newNode);
-      return;
-    }
-
-    // if this isn't the first item, try to find before sibling reference
-    if (index > 0) {
-      let refEl = this._getBeforeSiblingInsertReference(index);
-
-      if (refEl) {
-        refEl.after(newNode);
-        return;
-      }
-    }
-
-    // if this isn't the last item, try to find after sibling reference
-    if (index < this.items.length - 1) {
-      let refEl = this._getAfterSiblingInsertReference(index);
-
-      if (refEl) {
-        refEl.parentElement.insertBefore(newNode, refEl);
-        return;
-      }
-    }
-
-    let parentRef = this._getParentInsertReference();
-
-    parentRef.el.insertBefore(newNode, parentRef.marker);
-  }
-
-  _attachText(index, text) {
-    let node = new TextNode(text);
-
-    this._attachSingle(index, node);
-
-    let item = this.items[index];
-    item.node = node;
-    item.seqId = -1;
-  }
-
-  _attachBlock(index, blockId) {
-
-    let block = this.blocksMap.get(blockId);
-
-    if (block instanceof Sequence) {
-      throw new Error('nested sequence is not yet supported');
-      //this._attachSeq(index, block);
-    } else {
-      let node = block.rootEl;
-      this._attachSingle(index, node);
-
-      let item = this.items[index];
-      item.node = node;
-      item.seqId = -1;
-    }
-  }
-}
-
-    let gatherSequenceNodes = (nodes, seq) => {
-
-      seq.items.forEach(item => {
         if (item instanceof Sequence) {
-          throw new Error('nested sequence is not yet supported');
-          //gatherSequenceNodes(nodes, item.seqId);
-        } else {
-
-          if (item.node) {
-            nodes.push(item.node);
-          }
+          throw new Error('cannot attach sequence to sequence yet');
         }
-      });
-    }
 
+        let oldItem = this.items[index];
+        this.items[index] = item;
+
+        if (!this.mounted) {
+          return;
+        }
+
+        oldItem.remove();
+
+        let isLastItem = index == this.items.length - 1;
+        this._insert(isLastItem, index, item);
+      }
+
+      _insertItem(index, item) {
+
+        if (item instanceof Sequence) {
+          throw new Error('cannot attach sequence to sequence yet');
+        }
+
+        let isAppend = index == this.items.length;
+
+        this.items.splice(index, 0, item);
+        this.itemIds.splice(index, 0, this.incId++);
+
+        if (!this.mounted) {
+          return;
+        }
+
+        this._insert(isAppend, index, item);
+      }
+
+      _insert(isLastItem, index, item) {
+        let insertionMarker = isLastItem ? this.endMarker : getInsertionMarker(this.items[index + 1]);
+        item.insertInto(this.endMarker.parentElement, insertionMarker);
+      }
+
+      _removeItems(startIndex, count) {
+
+        for (let i = 0; i < count; i++) {
+          this.items[startIndex + i].remove();
+        }
+
+        this.items.splice(startIndex, count);
+        this.itemIds.splice(startIndex, count);
+      }
+    }
 
     class Block {
-      constructor(blocksMap, rootEl, targetEls, anchorDefs) {
+      constructor(id, rootEl, targetEls, anchorDefs) {
+        this.id = id;
         this.rootEl = rootEl;
         this.targetEls = targetEls;
-        this.anchors = anchorDefs.map(anchor =>
-          new BlockAnchor(blocksMap, anchor.el, anchor.marker)
-        );
+
+        this.anchors = anchorDefs.map(anchor => ({
+          el: anchor.el,
+          marker: anchor.marker,
+          item: null
+        }));
+
+        this.onUnmounts = [];
       }
 
-      _attachText(index, text) {
-        this.anchors[index]._attachText(text);
+      _attachItem(anchorIndex, item) {
+        let anchor = this.anchors[anchorIndex];
+        let oldItem = anchor.item;
+        let isNewAttach = !oldItem;
+
+        anchor.item = item;
+
+        if (!isNewAttach) {
+          oldItem.remove();
+        }
+
+        item.insertInto(anchor.el, anchor.marker);
       }
 
-      _attachBlock(index, blockId) {
-        this.anchors[index]._attachBlock(blockId);
+      insertInto(parentEl, marker) {
+        parentEl.insertBefore(this.rootEl, marker);
+      }
+
+      remove() {
+        this.rootEl.remove();
       }
     }
 
-    class BlockAnchor {
-      constructor(blocksMap, el, marker) {
-        this.blocksMap = blocksMap;
-        this.el = el;
-        this.marker = marker;
 
-        this.node = null;
-        this.seqId = -1;
-      }
-
-      _attachText(text) {
-        //return;
-
-        this._attachSingle(new TextNode(text));
-      }
-
-      _attachBlock(blockId) {
-
-        // return;
-
-        let block = this.blocksMap.get(blockId);// getBlock(blockId);
-
-        if (block instanceof Sequence) {
-          this._attachSeq(blockId);
-        } else {
-          this._attachSingle(block.rootEl);
-        }
-      }
-
-      _attachSeq(seqId) {
-        // clean up
-        this._clean();
-
-        let block = this.blocksMap.get(seqId);// getBlock(blockId);
-
-        block._setParent(this);
-
-        this.node = null;
-        this.seqId = seqId;
-      }
-
-      _attachSingle(newNode) {
-        //let current = this.nodes;
-        // clean up
-        this._clean();
-        // insert new node
-        this.el.insertBefore(newNode, this.marker);
-
-        this.node = newNode;
-        this.seqId = -1;
-  }
-
-      _clean() {
-        if (this.seqId > -1) {
-          let nodes = [];
-
-          let seq = this.blocksMap.get(this.seqId);// getBlock(blockId);
-          //let seq = getBlock(this.seqId);
-
-          gatherSequenceNodes(nodes, seq);
-
-          nodes.forEach(node => {
-            node.remove();
-          });
-        } else if (this.node) {
-          this.node.remove();
-        }
+    let getInsertionMarker = (item) => {
+      if (item instanceof Text) {
+        return item;
+      } else {
+        return item.rootEl;
       }
     }
-
 
     let _blocksMap = this._blocksMap;
     let templateDefinitionMap = this.templateDefinitionMap;
@@ -483,7 +380,7 @@ class Sequence {
       let componentRootElement = componentDef.tpl.cloneNode(true);
       let [anchorDefs, targetEls] = componentDef.fn(componentRootElement);
 
-      _blocksMap.set(blockId, new Block(_blocksMap, componentRootElement, targetEls, anchorDefs));
+      _blocksMap.set(blockId, new Block(blockId, componentRootElement, targetEls, anchorDefs));
     }
 
     let getString = (length) => {
@@ -608,7 +505,7 @@ class Sequence {
           if (tagNameId == 0) {
             let textLength = getUint16();
             let str = getString(textLength);
-            let textNode = new TextNode(str);
+            let textNode = new Text(str);
 
             if (parentElement) {
               parentElement.appendChild(textNode);
@@ -862,17 +759,9 @@ class Sequence {
     }
 
     let _initSequence = () => {
-
       let seqId = getUint16();
-      let seqLength = getUint16();
-
-      _blocksMap.set(seqId, new Sequence(_blocksMap, seqLength));
+      _blocksMap.set(seqId, new Sequence(seqId));
     };
-
-    let _modifySequence = () => {
-      let seq = getBlock(getUint16());
-      seq._modify();
-    }
 
     let _installTemplate2 = () => {
       let templateId = getUint16();
@@ -892,18 +781,13 @@ class Sequence {
     }
 
     let _attachAtAnchorV2 = () => {
+
       let blockId = getUint16();
       let block = getBlock(blockId);
-
       let index = getUint16();
-      let [highestOrderBit, value] = magicSplitUint16(getUint16());
-      let isText = !highestOrderBit;
+      let item = _constructItem();
 
-      if (isText) {
-        block._attachText(index, getString(value));
-      } else {
-        block._attachBlock(index, value);
-      }
+      block._attachItem(index, item);
     }
 
     let _attachEventHandlerV2 = () => {
@@ -914,6 +798,24 @@ class Sequence {
 
       let clientFnId = getUint16();
       let serverBoundValues = _decodeServerBoundValuesBuffer();
+    }
+
+    let _constructItem = () => {
+      let [highestOrderBit, value] = magicSplitUint16(getUint16());
+      let isText = !highestOrderBit;
+
+      if (isText) {
+        let str = getString(value);
+        return new Text(str);
+      } else {
+        let blockId = value;
+
+        if (blockId > 0) {
+          return getBlock(blockId);
+        } else {
+          return new Text('');
+        }
+      }
     }
 
     let _processMap = [
@@ -927,8 +829,8 @@ class Sequence {
       () => {
         processOffset += 21;
         let body = createElement('body');
-        _blocksMap.set(1, new Block(_blocksMap, head, [], [{ el: head }]));
-        _blocksMap.set(2, new Block(_blocksMap, body, [], [{ el: body }]));
+        _blocksMap.set(1, new Block(1, head, [], [{ el: head }]));
+        _blocksMap.set(2, new Block(2, body, [], [{ el: body }]));
       },
       // 3: CMD_ATTACH_ANCHOR
       _attachAtAnchorV2,
@@ -989,7 +891,7 @@ class Sequence {
       _initSequence,
 
       // 14: CMD_MODIFY_SEQUENCE
-      _modifySequence,
+      null,
 
       // 15: CMD_CHANNEL_MESSAGE
       () => {
@@ -1002,6 +904,39 @@ class Sequence {
         let moduleId = getUint16();
         let clientFunctionId = getUint16();
         let serverBoundValues = _decodeServerBoundValuesBuffer();
+      },
+
+      // 17: CMD_RUN_LIFECYCLE
+      () => {
+        let blockId = getUint16();
+        let targetElIndex = getUint8();
+        let type = getUint8();
+
+        // on mount
+        let clientFunctionId = getUint16();
+        let serverBoundValues = _decodeServerBoundValuesBuffer();
+      },
+
+      // 18:  CMD_INSERT_SEQUENCE_ITEMS
+      () => {
+        let seqId = getUint16();
+        let sequence = getBlock(seqId);
+        let startIndex = getUint16();
+        let count = getUint16();
+
+        for (let i = 0; i < count; i++) {
+          sequence._insertItem(startIndex + i, _constructItem());
+        }
+      },
+
+      // 19: CMD_REMOVE_SEQUENCE_ITEMS
+      () => {
+        let seqId = getUint16();
+        let sequence = getBlock(seqId);
+        let startIndex = getUint16();
+        let count = getUint16();
+
+        sequence._removeItems(startIndex, count);
       }
     ];
 
