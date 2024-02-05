@@ -5,6 +5,7 @@ import { bufferPool, PAGE_SIZE } from './buffer-pool.js';
 import { DefaultErrorHandler } from './errors.js';
 import { HeadContext, createHeadContextValue } from './head.js';
 import { DefaultNetworkStatusView } from './network.js';
+import { Sequence } from './sequence.js';
 
 export function useWindow() {
   return useClient();
@@ -181,6 +182,8 @@ const CMD_MODIFY_SEQUENCE = 14;
 const CMD_CHANNEL_MESSAGE = 15;
 const CMD_INIT_MODULE = 16;
 const CMD_RUN_LIFECYCLE = 17;
+const CMD_SEQUENCE_INSERT_ITEMS = 18;
+const CMD_SEQUENCE_REMOVE_ITEMS = 19;
 
 const pingBuffer = Buffer.from([0]);
 const scratchBuffer = Buffer.alloc(32768);
@@ -428,7 +431,7 @@ export class Window {
         setViewportSize({ width, height });
       }
 
-      let headSequence = new Sequence();
+      let headSequence = createSequence();
 
       getActiveNode().context = {
         [HeadContext.id]: createHeadContextValue(headSequence)
@@ -1115,28 +1118,6 @@ export class Window {
     }
   }
 
-  _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects, elementRefs, lifecycles) {
-
-    let newBlockId = this._createBlockId();
-
-    this._streamTemplateInstallCommand(blockTemplateId);
-    this._streamBlockInitCommand2(newBlockId, blockTemplateId);
-
-    eventHandlers && this._handleBlockEventHandlers(newBlockId, eventHandlers);
-    elementEffects && this._handleElementEffects(newBlockId, elementEffects);
-    elementRefs && this._handleRefs(newBlockId, elementRefs);
-    lifecycles && this._handleLifecycles(newBlockId, lifecycles);
-
-    anchors && anchors.map((anchorNodeResult, anchorIndex) => {
-      this._attach(newBlockId, anchorIndex, anchorNodeResult);
-    });
-
-    onDispose(() => {
-      this._handleBlockCleanup(newBlockId);
-    });
-
-    return new Block(newBlockId);
-  }
 
   _handleRefs(blockId, elementRefs) {
     let refsCount = elementRefs.length;
@@ -1536,10 +1517,10 @@ export class Window {
           });
           break;
         case Array:
-          this._attachListV2(blockId, anchorIndex, nodeResult);
+          this._attachListV3(blockId, anchorIndex, nodeResult);
           break;
         case Sequence:
-          this._attachSequence(blockId, anchorIndex, nodeResult);
+          this._attachSequenceV2(blockId, anchorIndex, nodeResult);
           break;
         default:
           console.error('Unknown nodeResult', nodeResult);
@@ -1547,124 +1528,189 @@ export class Window {
     }
   }
 
-  _attachListV2(blockId, anchorIndex, list) {
+  _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects, elementRefs, lifecycles) {
 
-    let _seqId = this._createSequence(list.length);
+    let newBlockId = this._createBlockId();
 
-    this._streamAttachBlockCommand(blockId, anchorIndex, _seqId);
+    this._streamTemplateInstallCommand(blockTemplateId);
+    this._streamBlockInitCommand2(newBlockId, blockTemplateId);
 
-    for (let i = 0; i < list.length; i++) {
-      this._attach(_seqId, i, list[i]);
-    }
+    eventHandlers && this._handleBlockEventHandlers(newBlockId, eventHandlers);
+    elementEffects && this._handleElementEffects(newBlockId, elementEffects);
+    elementRefs && this._handleRefs(newBlockId, elementRefs);
+    lifecycles && this._handleLifecycles(newBlockId, lifecycles);
+
+    anchors && anchors.map((anchorNodeResult, anchorIndex) => {
+      this._attach(newBlockId, anchorIndex, anchorNodeResult);
+    });
+
+    onDispose(() => {
+      this._handleBlockCleanup(newBlockId);
+    });
+
+    return new Block(newBlockId);
   }
 
-  _attachSequence(blockId, anchorIndex, sequence) {
-
-    let _seqId = this._createSequence(0);
-
-    // attach the sequence to the anchor
-    this._streamAttachBlockCommand(blockId, anchorIndex, _seqId);
+  _createSequence2() {
+    let newSeqId = this._createBlockId();
+    let sequence = new Sequence(newSeqId);
 
     sequence.onChange(useCallback(change => {
 
-      /*
-      if (change.type == MODIFY_SWAP) {
-        this._streamModifySequenceCommand(_seqId, MODIFY_SWAP, change.index1, change.index2);
-        return;
-      }
-      */
-
-      let startIndex = change.index;
-      let count = change.count;
-
-      // TODO: if only one (say a simple one-item append), then create a special command that doesn't take two commands to execute?
-
-      if (change.type == MODIFY_REMOVE || change.type == MODIFY_INSERT) {
-        // modify the sequence
-        this._streamModifySequenceCommand(_seqId, change.type, startIndex, count);
-      }
-
-      if (change.type == MODIFY_REMOVE) {
-        return;
-      }
-
-      // attach the new nodes to the new sequence indexes if it's an insert
-      for (let i = 0; i < count; i++) {
-        this._attach(_seqId, startIndex + i, sequence.nodes[startIndex + i]);
+      switch (change.type) {
+        case MODIFY_REMOVE:
+          this._remove_sequenceItems(newSeqId, change.index, change.count);
+          break;
+        case MODIFY_INSERT:
+          this._insert_sequenceItems(newSeqId, change.startIndex, change.startItemId, change.nodes);
+          break;
       }
     }));
+
+    // stream the sequence initialization command
+    // CMD + BLOCK_ID
+    let bufferLength = 1 + 2;
+
+    let buf = this._allocCommandBuffer(bufferLength);
+
+    buf.writeUInt8(CMD_INIT_SEQUENCE, 0);
+    buf.writeUInt16BE(newSeqId, 1);
+
+    onDispose(() => {
+      this._handleBlockCleanup(newSeqId);
+    });
+
+    return sequence;
   }
 
-  _streamModifySequenceCommand(seqId, changeType, arg0, arg1) {
-    let buf = this._allocCommandBuffer(1 + 2 + 1 + 2 + 2);
+  _attachListV3(blockId, anchorIndex, list) {
 
-    // CMD_MODIFY_SEQUENCE
-    // seqId
-    // changeType (append, prepend, insert, remove, reset)
-    // arg0: index
-    // arg1: count
-    buf.writeUInt8(CMD_MODIFY_SEQUENCE, 0);
+    let sequence = this._createSequence2();
+    this._attachSequenceV2(blockId, anchorIndex, sequence);
+
+    sequence.push(...list);
+  }
+
+  _attachSequenceV2(blockId, anchorIndex, sequence) {
+    this._streamAttachBlockCommand(blockId, anchorIndex, sequence.id);
+  }
+
+  _remove_sequenceItems(seqId, startIndex, count) {
+
+    let buf = this._allocCommandBuffer(1 + 2 + 2 + 2);
+
+    buf.writeUInt8(CMD_SEQUENCE_REMOVE_ITEMS, 0);
     buf.writeUInt16BE(seqId, 1);
-    buf.writeUInt8(changeType, 3);
-    buf.writeUInt16BE(arg0, 4);
-    buf.writeUInt16BE(arg1, 6);
+    buf.writeUInt16BE(startIndex, 3);
+    buf.writeUInt16BE(count, 5);
+  }
+
+  _createSequenceAppendTextCommand(buffer, offset, textString) {
+
+    // 2 bytes (16b LE)
+    // take the first byte:
+    // check first bit if value is 0
+    // if 0, this is a text
+    // if 1, this is a blockId
+
+
+    // if text:
+    // bit-shift the 16-bit value to exclude the first bit
+    // get the value
+    // if larger than 0, then interpret the value as the string length
+    // if 0, then stop
+
+
+    // if blockId.
+    // bit-shift the 16-bit value to exclude the first bit
+    // get the value
+    // value is blockId
+
+    let textBuffer = Buffer.from(textString, "utf-8");
+    let textLength = textBuffer.length;
+
+    if (textLength > 32677) {
+      throw new Error();
+    }
+
+    buffer.writeUInt16BE(textLength, offset);
+    textBuffer.copy(buffer, offset + 2);
+
+    return 2 + textLength;
+  }
+
+  _createSequenceAppendBlockCommand(buffer, offset, blockId) {
+    buffer.writeUInt16BE(blockId |= (1 << 15), offset);
+    return 2;
+  }
+
+  _insert_sequenceItems(sequenceId, startIndex, startItemId, nodeResults) {
+
+    scratchBuffer.writeUInt8(CMD_SEQUENCE_INSERT_ITEMS, 0);
+    scratchBuffer.writeUInt16BE(sequenceId, 1);
+    scratchBuffer.writeUInt16BE(startIndex, 3);
+    scratchBuffer.writeUInt16BE(nodeResults.length, 5);
+
+    let offset = 7;
+
+    for (let i = 0; i < nodeResults.length; i++) {
+      let nodeResult = nodeResults[i];
+      let itemId = startItemId + i;
+
+      if (typeof nodeResult == 'string') {
+        offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, nodeResult);
+      } else if (typeof nodeResult == 'number') {
+        offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, nodeResult.toString());
+      } else if (!nodeResult) {
+        offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, '');
+      } else {
+        switch (nodeResult.constructor) {
+          case Block:
+            offset += this._createSequenceAppendBlockCommand(scratchBuffer, offset, nodeResult.id);
+
+            break;
+          case Component: {
+            // append an empty textnode at the component's index -- the next scheduler loop will then replace it with the actual component
+            offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, '');
+
+            let disposeFn = useDisposableEffect(() => {
+              this._attach(sequenceId, itemId, nodeResult.fn(nodeResult.props));
+            });
+            break;
+          }
+          case Function: {
+            // append and empty textnode at the function's index -- the next scheduler loop will then replace it with the actual function result
+            offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, '');
+
+            let disposeFn = useDisposableEffect(() => {
+              let value = nodeResult();
+              this._attach(sequenceId, itemId, value);
+            });
+            break;
+          }
+          case Array:
+            throw new Error('Sequence within a sequence is not supported yet');
+            //this._attachList_blockAnchor(blockId, anchorIndex, nodeResult);
+            break;
+          case Sequence:
+            throw new Error('Sequence within a sequence is not supported yet');
+            // this._attachSequence_blockAnchor(blockId, anchorIndex, nodeResult);
+            break;
+          default:
+            console.error('Unknown nodeResult', nodeResult);
+        }
+      }
+    }
+
+    let buf = this._allocCommandBuffer(offset);
+
+    scratchBuffer.copy(buf, 0, 0, offset);
   }
 }
 
 const MODIFY_INSERT = 3;
 const MODIFY_REMOVE = 4;
-const MODIFY_REPLACE = 5;
 const MODIFY_SWAP = 6;
-
-export class Sequence {
-
-  constructor() {
-    this.nodes = [];
-    this.onChangeFn = null;
-  }
-
-  onChange(fn) {
-    this.onChangeFn = fn;
-
-    if (this.nodes.length > 0) {
-      fn({ type: MODIFY_INSERT, index: 0, count: this.nodes.length });
-    }
-  }
-
-  remove(index, count) {
-    this.nodes.splice(index, count);
-
-    if (this.onChangeFn) {
-      this.onChangeFn({ type: MODIFY_REMOVE, index, count });
-    }
-  }
-
-  swap(index1, index2) {
-    let temp = this.nodes[index1];
-
-    this.nodes[index1] = this.nodes[index2];
-    this.nodes[index2] = temp;
-
-    if (this.onChangeFn) {
-      this.onChangeFn({ type: MODIFY_SWAP, index1, index2 });
-    }
-  }
-
-  push(...items) {
-    let index = this.nodes.length;
-
-
-    this.insert(index, ...items);
-  }
-
-  insert(index, ...items) {
-    this.nodes.splice(index, 0, ...items);
-
-    if (this.onChangeFn) {
-      this.onChangeFn({ type: MODIFY_INSERT, index, count: items.length });
-    }
-  }
-}
 
 function Block(id) {
   this.id = id;
@@ -1681,6 +1727,10 @@ export function _createComponent(componentFunction, props) {
 
 export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffects, refs, lifecycles) {
   return getActiveWindow()._createBlock3(blockTemplateId, anchors, eventHandlers, styleEffects, refs, lifecycles);
+}
+
+export function createSequence(items) {
+  return getActiveWindow()._createSequence2(items);
 }
 
 export function createHandler(fn) {

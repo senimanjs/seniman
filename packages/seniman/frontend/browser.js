@@ -569,100 +569,6 @@
     return new Function("_", fnString);
   }
 
-  class Block {
-    constructor(rootEl, targetEls, anchorDefs) {
-      this.rootEl = rootEl;
-      this.targetEls = targetEls;
-      this.anchors = anchorDefs.map(anchor =>
-        new BlockAnchor(anchor.el, anchor.marker)
-      );
-      this.onUnmounts = [];
-    }
-
-    _attachText(index, text) {
-      this.anchors[index]._attachText(text);
-    }
-
-    _attachBlock(index, blockId) {
-      this.anchors[index]._attachBlock(blockId);
-    }
-  }
-
-  class BlockAnchor {
-    constructor(el, marker) {
-      this.el = el;
-      this.marker = marker;
-
-      this.node = null;
-      this.seqId = -1;
-    }
-
-    _attachText(text) {
-      this._attachSingle(_document.createTextNode(text));
-    }
-
-    _attachBlock(blockId) {
-      let block = getBlock(blockId);
-
-      if (block instanceof Sequence) {
-        this._attachSeq(blockId);
-      } else {
-        this._attachSingle(block.rootEl);
-      }
-    }
-
-    _attachSeq(seqId) {
-      // clean up
-      this._clean();
-
-      getBlock(seqId)._setParent(this);
-
-      this.node = null;
-      this.seqId = seqId;
-    }
-
-    _attachSingle(newNode) {
-      //let current = this.nodes;
-      // clean up
-      this._clean();
-      // insert new node
-      this.el.insertBefore(newNode, this.marker);
-
-      this.node = newNode;
-      this.seqId = -1;
-    }
-
-    _clean() {
-      if (this.seqId > -1) {
-        let nodes = [];
-        let seq = getBlock(this.seqId);
-
-        gatherSequenceNodes(nodes, seq);
-
-        nodes.forEach(node => {
-          node.remove();
-        });
-      } else if (this.node) {
-        this.node.remove();
-      }
-    }
-  }
-
-  let gatherSequenceNodes = (nodes, seq) => {
-
-    seq.items.forEach(item => {
-      if (item instanceof Sequence) {
-        throw new Error('nested sequence is not yet supported');
-        //gatherSequenceNodes(nodes, item.seqId);
-      } else {
-
-        if (item.node) {
-          nodes.push(item.node);
-        }
-      }
-    });
-  }
-
   let _initBlock = () => {
     let blockId = getUint16();
     let templateId = getUint16();
@@ -670,179 +576,169 @@
     let componentRootElement = componentDef.tpl.cloneNode(true);//[templateIndex];
     let [anchorDefs, targetEls] = componentDef.fn(componentRootElement);
 
-    _blocksMap.set(blockId, new Block(componentRootElement, targetEls, anchorDefs));
+    _blocksMap.set(blockId, new Block(blockId, componentRootElement, targetEls, anchorDefs));
   }
 
-  class SequenceItem {
-    constructor(seq) {
-      this.seq = seq;
-      this.node = null;
-      this.seqId = -1;
+  // TODO: move to another way that doesn't require a global
+  Text.prototype.insertInto = function (parentEl, marker) {
+    parentEl.insertBefore(this, marker);
+  };
+
+  class Block {
+    constructor(id, rootEl, targetEls, anchorDefs) {
+      this.id = id;
+      this.rootEl = rootEl;
+      this.targetEls = targetEls;
+
+      this.anchors = anchorDefs.map(anchor => ({
+        el: anchor.el,
+        marker: anchor.marker,
+        item: null
+      }));
+
+      this.onUnmounts = [];
+    }
+
+    _attachItem(anchorIndex, item) {
+
+      let anchor = this.anchors[anchorIndex];
+      let oldItem = anchor.item;
+      let isNewAttach = !oldItem;
+
+      anchor.item = item;
+
+      if (!isNewAttach) {
+        oldItem.remove();
+      }
+
+      item.insertInto(anchor.el, anchor.marker);
+    }
+
+    insertInto(parentEl, marker) {
+      parentEl.insertBefore(this.rootEl, marker);
+    }
+
+    remove() {
+      this.rootEl.remove();
+
+      let onUnmounts = this.onUnmounts;
+
+      while (onUnmounts.length) {
+        let fn = onUnmounts.pop();
+        fn();
+      }
     }
   }
 
   class Sequence {
-    constructor(itemLength) {
+    constructor(id) {
+      this.id = id;
+      this.endMarker = _document.createTextNode('');
+      this.itemIds = [];
       this.items = [];
-      this.parent = null;
+      this.incId = 1;
+      this.mounted = false;
+    }
 
-      for (let i = 0; i < itemLength; i++) {
-        this.items.push(new SequenceItem(this));
+    insertInto(parentEl, marker) {
+
+      parentEl.insertBefore(this.endMarker, marker);
+
+      this.mounted = true;
+
+      for (let i = 0; i < this.items.length; i++) {
+        this.items[i].insertInto(parentEl, this.endMarker);
+      } 
+    }
+
+    remove() {
+      this.endMarker.remove();
+      this.mounted = false;
+
+      for (let i = 0; i < this.items.length; i++) {
+        this.items[i].remove();
       }
     }
 
-    _modify() {
-      // modify code
-      // 3: insert, 4: remove, 5: replace
+    _findItemIdIndex(itemId) {
+      // TODO: use a faster data structure for this
+      return this.itemIds.indexOf(itemId);
+    }
 
-      let MODIFY_INSERT = 3;
-      let MODIFY_REMOVE = 4;
-      let MODIFY_REPLACE = 5;
+    _attachItem(itemId, item) {
 
-      let modifyCode = getUint8();
-      let index = getUint16();
-      let count = getUint16();
+      let index = this._findItemIdIndex(itemId);
 
-      switch (modifyCode) {
-        case MODIFY_INSERT: // INSERT 
-          for (let i = 0; i < count; i++) {
-            this.items.splice(index + i, 0, new SequenceItem(this));
-          }
-          break;
-        case MODIFY_REMOVE:  // REMOVE
-          for (let i = 0; i < count; i++) {
-            this.items[index + i].node.remove();
-          }
-
-          this.items.splice(index, count);
-          break;
-
-        // TODO: handle REPLACE 
+      if (item instanceof Sequence) {
+        throw new Error('cannot attach sequence to sequence yet');
       }
-    }
 
-    _setParent(parent) {
-      this.parent = parent;
-    }
+      let oldItem = this.items[index];
+      this.items[index] = item;
 
-    _getBeforeSiblingInsertReference(index) {
-      while (--index >= 0) {
-        let item = this.items[index];
-
-        if (item.node) {
-          return item.node;
-        }
-
-        // TODO: check if item is a sequence
-      }
-    }
-
-    _getAfterSiblingInsertReference(index) {
-      while (++index < this.items.length) {
-        let item = this.items[index];
-
-        if (item.node) {
-          return item.node;
-        }
-
-        // TODO: check if item is a sequence
-      }
-    }
-
-    _getParentInsertReference() {
-      return {
-        el: this.parent.el,
-        marker: this.parent.marker
-      }
-    }
-
-    _attachSingle(index, newNode) {
-      let prevNode = this.items[index].node;
-
-      // if the sequence item has an existing node, just replace it
-      if (prevNode) {
-        prevNode.replaceWith(newNode);
+      if (!this.mounted) {
         return;
       }
 
-      // if this isn't the first item, try to find before sibling reference
-      if (index > 0) {
-        let refEl = this._getBeforeSiblingInsertReference(index);
+      oldItem.remove();
 
-        if (refEl) {
-          refEl.after(newNode);
-          return;
-        }
-      }
-
-      // if this isn't the last item, try to find after sibling reference
-      if (index < this.items.length - 1) {
-        let refEl = this._getAfterSiblingInsertReference(index);
-
-        if (refEl) {
-          refEl.parentElement.insertBefore(newNode, refEl);
-          return;
-        }
-      }
-
-      let parentRef = this._getParentInsertReference();
-
-      parentRef.el.insertBefore(newNode, parentRef.marker);
+      let isLastItem = index == this.items.length - 1;
+      this._insert(isLastItem, index, item);
     }
 
-    _attachText(index, text) {
-      let node = _document.createTextNode(text);
+    _insertItem(index, item) {
 
-      this._attachSingle(index, node);
+      if (item instanceof Sequence) {
+        throw new Error('cannot attach sequence to sequence yet');
+      }
 
-      let item = this.items[index];
-      item.node = node;
-      item.seqId = -1;
+      let isAppend = index == this.items.length;
+
+      this.items.splice(index, 0, item);
+      this.itemIds.splice(index, 0, this.incId++);
+
+      if (!this.mounted) {
+        return;
+      }
+
+      this._insert(isAppend, index, item);
     }
 
-    _attachBlock(index, blockId) {
+    _insert(isLastItem, index, item) {
+      let insertionMarker = isLastItem ? this.endMarker : getInsertionMarker(this.items[index + 1]);
+      item.insertInto(this.endMarker.parentNode, insertionMarker);
+    }
 
-      let block = getBlock(blockId);
+    _removeItems(startIndex, count) {
 
-      if (block instanceof Sequence) {
-        throw new Error('nested sequence is not yet supported');
-        //this._attachSeq(index, block);
-      } else {
-        let node = block.rootEl;
-        this._attachSingle(index, node);
-
-        let item = this.items[index];
-        item.node = node;
-        item.seqId = -1;
+      for (let i = 0; i < count; i++) {
+        this.items[startIndex + i].remove();
       }
+
+      this.items.splice(startIndex, count);
+      this.itemIds.splice(startIndex, count);
+    }
+  }
+
+  let getInsertionMarker = (item) => {
+    if (item instanceof Text) {
+      return item;
+    } else {
+      return item.rootEl;
     }
   }
 
   let _initSequence = () => {
     let seqId = getUint16();
-    let seqLength = getUint16();
 
-    _blocksMap.set(seqId, new Sequence(seqLength));
-  }
-
-  let _modifySequence = () => {
-    let seq = getBlock(getUint16());
-    seq._modify();
+    _blocksMap.set(seqId, new Sequence(seqId));
   }
 
   let _attachAtAnchorV2 = () => {
     let blockId = getUint16();
     let block = getBlock(blockId);
-
     let index = getUint16();
-    let [highestOrderBit, value] = magicSplitUint16(getUint16());
-    let isText = !highestOrderBit;
-
-    if (isText) {
-      block._attachText(index, getString(value));
-    } else {
-      block._attachBlock(index, value);
-    }
+    block._attachItem(index, _constructItem());
   }
 
   // fill out the 0-index to make it easier for templating to do 1-indexing
@@ -857,8 +753,8 @@
     () => {
       windowId = getString(21);
 
-      _blocksMap.set(1, new Block(_document.head, [], [{ el: _document.head }]));
-      _blocksMap.set(2, new Block(_document.body, [], [{ el: _document.body }]));
+      _blocksMap.set(1, new Block(1, _document.head, [], [{ el: _document.head }]));
+      _blocksMap.set(2, new Block(2, _document.body, [], [{ el: _document.body }]));
     },
     // 3: CMD_ATTACH_ANCHOR
     _attachAtAnchorV2,
@@ -922,7 +818,7 @@
     // 13: CMD_INIT_SEQUENCE
     _initSequence,
     // 14: CMD_MODIFY_SEQUENCE
-    _modifySequence,
+    null,// _modifySequence,
     // 15: CMD_CHANNEL_MESSAGE
     () => {
       let channelId = getUint16();
@@ -967,12 +863,49 @@
       let retVal = applyClientFunction(clientFunctionId, serverBoundValues, [el]);
 
       if (retVal && retVal instanceof Function) {
-
         // TODO: implement onUnmount execution
-        // getBlock(blockId).onUnmounts.push(retVal);
+        getBlock(blockId).onUnmounts.push(retVal);
+      }
+    },
+    // 18: CMD_INSERT_SEQUENCE_ITEMS
+    () => {
+      let seqId = getUint16();
+      let sequence = getBlock(seqId);
+      let startIndex = getUint16();
+      let count = getUint16();
+
+      for (let i = 0; i < count; i++) {
+        sequence._insertItem(startIndex + i, _constructItem());
+      }
+    },
+    // 19: CMD_REMOVE_SEQUENCE_ITEMS
+    () => {
+      let seqId = getUint16();
+      let sequence = getBlock(seqId);
+      let startIndex = getUint16();
+      let count = getUint16();
+
+      sequence._removeItems(startIndex, count);
+    },
+  ];
+
+  let _constructItem = () => {
+    let [highestOrderBit, value] = magicSplitUint16(getUint16());
+    let isText = !highestOrderBit;
+
+    if (isText) {
+      let str = getString(value);
+      return _document.createTextNode(str);
+    } else {
+      let blockId = value;
+
+      if (blockId > 0) {
+        return getBlock(blockId);
+      } else {
+        return _document.createTextNode('');
       }
     }
-  ];
+  }
 
   let applyClientFunction = (clientFunctionId, sbv, args) => clientFunctionsMap.get(clientFunctionId).apply({ serverFunctions: sbv }, args);
 

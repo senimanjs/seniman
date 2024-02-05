@@ -1,4 +1,4 @@
-import { Sequence } from "./window.js";
+import { createSequence } from "./window.js";
 import { getActiveScope, runInScope, onDispose, useDisposableEffect, useState, useMemo, useEffect } from "./state.js";
 
 export function createCollection(initialItems) {
@@ -209,7 +209,7 @@ class Collection {
     let view = {
       renderFn: fn,
       scope: getActiveScope(),
-      sequence: new Sequence(),
+      sequence: createSequence(),
       disposeFns: [],
       containerFn,
       tracked: isTracked

@@ -7,7 +7,6 @@
 // ReactJS Github:
 // https://github.com/facebook/react
 
-
 import { scheduler_registerWindow, scheduler_deregisterWindow, scheduler_calculateWorkBatch } from "./scheduler.js";
 
 let ActiveNode = null;
@@ -55,6 +54,18 @@ function _setActiveWindowId(id) {
   }
 }
 
+function shouldMemoUpdate(node, prevValue, newValue) {
+
+  let shouldUpdate = false;
+
+  if (!node.comparator) {
+    shouldUpdate = true;
+  } else {
+    shouldUpdate = !node.comparator(prevValue, newValue);
+  }
+
+  return shouldUpdate;
+}
 
 function _runNode(nodeId) {
   try {
@@ -66,7 +77,7 @@ function _runNode(nodeId) {
     node.value = node.fn(prevValue);
 
     // if memo, check if value has changed, if so, update observers
-    if (nodeId % 2 == 1 && node.value !== prevValue) {
+    if (nodeId % 2 == 1 && shouldMemoUpdate(node, prevValue, node.value)) {
       _postStateWrite(ActiveWindow.id, nodeId);
     }
 
@@ -202,7 +213,6 @@ export let schedulerInputWriter = {
   windowInputEntries: [],
 };
 
-
 // TODO: use buffer pool to allocate these on-demand
 for (let i = 0; i < 128; i++) {
   schedulerInputWriter.windowInputEntries.push({
@@ -337,7 +347,15 @@ function registerDependency(stateId) {
   _registerDependency(ActiveWindow.id, ActiveNode.id, stateId);
 }
 
-export function useState(initialValue) {
+function identity(value, newValue) {
+  return value === newValue;
+}
+
+
+const equals = identity; // Declaring a separate variable for the equals function
+
+
+export function useState(initialValue, options = { equals }) {
 
   let id = ActiveWindow.lastReadableId += 2;
   let state = { id, value: initialValue };
@@ -358,8 +376,15 @@ export function useState(initialValue) {
     }
 
     let current = state.value;
+    let shouldUpdate = false;
 
-    if (current !== newValue) {
+    if (!equals) {
+      shouldUpdate = true;
+    } else {
+      shouldUpdate = !equals(current, newValue);
+    }
+
+    if (shouldUpdate) {
       state.value = newValue;
 
       _postStateWrite(ActiveWindowId, id);
@@ -414,14 +439,15 @@ export function untrack(fn) {
   return val;
 }
 
-export function useMemo(fn, initialValue) {
+export function useMemo(fn, initialValue, options = { equals }) {
   let id = ActiveWindow.lastReadableId += 2;
 
   let memo = {
     id,
     value: initialValue,
     context: ActiveNode.context,
-    fn
+    fn,
+    comparator: options.equals
   };
 
   ActiveNodeMap.set(id, memo);
@@ -450,20 +476,20 @@ export const onCleanup = onDispose;
 
 export function useCallback(fn) {
 
-  let _activeWindow = ActiveWindow;
+  let _activeWindowId = ActiveWindow.id;
   let _activeNode = ActiveNode;
 
   return (...args) => {
     let _prevNode = ActiveNode;
-    let _prevWindow = ActiveWindow;
+    let _prevWindowId = _activeWindowId;
 
     ActiveNode = _activeNode;
-    ActiveWindow = _activeWindow;
+    _setActiveWindowId(_activeWindowId);
 
     let res = fn(...args);
 
     ActiveNode = _prevNode;
-    ActiveWindow = _prevWindow;
+    _setActiveWindowId(_prevWindowId);
 
     return res;
   }

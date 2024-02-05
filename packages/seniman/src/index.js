@@ -1,10 +1,11 @@
-import { _createBlock, _createComponent, useWindow, useClient, createHandler, createChannel, createRef, Sequence } from './window.js';
+import { _createBlock, _createComponent, useWindow, useClient, createHandler, createChannel, createRef, createSequence } from './window.js';
 import { createModule } from './module.js';
 import { createCollection } from './collection.js';
 import { useState, useMemo, onCleanup, onDispose, useEffect, useDisposableEffect, untrack, createContext, useContext, useCallback, getActiveNode, runInScope, getActiveScope } from './state.js';
 import { _declareBlock, _declareClientFunction } from './declare.js';
 import { MAX_INPUT_EVENT_BUFFER_SIZE } from './config.js';
 import { createRoot } from './window_manager.js';
+import { Sequence } from './sequence.js';
 
 function withValue(fn) {
   let handler;
@@ -67,6 +68,7 @@ export {
   createRef,
   createModule,
   Sequence,
+  createSequence,
 
   createRoot,
 
