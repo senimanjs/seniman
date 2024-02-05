@@ -18,7 +18,7 @@
     "lowlight": "^2.8.1",
     "mistral-tokenizer-js": "^1.0.0",
     "prismjs": "^1.29.0",
-    "seniman": "^0.0.158",
+    "seniman": "^0.0.163",
     "throttle-debounce": "^5.0.0"
   }
 }

@@ -1,4 +1,4 @@
-import { useState, Sequence, getActiveScope, runInScope, onDispose } from 'seniman';
+import { useState, useCallback, createSequence, onDispose } from 'seniman';
 import Prism from 'prismjs';
 import loadLanguages from 'prismjs/components/index.js';
 import { lowlight } from 'lowlight/lib/common.js';
@@ -29,9 +29,7 @@ function CodeBlock(props) {
   let [language, setLanguage] = useState('');
   let [highlightTokens, setHighlightTokens] = useState(null);
 
-  let seq = new Sequence();
-  let seqCount = 0;
-
+  let seq = createSequence();
   let hasContentStarted = false;
   let prebuffer = '';
   let codeBuffer = '';
@@ -44,7 +42,7 @@ function CodeBlock(props) {
     if (token == '```') {
       // handle the case where the codeblock contents finishes without a newline
       if (!hasContentStarted && prebuffer) {
-        seq.insert(seqCount++, [prebuffer]);
+        seq.push(prebuffer);
       }
 
       // detect language using lowlight
@@ -71,7 +69,7 @@ function CodeBlock(props) {
       container.pop();
     } else if (token == '\n') {
       if (hasContentStarted) {
-        seq.insert(seqCount++, [token]);
+        seq.push(token);
         codeBuffer += token;
       } else {
         setLanguage(prebuffer);
@@ -79,7 +77,7 @@ function CodeBlock(props) {
       }
     } else {
       if (hasContentStarted) {
-        seq.insert(seqCount++, [token]);
+        seq.push(token);
         // gather codeBuffer for syntax highlighting
         codeBuffer += token;
       } else {
@@ -108,15 +106,14 @@ function CodeBlock(props) {
   );
 }
 
-function CodeSpan(props) {
-  let seq = new Sequence();
-  let seqCount = 0;
+function Codespan(props) {
 
+  let seq = createSequence();
   let firstBacktickEncountered = false;
   let container = props.container;
 
   container.onToken(token => {
-    seq.insert(seqCount++, [token]);
+    seq.push(token);
 
     if (token == '`') {
       if (firstBacktickEncountered) {
@@ -136,8 +133,7 @@ function CodeSpan(props) {
 
 function Paragraph(props) {
 
-  let seq = new Sequence();
-  let seqCount = 0;
+  let seq = createSequence();
   let isNonEmpty = false;
   let container = props.container;
 
@@ -145,17 +141,17 @@ function Paragraph(props) {
 
     if (token == '```') {
       let newContainer = container.push();
-      seq.insert(seqCount++, [<span><CodeBlock container={newContainer} /></span>]);
+      seq.push(<CodeBlock container={newContainer} />);
     } else if (token == '`') {
       let newContainer = container.push(token);
-      seq.insert(seqCount++, [<span><CodeSpan container={newContainer} /></span>]);
+      seq.push(<Codespan container={newContainer} />);
     } else if (token == '\n') {
       if (isNonEmpty) {
         container.pop();
       }
       return;
     } else {
-      seq.insert(seqCount++, [token]);
+      seq.push(token);
     }
 
     isNonEmpty = true;
@@ -170,7 +166,11 @@ function createContainer(root) {
     onTokenFn: null,
 
     onToken: (fn) => {
-      container.onTokenFn = bindScope(fn);
+
+      // use useCallback to capture the execution scope of the onToken function call
+      // so when we create child elements as the result of new tokens, they're created at 
+      // the right component scope
+      container.onTokenFn = useCallback(fn);
       root.notifyReady();
     },
 
@@ -193,8 +193,7 @@ export function Message(props) {
   let { role, tokenizer } = props;
   let [isWaiting, setIsWaiting] = useState(true);
 
-  let seq = new Sequence();
-  let seqCount = 0;
+  let seq = createSequence();
 
   let root = {
     containerStack: [],
@@ -248,7 +247,7 @@ export function Message(props) {
 
   rootContainer.onToken(token => {
     let container = rootContainer.push(token);
-    seq.insert(seqCount++, [<span><Paragraph container={container} /></span>]);
+    seq.push(<Paragraph container={container} />);
   });
 
   root.containerStack.push(rootContainer);
@@ -275,16 +274,6 @@ export function Message(props) {
       {isWaiting() ? <div>...</div> : seq}
     </div>
   </div>;
-}
-
-function bindScope(fn) {
-  let scope = getActiveScope();
-
-  return (...args) => {
-    runInScope(scope, () => {
-      fn(...args);
-    });
-  }
 }
 
 function CodeSyntaxToken(props) {
