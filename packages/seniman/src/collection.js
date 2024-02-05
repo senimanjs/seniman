@@ -1,5 +1,5 @@
 import { createSequence } from "./window.js";
-import { getActiveScope, runInScope, onDispose, useDisposableEffect, useState, useMemo, useEffect } from "./state.js";
+import { getActiveScope, runInScope, onDispose, useState } from "./state.js";
 
 export function createCollection(initialItems) {
   return new Collection(initialItems);
@@ -133,15 +133,13 @@ class Collection {
 
   notifyViewInsert(view, startIndex, items) {
 
-    let nodes = [];
-    let count = items.length;
-
     runInScope(view.scope, () => {
+
+      let count = items.length;
+      let nodes = [];
 
       // attach items initially
       for (let i = 0; i < count; i++) {
-        let [nodeRoot, nodeRootSetter] = useState(null);
-        let node = view.containerFn(nodeRoot);
         let item;
 
         if (view.tracked) {
@@ -151,15 +149,7 @@ class Collection {
           item = items[i];
         }
 
-        let disposeFn = useDisposableEffect(() => {
-          let nodeResult = view.renderFn(item, startIndex + i);
-          nodeRootSetter(nodeResult);
-        });
-
-        nodes.push(node);
-
-        // insert the dispose function at the correct index
-        view.disposeFns.splice(startIndex + i, 0, disposeFn);
+        nodes.push(view.renderFn(item));
       }
 
       view.sequence.insert(startIndex, ...nodes);
@@ -167,13 +157,6 @@ class Collection {
   }
 
   notifyViewRemoval(view, index, count) {
-    // run the dispose functions
-    for (let i = 0; i < count; i++) {
-      view.disposeFns[index + i]();
-    }
-
-    // remove the dispose functions
-    view.disposeFns.splice(index, count);
     // remove from the sequence
     view.sequence.remove(index, count);
   }
@@ -201,17 +184,10 @@ class Collection {
 
   _map(fn, { isTracked }) {
 
-    // TODO: allow containerFn to be overridden
-    let containerFn = (node) => {
-      return <span>{node()}</span>;
-    }
-
     let view = {
       renderFn: fn,
       scope: getActiveScope(),
       sequence: createSequence(),
-      disposeFns: [],
-      containerFn,
       tracked: isTracked
     };
 
