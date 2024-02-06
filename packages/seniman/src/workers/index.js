@@ -1,7 +1,7 @@
 import { createRoot } from '../window_manager.js';
 import { buildOriginCheckerFunction } from '../helpers.js';
 
-async function fetch(req, root, allowedOriginChecker) {
+export async function runFetch(req, root, allowedOriginChecker) {
   const upgradeHeader = req.headers.get("Upgrade");
   const url = req.url;
   const headers = req.headers;
@@ -54,7 +54,7 @@ export function serve(root, options = {}) {
   let allowedOriginChecker = buildOriginCheckerFunction(options.allowedOrigins);
 
   addEventListener('fetch', (event) => {
-    event.respondWith(fetch(event.request, root, allowedOriginChecker));
+    event.respondWith(runFetch(event.request, root, allowedOriginChecker));
   });
 }
 
@@ -79,7 +79,7 @@ export function createServer(root, options = {}) {
 
   return {
     fetch: async (req) => {
-      return fetch(req, root, allowedOriginChecker);
+      return runFetch(req, root, allowedOriginChecker);
     }
   }
 }
