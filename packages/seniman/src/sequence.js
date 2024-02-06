@@ -9,6 +9,8 @@ export class Sequence {
     this.disposeFns = [];
     this.onChangeFn = null;
     this.incrementingId = 1;
+
+    // TODO: add deleteBlockOnRemove option
   }
 
   onChange(fn) {
@@ -58,8 +60,6 @@ export class Sequence {
   }
 
   reset() {
-    this.onChangeFn({ type: MODIFY_REMOVE, index: 0, count: this.nodes.length });
-
-    this.nodes = [];
+    this.remove(0, this.nodes.length);
   }
 }
