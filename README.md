@@ -1,7 +1,7 @@
 # SENIMAN
 [![npm version](https://badge.fury.io/js/seniman.svg)](https://badge.fury.io/js/seniman)
 ![downloads](https://img.shields.io/npm/dm/seniman)
-[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/senimanjs.svg?style=social&label=SenimanJS)](https://twitter.com/senimanjs)
+[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/senimanjs.svg?style=social&label=Visit+SenimanJS)](https://twitter.com/senimanjs)
 
 `$ npm create seniman`
 
