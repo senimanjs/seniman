@@ -24,6 +24,10 @@ class Collection {
   subscribe(fn) {
     this.subscribeFns.push(fn);
 
+    if (this.items.length > 0) {
+      fn({ type: MODIFY_INSERT, startIndex: 0, items: this.items });
+    }
+
     return () => {
       // TODO: optimize this
       let index = this.subscribeFns.indexOf(fn);
