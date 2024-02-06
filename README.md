@@ -8,7 +8,7 @@
 ![1500x500](https://github.com/senimanjs/seniman/assets/510503/8eee96ef-09bf-422d-9fd4-dd1633c841bb)
 
 
-Seniman is a server-driven UI framework for Node.JS that allows you to execute your JSX components on the server, synchronizing the UI server state with the browser using custom binary protocol over WebSocket. With a thin ~3KB client runtime applying binary commands from the WebSocket connection, Seniman enables fast-loading, low-latency user interfaces that work without sending JavaScript UI & business logic code to the client.
+Seniman is a server-driven UI framework for Node.JS that allows you to execute your JSX components on the server, synchronizing the UI server state with the browser using streamlined binary protocol over WebSocket. With a thin ~3KB client runtime applying binary commands from the WebSocket connection, Seniman enables fast-loading, low-latency user interfaces that work without sending JavaScript UI & business logic code to the client.
 
 Here's an example of a simple counter app built with Seniman:
 
