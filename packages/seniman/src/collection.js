@@ -1,24 +1,34 @@
-import { createSequence } from "./window.js";
-import { getActiveScope, runInScope, onDispose, useState } from "./state.js";
+import { createSequence, _createComponent } from "./window.js";
+import { onDispose, useState, useCallback } from "./state.js";
 
 export function createCollection(initialItems) {
   return new Collection(initialItems);
 }
 
+const MODIFY_INSERT = 1;
+const MODIFY_REMOVE = 2;
+const MODIFY_SET = 3;
+
 class Collection {
 
   constructor(items) {
-
     if (items) {
       this.items = items.slice();
     } else {
       this.items = [];
     }
 
-    this.rootScope = getActiveScope();
-    this.isTracked = false;
-    this.trackedStates = [];
-    this.views = [];
+    this.subscribeFns = [];
+  }
+
+  subscribe(fn) {
+    this.subscribeFns.push(fn);
+
+    return () => {
+      // TODO: optimize this
+      let index = this.subscribeFns.indexOf(fn);
+      this.subscribeFns.splice(index, 1);
+    };
   }
 
   indexOf(item) {
@@ -39,15 +49,6 @@ class Collection {
 
   remove(index, count) {
     this.items.splice(index, count);
-
-    if (this.isTracked) {
-      // remove the item states
-      this.trackedStates.splice(index, count);
-    }
-
-    this.views.forEach(view => {
-      this.notifyViewRemoval(view, index, count);
-    });
   }
 
   unshift(...items) {
@@ -62,162 +63,118 @@ class Collection {
   splice(index, deletionCount, ...items) {
     this.items.splice(index, deletionCount, ...items);
 
-    if (this.isTracked) {
-
-      if (deletionCount > 0) {
-        // remove the item states
-        this.trackedStates.splice(index, deletionCount);
-      }
-
-      runInScope(this.rootScope, () => {
-        // add the new item states
-        for (let i = 0; i < items.length; i++) {
-          let item = items[i];
-          let [getter, setter] = useState(item);
-          this.trackedStates.splice(index + i, 0, { getter, setter });
-        }
+    if (deletionCount > 0) {
+      this.subscribeFns.forEach(fn => {
+        fn({ type: MODIFY_REMOVE, index, count: deletionCount });
       });
     }
 
-    this.views.forEach(view => {
-      if (deletionCount > 0) {
-        this.notifyViewRemoval(view, index, deletionCount);
-      }
-
-      this.notifyViewInsert(view, index, items);
-    });
+    if (items.length > 0) {
+      this.subscribeFns.forEach(fn => {
+        fn({ type: MODIFY_INSERT, startIndex: index, items });
+      });
+    }
   }
-
-  /*
-  swap(index1, index2) {
-
-    let item1 = this.items[index1];
-    let item2 = this.items[index2];
-    this.items[index1] = item2;
-    this.items[index2] = item1;
-
-    let itemId1 = this.itemIds[index1];
-    let itemId2 = this.itemIds[index2];
-
-    this.itemIds[index1] = itemId2;
-    this.itemIds[index2] = itemId1;
-
-    this.views.forEach(view => {
-
-      // swap the disposeFns of the views
-      let disposeFn1 = view.disposeFns[index1];
-      let disposeFn2 = view.disposeFns[index2];
-
-      view.disposeFns[index1] = disposeFn2;
-      view.disposeFns[index2] = disposeFn1;
-
-      view.sequence.swap(index1, index2);
-    });
-  }
-  */
 
   filter(fn) {
     return this.items.filter(fn);
   }
 
   reset() {
-    let itemLength = this.items.length;
-
-    this.views.forEach(view => {
-      this.notifyViewRemoval(view, 0, itemLength);
-    });
-
-    this.items = [];
-    this.itemIds = [];
+    this.splice(0, this.items.length);
   }
 
-  notifyViewInsert(view, startIndex, items) {
-
-    runInScope(view.scope, () => {
-
-      let count = items.length;
-      let nodes = [];
-
-      // attach items initially
-      for (let i = 0; i < count; i++) {
-        let item;
-
-        if (view.tracked) {
-          let { getter } = this.trackedStates[startIndex + i];
-          item = getter;
-        } else {
-          item = items[i];
-        }
-
-        nodes.push(view.renderFn(item));
-      }
-
-      view.sequence.insert(startIndex, ...nodes);
-    });
-  }
-
-  notifyViewRemoval(view, index, count) {
-    // remove from the sequence
-    view.sequence.remove(index, count);
-  }
-
-  set(index, fn) {
+  set(index, value) {
     let item = this.items[index];
-    let newItem = fn(item);
+    let newItem;
+
+    if (typeof value === 'function') {
+      newItem = value(item);
+    } else {
+      newItem = value;
+    }
 
     this.items[index] = newItem;
 
-    if (this.isTracked) {
-      let trackedState = this.trackedStates[index];
-      let { setter } = trackedState;
-      setter(newItem);
-    }
+    this.subscribeFns.forEach(fn => {
+      fn({ type: MODIFY_SET, index, item: newItem });
+    });
   }
 
   view(fn) {
-    return this._map(fn, { isTracked: false });
+    let _this = this;
+    return <_CollectionMap collection={_this} renderFn={fn} resolveState={true} />;
   }
 
   map(fn) {
-    return this._map(fn, { isTracked: true });
+    let _this = this;
+    return <_CollectionMap collection={_this} renderFn={fn} resolveState={false} />;
   }
 
-  _map(fn, { isTracked }) {
-
-    let view = {
-      renderFn: fn,
-      scope: getActiveScope(),
-      sequence: createSequence(),
-      tracked: isTracked
-    };
-
-    if (view.tracked) {
-      // if the collection itself hasn't been tracked yet
-      // then run the tracking initialization
-      if (!this.isTracked) {
-        this.isTracked = true;
-
-        runInScope(this.rootScope, () => {
-          this.trackedStates = this.items.map(item => {
-            let [getter, setter] = useState(item);
-            return { getter, setter };
-          });
-        });
-      }
+  get Loop() {
+    return (props) => {
+      return this.map(props.fn);
     }
-
-    this.views.push(view);
-
-    // handle the case where the collection already has items
-    if (this.items.length > 0) {
-      this.notifyViewInsert(view, 0, this.items);
-    }
-
-    onDispose(() => {
-      let index = this.views.indexOf(view);
-      this.views.splice(index, 1);
-    });
-
-    return view.sequence;
   }
 };
+
+/*
+<collection.Loop fn={item => {
+  return <div>{item()}</div>;
+}} />
+*/
+
+function _CollectionMap(props) {
+  let sequence = createSequence();
+  let stateSetters = [];
+  let { collection, renderFn, resolveState } = props;
+
+  let unsub = collection.subscribe(
+    useCallback(change => {
+      if (change.type === MODIFY_INSERT) {
+        let { startIndex, items } = change;
+        let nodes = [];
+
+        for (let i = 0; i < items.length; i++) {
+          let item = items[i];
+
+          let stateSetterContainer = {
+            setter: null
+          };
+
+          let component = _createComponent((props) => {
+            let [state, setState] = useState(item);
+            stateSetterContainer.setter = setState;
+
+            if (resolveState) {
+              return renderFn(state());
+            } else {
+              return renderFn(state);
+            }
+          });
+
+          nodes.push(component);
+          stateSetters.splice(startIndex + i, 0, stateSetterContainer);
+        }
+
+        sequence.insert(startIndex, ...nodes);
+      } else if (change.type === MODIFY_REMOVE) {
+        let { index, count } = change;
+
+        sequence.remove(index, count);
+        stateSetters.splice(index, count);
+      } else if (change.type === MODIFY_SET) {
+        let { index, item } = change;
+
+        let stateSetter = stateSetters[index].setter;
+        stateSetter(item);
+      }
+    })
+  );
+
+  onDispose(() => {
+    unsub();
+  });
+
+  return sequence;
+}
