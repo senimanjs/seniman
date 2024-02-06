@@ -53,6 +53,9 @@ function ChatStream() {
   // listen to incoming new message ids
   const unsubNewMessageId = chatService.listenNewMessageId((id) => {
     messageIdCollection.push(id);
+
+    // scroll to bottom
+    client.exec(scrollToBottomClientFn);
   });
 
   // make sure to unsubscribe when client disconnects
@@ -82,8 +85,6 @@ function ChatStream() {
   let onSubmit = createHandler(async (value) => {
     await chatService.submitMessage(getUsername(), value);
 
-    // scroll to bottom
-    client.exec(scrollToBottomClientFn);
   });
 
   let scrollToBottomClientFn = $c(() => {

@@ -13,5 +13,5 @@ function App(props) {
   );
 }
 
-let root = createRoot(() => <App name={"Eka"} />);
+let root = createRoot(() => <App name={"Dunia"} />);
 serve(root, 3002);

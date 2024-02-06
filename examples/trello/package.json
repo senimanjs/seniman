@@ -15,6 +15,6 @@
   },
   "dependencies": {
     "immer": "^10.0.3",
-    "seniman": "^0.0.163"
+    "seniman": "^0.0.164"
   }
 }
