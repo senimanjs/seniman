@@ -1355,7 +1355,7 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
         */
 
         let propExpressionType = propExpression.type;
-        let isStaticExpression = propExpressionType == 'Identifier' || propExpressionType == 'StringLiteral' || propExpressionType == 'NumericLiteral';
+        let isStaticExpression = propExpressionType == 'StringLiteral' || propExpressionType == 'NumericLiteral' || propExpressionType == 'BooleanLiteral';
 
         if (isStaticExpression || propExpressionType == 'ArrowFunctionExpression') {
           return {
