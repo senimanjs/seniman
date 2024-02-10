@@ -19,6 +19,11 @@ class Collection {
     }
 
     this.subscribeFns = [];
+
+    let [lengthState, setLengthState] = useState(this.items.length);
+
+    this.lengthState = lengthState;
+    this.setLengthState = setLengthState;
   }
 
   subscribe(fn) {
@@ -67,6 +72,8 @@ class Collection {
   splice(index, deletionCount, ...items) {
     this.items.splice(index, deletionCount, ...items);
 
+    this.setLengthState(this.items.length);
+
     if (deletionCount > 0) {
       this.subscribeFns.forEach(fn => {
         fn({ type: MODIFY_REMOVE, index, count: deletionCount });
@@ -103,6 +110,10 @@ class Collection {
     this.subscribeFns.forEach(fn => {
       fn({ type: MODIFY_SET, index, item: newItem });
     });
+  }
+
+  size() {
+    return this.lengthState();
   }
 
   view(fn) {
@@ -150,11 +161,13 @@ function _CollectionMap(props) {
             let [state, setState] = useState(item);
             stateSetterContainer.setter = setState;
 
-            if (resolveState) {
-              return renderFn(state());
-            } else {
-              return renderFn(state);
-            }
+            return () => {
+              if (resolveState) {
+                return renderFn(state());
+              } else {
+                return renderFn(state);
+              }
+            };
           });
 
           nodes.push(component);
