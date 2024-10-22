@@ -380,117 +380,111 @@ function ProductDetailPage() {
   let [product, setProduct] = useState(null);
   let [relatedProducts, setRelatedProducts] = useState([]);
   let [cartStatus, setCartStatus] = useState('idle'); // 'idle' | 'loading' | 'added'
-  let [imageLoaded, setImageLoaded] = useState(false);
   let cart = useCart();
-
+  
   let productId = useMemo(() => {
-    let path = client.location.pathname();
-    return path.split("/")[2]; // Gets the ID from /product/:id
+      let path = client.location.pathname();
+      return path.split("/")[2]; // Gets the ID from /product/:id
   });
 
   useEffect(async () => {
-    let _productId = productId();
-    let productData = await loadProductData(_productId);
-    setProduct(productData);
-    setCartStatus('idle');
-    setImageLoaded(false);
-
-    if (productData) {
-      const related = await loadRelatedProducts(_productId);
-      setRelatedProducts(related);
-    }
+      let _productId = productId();
+      let productData = await loadProductData(_productId);
+      setProduct(productData);
+      setCartStatus('idle');
+      
+      if (productData) {
+          const related = await loadRelatedProducts(_productId);
+          setRelatedProducts(related);
+      }
   });
 
   const handleAddToCart = async () => {
-    setCartStatus('loading');
-    try {
-      await cart.addItem(product());
-      setCartStatus('added');
-    } catch (error) {
-      console.error('Failed to add item to cart:', error);
-      setCartStatus('idle');
-    }
+      setCartStatus('loading');
+      try {
+          await cart.addItem(product());
+          setCartStatus('added');
+      } catch (error) {
+          console.error('Failed to add item to cart:', error);
+          setCartStatus('idle');
+      }
   };
 
   onDispose(() => {
-    console.log('Leaving product page');
+      console.log('Leaving product page');
   });
 
   return () => {
-    if (!product()) {
-      return <div>Loading product...</div>;
-    }
+      if (!product()) {
+          return <div>Loading product...</div>;
+      }
 
-    return <div>
-      <h1 class="text-2xl mb-5 text-gray-900">{product().name}</h1>
-      <div class="flex mb-10">
-        <div class="relative w-96 h-96 bg-gray-100 rounded mr-8 overflow-hidden">
-          {!imageLoaded() && (
-            <div class="absolute inset-0 flex items-center justify-center">
-              <div class="w-8 h-8 border-4 border-green-700 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          )}
-          <img
-            src={getProductUrl(product(), 512)}
-            alt={product().name}
-            onLoad={() => setImageLoaded(true)}
-            class={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded() ? 'opacity-100' : 'opacity-0'
-              }`}
-          />
-        </div>
-        <div>
-          <p class="text-gray-700 mb-4">{product().description}</p>
-          <p class="text-2xl font-bold mb-4 text-gray-900">${product().price.toFixed(2)}</p>
-          <div>
-            <button
-              onClick={handleAddToCart}
-              disabled={cartStatus() === 'loading'}
-              class={`bg-green-700 text-white px-4 py-2 rounded ${cartStatus() === 'loading' ? 'opacity-75 cursor-not-allowed' : 'hover:bg-green-600'
-                }`}
-            >
-              {cartStatus() === 'added' ? 'Add Again' : 'Add to Cart'}
-            </button>
-            <p class={`mt-2 ${cartStatus() === 'loading' ? 'text-gray-500' :
-                cartStatus() === 'added' ? 'text-green-700' : ''
-              }`}>
-              {cartStatus() === 'loading' ? 'Adding to cart...' :
-                cartStatus() === 'added' ? 'Added to cart' : ''}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {relatedProducts().length > 0 && (
-        <section>
-          <h2 class="text-xl mb-5 text-gray-900">Related Products</h2>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {relatedProducts().map(relatedProduct => (
-              <Anchor
-                href={`/product/${relatedProduct.id}`}
-                class="block bg-white border rounded p-4 hover:border-green-700 no-underline transition-colors"
-              >
-                <div class="flex items-start mb-3">
-                  <div class="w-12 h-12 bg-gray-100 rounded mr-3 overflow-hidden">
-                    <img
-                      src={getProductUrl(relatedProduct, 128)}
-                      alt={relatedProduct.name}
+      return <div>
+          <h1 class="text-2xl mb-5 text-gray-900">{product().name}</h1>
+          <div class="flex mb-10">
+              <div class="w-96 h-96 bg-gray-100 rounded mr-8">
+                  <img 
+                      src={getProductUrl(product(), 512)}
+                      alt={product().name}
                       class="w-full h-full object-cover"
-                    />
+                  />
+              </div>
+              <div>
+                  <p class="text-gray-700 mb-4">{product().description}</p>
+                  <p class="text-2xl font-bold mb-4 text-gray-900">${product().price.toFixed(2)}</p>
+                  <div>
+                      <button 
+                          onClick={handleAddToCart}
+                          disabled={cartStatus() === 'loading'}
+                          class={`bg-green-700 text-white px-4 py-2 rounded ${
+                              cartStatus() === 'loading' ? 'opacity-75 cursor-not-allowed' : 'hover:bg-green-600'
+                          }`}
+                      >
+                          {cartStatus() === 'added' ? 'Add Again' : 'Add to Cart'}
+                      </button>
+                      <p class={`mt-2 ${
+                          cartStatus() === 'loading' ? 'text-gray-500' : 
+                          cartStatus() === 'added' ? 'text-green-700' : ''
+                      }`}>
+                          {cartStatus() === 'loading' ? 'Adding to cart...' :
+                              cartStatus() === 'added' ? 'Added to cart' : ''}
+                      </p>
                   </div>
-                  <h3 class="text-sm font-medium text-gray-900">{relatedProduct.name}</h3>
-                </div>
-                <p class="text-sm text-gray-600">{relatedProduct.description}</p>
-                <p class="text-sm text-green-700 mt-2">
-                  ${relatedProduct.price.toFixed(2)}
-                </p>
-              </Anchor>
-            ))}
+              </div>
           </div>
-        </section>
-      )}
-    </div>;
+
+          {relatedProducts().length > 0 && (
+              <section>
+                  <h2 class="text-xl mb-5 text-gray-900">Related Products</h2>
+                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {relatedProducts().map(relatedProduct => (
+                          <Anchor 
+                              href={`/product/${relatedProduct.id}`}
+                              class="block bg-white border rounded p-4 hover:border-green-700 no-underline transition-colors"
+                          >
+                              <div class="flex items-start mb-3">
+                                  <div class="w-12 h-12 bg-gray-100 rounded mr-3">
+                                      <img 
+                                          src={getProductUrl(relatedProduct, 128)}
+                                          alt={relatedProduct.name}
+                                          class="w-full h-full object-cover"
+                                      />
+                                  </div>
+                                  <h3 class="text-sm font-medium text-gray-900">{relatedProduct.name}</h3>
+                              </div>
+                              <p class="text-sm text-gray-600">{relatedProduct.description}</p>
+                              <p class="text-sm text-green-700 mt-2">
+                                  ${relatedProduct.price.toFixed(2)}
+                              </p>
+                          </Anchor>
+                      ))}
+                  </div>
+              </section>
+          )}
+      </div>;
   }
 }
+
 
 function CategoryPage() {
   let client = useClient();
