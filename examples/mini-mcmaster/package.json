@@ -1,0 +1,21 @@
+{
+  "name": "mcmaster-seniman",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "type": "module",
+  "license": "ISC",
+  "dependencies": {
+    "replicate": "^1.0.1",
+    "seniman": "^0.0.168",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.25.7",
+    "@babel/plugin-syntax-jsx": "^7.25.7"
+  }
+}
