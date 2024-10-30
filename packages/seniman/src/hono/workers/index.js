@@ -11,6 +11,6 @@ export function wrapHono(app, root, options = {}) {
   app.get('*', async (c) => {
     let req = c.req;
 
-    return runFetch(req, root, allowedOriginChecker);
+    return runFetch(req, null, root, allowedOriginChecker);
   });
 }
