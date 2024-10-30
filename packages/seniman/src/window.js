@@ -41,6 +41,7 @@ const eventTypeNameMap = {
   20: 'mousemove',
   21: 'mousedown',
   22: 'mouseup',
+  23: 'submit',
 };
 
 // TODO: use a LRU cache
@@ -193,10 +194,12 @@ let _allocatedWindowId = 1;
 
 export class Window {
 
-  constructor(windowManager, pageParams, rootFn, bufferFn) {
+  constructor(windowManager, pageParams, auxContext, rootFn, bufferFn) {
     this.windowManager = windowManager;
 
     this.pageParams = pageParams;
+    this.auxContext = auxContext;
+
     this.id = _allocatedWindowId++;
 
     this.destroyFnCallback = null;
@@ -433,9 +436,15 @@ export class Window {
 
       let headSequence = createSequence();
 
-      getActiveNode().context = {
+      let rootContext ={
         [HeadContext.id]: createHeadContextValue(headSequence)
       };
+      
+      if (this.auxContext) {
+        Object.assign(rootContext, this.auxContext);
+      }
+
+      getActiveNode().context = rootContext;
 
       this._attach(1, 0, headSequence);
 
@@ -1109,6 +1118,9 @@ export class Window {
         if (serverBindFns instanceof Function) {
           serverBindFns = untrack(() => serverBindFns());
         }
+
+        // TODO: allow unwrapped functions on $c contexts passed to eventHandlers (and onMount)
+
         this._streamFunctionInstallCommand(clientFnId);
         this._streamModuleInstallCommand(serverBindFns);
         this._streamRunLifecycleCommand(blockId, targetId, clientFnId, serverBindFns);
@@ -1225,6 +1237,9 @@ export class Window {
         if (serverBindFns instanceof Function) {
           serverBindFns = untrack(() => serverBindFns());
         }
+
+        // TODO: allow unwrapped functions on $c contexts passed to eventHandlers (and onMount)
+
         this._streamFunctionInstallCommand(clientFnId);
         this._streamModuleInstallCommand(serverBindFns);
         this._streamEventInitCommandV2(newBlockId, eventHandler.targetId, eventHandler.type, clientFnId, serverBindFns);

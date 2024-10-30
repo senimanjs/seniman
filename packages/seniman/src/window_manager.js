@@ -113,7 +113,7 @@ class Root {
     enqueueWindowInput(windowId, inputBuffer);
   }
 
-  applyNewConnection(ws, { url, headers, ipAddress }) {
+  applyNewConnection(ws, { url, headers, ipAddress }, auxContext) {
 
     let params = new URLSearchParams(url.split('?')[1]);
 
@@ -163,14 +163,14 @@ class Root {
     } else {
       let externalWindowId = nanoid();
       pageParams.windowId = externalWindowId;
-      this.initWindow(ws, pageParams);
+      this.initWindow(ws, pageParams, auxContext);
     }
   }
 
-  initWindow(ws, pageParams) {
+  initWindow(ws, pageParams, auxContext) {
 
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
-    let window = new Window(this, pageParams, this.rootFn, buf => {
+    let window = new Window(this, pageParams, auxContext, this.rootFn, buf => {
       ws.send(buf);
     });
 
@@ -287,7 +287,7 @@ class Root {
 
     let htmlRenderContext = this.crawlerRenderer.createHtmlRenderingContext();
 
-    let window = new Window(this, pageParams, this.rootFn, buf => {
+    let window = new Window(this, pageParams, auxContext, this.rootFn, buf => {
       htmlRenderContext.feedBuffer(buf);
     });
 

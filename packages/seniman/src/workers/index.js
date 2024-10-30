@@ -1,7 +1,14 @@
 import { createRoot } from '../window_manager.js';
+import { createContext, useContext } from '../state.js';
 import { buildOriginCheckerFunction } from '../helpers.js';
 
-export async function runFetch(req, root, allowedOriginChecker) {
+const EnvContext = createContext();
+
+export function useEnv() {
+  return useContext(EnvContext);
+}
+
+export async function runFetch(req, env, root, allowedOriginChecker) {
   const upgradeHeader = req.headers.get("Upgrade");
   const url = req.url;
   const headers = req.headers;
@@ -34,7 +41,9 @@ export async function runFetch(req, root, allowedOriginChecker) {
       }
     };
 
-    root.applyNewConnection(ws, { url, headers, ipAddress });
+    let auxContext = !!env ? { [EnvContext.id]: env } : null;
+
+    root.applyNewConnection(ws, { url, headers, ipAddress }, auxContext);
 
     return new Response(null, { status: 101, webSocket: client })
   } else {
@@ -54,7 +63,7 @@ export function serve(root, options = {}) {
   let allowedOriginChecker = buildOriginCheckerFunction(options.allowedOrigins);
 
   addEventListener('fetch', (event) => {
-    event.respondWith(runFetch(event.request, root, allowedOriginChecker));
+    event.respondWith(runFetch(event.request, null, root, allowedOriginChecker));
   });
 }
 
@@ -78,8 +87,8 @@ export function createServer(root, options = {}) {
   let allowedOriginChecker = buildOriginCheckerFunction(options.allowedOrigins);
 
   return {
-    fetch: async (req) => {
-      return runFetch(req, root, allowedOriginChecker);
+    fetch: async (req, env) => {
+      return runFetch(req, env, root, allowedOriginChecker);
     }
   }
 }
