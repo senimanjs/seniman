@@ -9,8 +9,6 @@ if (pageSize != DEFAULT_PAGE_SIZE) {
 // Seniman page size in bytes
 export const PAGE_SIZE = pageSize;
 
-Buffer.poolSize = PAGE_SIZE * 2;
-
 const reuseBufferQueue = [];
 
 export const bufferPool = {
