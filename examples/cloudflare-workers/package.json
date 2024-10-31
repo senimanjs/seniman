@@ -9,6 +9,6 @@
   },
   "type": "module",
   "dependencies": {
-    "seniman": "^0.0.169"
+    "seniman": "^0.0.171"
   }
 }

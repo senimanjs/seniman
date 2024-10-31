@@ -1,4 +1,4 @@
 name = "seniman-mcmaster"
 main = "dist/index.js"
-compatibility_date = "2023-11-21"
-node_compat = true
+compatibility_flags = [ "nodejs_compat" ]
+compatibility_date = "2024-09-23"

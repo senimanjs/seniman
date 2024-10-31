@@ -11,7 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "replicate": "^1.0.1",
-    "seniman": "^0.0.168",
+    "seniman": "^0.0.171",
     "sharp": "^0.33.5"
   },
   "devDependencies": {

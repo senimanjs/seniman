@@ -1,5 +1,5 @@
 import { useState, useClient, useMemo, createRef, createHandler, useEffect, onDispose, Anchor, createRoot, createContext, useContext } from 'seniman';
-import { serve } from 'seniman/workers';
+import { createServer, useEnv } from 'seniman/workers';
 import { Style } from 'seniman/head';
 import {
   products,
@@ -569,6 +569,8 @@ function App() {
     }
   });
 
+  let env = useEnv();
+
   return <div>
     <Style text={cssText} />
     <CartContext.Provider value={cart}>
@@ -605,4 +607,5 @@ function App() {
 }
 
 let root = createRoot(App);
-serve(root);
+
+export default createServer(root);
