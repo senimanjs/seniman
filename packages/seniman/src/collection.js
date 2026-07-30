@@ -16,6 +16,8 @@ const MODIFY_INSERT = 1;
 const MODIFY_REMOVE = 2;
 const MODIFY_SET = 3;
 const MODIFY_SPLICE = 4;
+const SUBSCRIBE_CHANGES = Symbol();
+const changeSubscribers = new WeakMap();
 
 class Collection {
 
@@ -27,7 +29,7 @@ class Collection {
     }
 
     this.subscribeFns = [];
-    this.spliceSubscribeFns = [];
+    changeSubscribers.set(this, []);
 
     let [lengthState, setLengthState] = useState(this.items.length);
 
@@ -49,8 +51,9 @@ class Collection {
     };
   }
 
-  subscribeSplices(fn) {
-    this.spliceSubscribeFns.push(fn);
+  [SUBSCRIBE_CHANGES](fn) {
+    let subscribers = changeSubscribers.get(this);
+    subscribers.push(fn);
 
     if (this.items.length > 0) {
       fn({
@@ -62,8 +65,10 @@ class Collection {
     }
 
     return () => {
-      let index = this.spliceSubscribeFns.indexOf(fn);
-      this.spliceSubscribeFns.splice(index, 1);
+      let index = subscribers.indexOf(fn);
+      if (index >= 0) {
+        subscribers.splice(index, 1);
+      }
     };
   }
 
@@ -101,7 +106,7 @@ class Collection {
 
     this.setLengthState(this.items.length);
 
-    this.spliceSubscribeFns.forEach(fn => {
+    changeSubscribers.get(this).forEach(fn => {
       fn({
         type: MODIFY_SPLICE,
         index,
@@ -143,7 +148,7 @@ class Collection {
 
     this.items[index] = newItem;
 
-    this.spliceSubscribeFns.forEach(fn => {
+    changeSubscribers.get(this).forEach(fn => {
       fn({ type: MODIFY_SET, index, item: newItem });
     });
 
@@ -318,7 +323,7 @@ function _CollectionMap(props) {
 
   processNextChangeInScope = useCallback(processNextChange);
 
-  let unsub = collection.subscribeSplices(
+  let unsub = collection[SUBSCRIBE_CHANGES](
     useCallback(change => {
       pendingChanges.push(change);
       processNextChangeInScope();
