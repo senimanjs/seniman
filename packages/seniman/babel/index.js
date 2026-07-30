@@ -35,6 +35,9 @@ const eventTypeIdMap = {
   'onMouseMove': 20,
   'onMouseDown': 21,
   'onMouseUp': 22,
+  'onSubmit': 23,
+  'onPaste': 24,
+  'onWheel': 25
 };
 
 const lifecycleTypeIdMap = {
@@ -380,6 +383,11 @@ function processProgram(path) {
       }
 
     } else if (node.type == 'JSXExpressionContainer') {
+
+      // Ignore JSX comments like { /* ... */ }
+      if (node.expression && node.expression.type == 'JSXEmptyExpression') {
+        return null;
+      }
 
       let anchorExpression = process(node.expression);
 
@@ -901,6 +909,14 @@ function _buildStyleConditionValueExpression(cond) {
   }
 
   let condition = cond.condition;
+
+  if (condition.type == 'ArrowFunctionExpression' || condition.type == 'FunctionExpression') {
+    return {
+      type: 'CallExpression',
+      callee: condition,
+      arguments: []
+    };
+  }
 
   // TODO: handle style creations that are not in the static compression map
 
@@ -1517,6 +1533,13 @@ function _cleanChildren(children) {
 
     if (childNode.type == 'JSXText') {
       return childNode.value != '';
+    }
+
+    // Drop JSX comments in children: { /* ... */ }
+    if (childNode.type == 'JSXExpressionContainer' &&
+      childNode.expression &&
+      childNode.expression.type == 'JSXEmptyExpression') {
+      return false;
     }
 
     return true;

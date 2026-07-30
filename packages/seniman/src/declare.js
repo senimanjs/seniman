@@ -165,7 +165,19 @@ function getTemplateBuffer(rootElement, tokens) {
       tokens.push(tagName);
     }
 
-    return indexOf + 1;
+    let id = indexOf + 1;
+
+    // Tag IDs are encoded into 6 bits in the template buffer (max 63).
+    if (id > 63) {
+      throw new Error(
+        `Seniman template limit reached: this block uses more than 63 unique tokens before/including tag "${tagName}". ` +
+        `Template tag IDs are 6-bit encoded, so tag IDs above 63 will corrupt the DOM. ` +
+        `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component ` +
+        `to reduce per-block token variety.`
+      );
+    }
+
+    return id;
   }
 
   function dig(siblings) {
@@ -451,6 +463,22 @@ function getElscriptBuffer(rootElement) {
   }
 
   prune();
+
+  // ELSCRIPT uses uint8 indices with 255 reserved as a sentinel.
+  if (_els.length > 255) {
+    throw new Error(
+      `Seniman template limit reached: this block needs more than 255 referenceable elements. ` +
+      `ELSCRIPT indices are 8-bit with 255 reserved, so indices above 254 will corrupt anchors/targets. ` +
+      `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.`
+    );
+  }
+
+  if (_anchors.length > 255 || _targets.length > 255) {
+    throw new Error(
+      `Seniman template limit reached: this block has too many anchors/targets for 8-bit ELSCRIPT encoding. ` +
+      `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.`
+    );
+  }
 
   return _createElScriptBuffer(_els, _anchors, _targets);
 }

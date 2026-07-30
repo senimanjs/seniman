@@ -40,7 +40,7 @@ export class Sequence {
   }
 
   push(...items) {
-    this.insert(this.nodes.length, ...items);
+    return this.insert(this.nodes.length, ...items);
   }
 
   insert(index, ...items) {
@@ -57,6 +57,7 @@ export class Sequence {
     });
 
     this.incrementingId += items.length;
+    return startItemId;
   }
 
   reset() {

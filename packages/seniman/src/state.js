@@ -249,7 +249,13 @@ function _writeInputCommand(windowId, size) {
   let { buffer, offset } = windowInputEntry;
 
   if (offset + size > buffer.length) {
-    throw new Error(`short buffer overflow, size: ${size}, offset: ${offset}, buffer length: ${buffer.length}`);
+    let nextBuffer = Buffer.allocUnsafe(
+      Math.max(buffer.length * 2, offset + size)
+    );
+
+    buffer.copy(nextBuffer, 0, 0, offset);
+    windowInputEntry.buffer = nextBuffer;
+    buffer = nextBuffer;
   }
 
   let commandBuffer = buffer.subarray(offset, offset + size);

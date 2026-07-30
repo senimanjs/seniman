@@ -42,6 +42,8 @@ const eventTypeNameMap = {
   21: 'mousedown',
   22: 'mouseup',
   23: 'submit',
+  24: 'paste',
+  25: 'wheel',
 };
 
 // TODO: use a LRU cache
@@ -137,6 +139,7 @@ function WindowResizeListener(props) {
   });
 
   client.exec($c(() => {
+    let lastViewportSize = '';
     let throttle = (func, delay) => {
       let lastCall = 0;
       let timeoutId;
@@ -159,9 +162,32 @@ function WindowResizeListener(props) {
       };
     }
 
-    window.addEventListener('resize', throttle(() => {
-      $s(onResize)(window.innerWidth, window.innerHeight);
-    }, 500));
+    let reportViewportSize = throttle(() => {
+      let viewport = window.visualViewport;
+      let width = Math.floor(
+        viewport ? viewport.width : window.innerWidth
+      );
+      let height = Math.floor(
+        viewport ? viewport.height : window.innerHeight
+      );
+      let viewportSize = `${width}x${height}`;
+
+      if (viewportSize === lastViewportSize) {
+        return;
+      }
+      lastViewportSize = viewportSize;
+      $s(onResize)(width, height);
+    }, 120);
+
+    window.addEventListener('resize', reportViewportSize, {
+      passive: true
+    });
+    window.visualViewport && window.visualViewport.addEventListener(
+      'resize',
+      reportViewportSize,
+      { passive: true }
+    );
+    reportViewportSize();
   }));
 }
 
@@ -189,6 +215,7 @@ const CMD_SEQUENCE_REMOVE_ITEMS = 19;
 const pingBuffer = Buffer.from([0]);
 const scratchBuffer = Buffer.alloc(32768);
 const DELETE_BLOCK_BUFFER_SIZE = 2048;
+const MAX_BLOCK_ID = 0x7fff;
 
 let _allocatedWindowId = 1;
 
@@ -216,10 +243,14 @@ export class Window {
     this._streamInitWindow();
 
     this.latestBlockId = 10;
+    this.freeBlockIds = new Uint16Array(MAX_BLOCK_ID + 1);
+    this.freeBlockIdCount = 0;
 
     // reuse the same buffer for all block delete commands
     this.deleteBlockCommandBuffer = Buffer.alloc(DELETE_BLOCK_BUFFER_SIZE * 2);
     this.deleteBlockCount = 0;
+    this.deleteBlockFlushTimer = null;
+    this.destroyed = false;
 
     this.clientTemplateInstallationSet = new Set();
     this.clientFunctionInstallationSet = new Set();
@@ -559,6 +590,9 @@ export class Window {
   }
 
   _handleBlockCleanup(blockId) {
+    if (this.destroyed) {
+      return;
+    }
 
     // if the buffer is full, send it
     if (this.deleteBlockCount == DELETE_BLOCK_BUFFER_SIZE) {
@@ -567,6 +601,30 @@ export class Window {
 
     this.deleteBlockCommandBuffer.writeUInt16BE(blockId, this.deleteBlockCount * 2);
     this.deleteBlockCount++;
+
+    if (this.deleteBlockFlushTimer === null) {
+      this.deleteBlockFlushTimer = setTimeout(() => {
+        this.deleteBlockFlushTimer = null;
+        this.flushBlockDeleteQueue();
+      }, 0);
+    }
+  }
+
+  _recycleBlockIds(buffer, count) {
+    for (let index = 0; index < count; index++) {
+      let blockId = buffer.readUInt16BE(index * 2);
+
+      if (blockId <= 10 || blockId > MAX_BLOCK_ID) {
+        throw new Error(`Cannot recycle invalid Seniman block ID ${blockId}`);
+      }
+
+      if (this.freeBlockIdCount >= this.freeBlockIds.length) {
+        throw new Error('Seniman block ID free pool overflow');
+      }
+
+      this.freeBlockIds[this.freeBlockIdCount] = blockId;
+      this.freeBlockIdCount++;
+    }
   }
 
   emergencyFlushBlockDeleteQueue() {
@@ -582,6 +640,10 @@ export class Window {
     // the ping loop automatically flushes it
     // TODO: introduce custom delete buffer size so apps that need it can increase it to avoid this path
     setTimeout(() => {
+      if (this.destroyed) {
+        return;
+      }
+
       let buf = this._allocCommandBuffer(1 + 2 * deleteBlockCount + 2);
 
       buf.writeUInt8(CMD_REMOVE_BLOCKS, 0);
@@ -591,23 +653,36 @@ export class Window {
 
       // write the end marker
       buf.writeUInt16BE(0, 1 + 2 * deleteBlockCount);
+
+      this._recycleBlockIds(tempBuffer, deleteBlockCount);
     }, 0);
 
     this.deleteBlockCount = 0;
   }
 
   flushBlockDeleteQueue() {
-    let buf = this._allocCommandBuffer(1 + 2 * this.deleteBlockCount + 2);
+    if (this.destroyed) {
+      this.deleteBlockCount = 0;
+      return;
+    }
+
+    let deleteBlockCount = this.deleteBlockCount;
+    if (deleteBlockCount === 0) {
+      return;
+    }
+
+    let buf = this._allocCommandBuffer(1 + 2 * deleteBlockCount + 2);
 
     buf.writeUInt8(CMD_REMOVE_BLOCKS, 0);
 
     // copy over the block ids
-    this.deleteBlockCommandBuffer.copy(buf, 1, 0, this.deleteBlockCount * 2);
+    this.deleteBlockCommandBuffer.copy(buf, 1, 0, deleteBlockCount * 2);
 
     // write the end marker
-    buf.writeUInt16BE(0, 1 + 2 * this.deleteBlockCount);
+    buf.writeUInt16BE(0, 1 + 2 * deleteBlockCount);
 
     this.deleteBlockCount = 0;
+    this._recycleBlockIds(this.deleteBlockCommandBuffer, deleteBlockCount);
   }
 
   registerPong(pongBuffer) {
@@ -729,6 +804,13 @@ export class Window {
   }
 
   destroy() {
+    if (this.destroyed) {
+      return;
+    }
+    this.destroyed = true;
+
+    clearTimeout(this.deleteBlockFlushTimer);
+    this.deleteBlockFlushTimer = null;
     this.rootDisposer();
 
     // give time for the root disposer tree to complete run
@@ -740,7 +822,6 @@ export class Window {
     this.reconnectionId = 0;
 
     clearTimeout(this.postScriptTimeout);
-
     // return active pages' buffers to the pool
     this.pages.forEach(page => {
       bufferPool.returnBuffer(page.buffer);
@@ -1022,8 +1103,18 @@ export class Window {
   }
 
   _createBlockId() {
-    this.latestBlockId++;
+    if (this.freeBlockIdCount > 0) {
+      this.freeBlockIdCount--;
+      return this.freeBlockIds[this.freeBlockIdCount];
+    }
 
+    if (this.latestBlockId >= MAX_BLOCK_ID) {
+      throw new Error(
+        `Seniman block ID pool exhausted (${MAX_BLOCK_ID - 10} live or pending IDs)`
+      );
+    }
+
+    this.latestBlockId++;
     return this.latestBlockId;
   }
 
@@ -1119,7 +1210,15 @@ export class Window {
           serverBindFns = untrack(() => serverBindFns());
         }
 
-        // TODO: allow unwrapped functions on $c contexts passed to eventHandlers (and onMount)
+        // Raw server functions captured by an onMount client function are
+        // shorthand for lifecycle-owned handlers.
+        if (Array.isArray(serverBindFns)) {
+          serverBindFns = serverBindFns.map((value) =>
+            typeof value === 'function'
+              ? this._allocateHandler(value)
+              : value
+          );
+        }
 
         this._streamFunctionInstallCommand(clientFnId);
         this._streamModuleInstallCommand(serverBindFns);
@@ -1238,7 +1337,15 @@ export class Window {
           serverBindFns = untrack(() => serverBindFns());
         }
 
-        // TODO: allow unwrapped functions on $c contexts passed to eventHandlers (and onMount)
+        // Raw server functions captured by a client event function are
+        // shorthand for lifecycle-owned handlers.
+        if (Array.isArray(serverBindFns)) {
+          serverBindFns = serverBindFns.map((value) =>
+            typeof value === 'function'
+              ? this._allocateHandler(value)
+              : value
+          );
+        }
 
         this._streamFunctionInstallCommand(clientFnId);
         this._streamModuleInstallCommand(serverBindFns);
@@ -1543,6 +1650,27 @@ export class Window {
     }
   }
 
+  _resolveNodeResult(nodeResult, onValue) {
+    if (nodeResult && nodeResult.constructor === Component) {
+      useEffect(() => {
+        this._resolveNodeResult(
+          nodeResult.fn(nodeResult.props),
+          onValue
+        );
+      });
+      return;
+    }
+
+    if (nodeResult instanceof Function) {
+      useEffect(() => {
+        this._resolveNodeResult(nodeResult(), onValue);
+      });
+      return;
+    }
+
+    onValue(nodeResult);
+  }
+
   _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects, elementRefs, lifecycles) {
 
     let newBlockId = this._createBlockId();
@@ -1748,6 +1876,10 @@ function Component(fn, props) {
 
 export function _createComponent(componentFunction, props) {
   return new Component(componentFunction, props);
+}
+
+export function _resolveNodeResult(nodeResult, onValue) {
+  return getActiveWindow()._resolveNodeResult(nodeResult, onValue);
 }
 
 export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffects, refs, lifecycles) {
