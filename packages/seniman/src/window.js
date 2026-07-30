@@ -1543,6 +1543,27 @@ export class Window {
     }
   }
 
+  _resolveNodeResult(nodeResult, onValue) {
+    if (nodeResult && nodeResult.constructor === Component) {
+      useEffect(() => {
+        this._resolveNodeResult(
+          nodeResult.fn(nodeResult.props),
+          onValue
+        );
+      });
+      return;
+    }
+
+    if (nodeResult instanceof Function) {
+      useEffect(() => {
+        this._resolveNodeResult(nodeResult(), onValue);
+      });
+      return;
+    }
+
+    onValue(nodeResult);
+  }
+
   _createBlock3(blockTemplateId, anchors, eventHandlers, elementEffects, elementRefs, lifecycles) {
 
     let newBlockId = this._createBlockId();
@@ -1748,6 +1769,10 @@ function Component(fn, props) {
 
 export function _createComponent(componentFunction, props) {
   return new Component(componentFunction, props);
+}
+
+export function _resolveNodeResult(nodeResult, onValue) {
+  return getActiveWindow()._resolveNodeResult(nodeResult, onValue);
 }
 
 export function _createBlock(blockTemplateId, anchors, eventHandlers, styleEffects, refs, lifecycles) {

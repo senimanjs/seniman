@@ -224,6 +224,13 @@ function _removeNodeSubtree(nodeId) {
   for (let i = 0; i < childrenCount; i++) {
     let childNodeId = children[i];
     let childNode = ActiveWindow.nodeMap.get(childNodeId);
+
+    // A descendant can already be expired when its own disposer and an
+    // ancestor disposer are processed in the same scheduler batch.
+    if (!childNode || childNode.updateState === NODE_EXPIRED) {
+      continue;
+    }
+
     let isEffect = childNodeId % 2 == 0;
 
     childNode.updateState = NODE_EXPIRED;
@@ -315,6 +322,13 @@ export function scheduler_calculateWorkBatch() {
     let [parentId, nodeId] = disposeList.pop();
     let node = ActiveWindow.nodeMap.get(nodeId);
 
+    // Disposal requests may overlap: deleting an ancestor expires its entire
+    // subtree, including descendants which already have explicit disposers in
+    // this batch. Only the first path owns the scheduler cleanup.
+    if (!node || node.updateState === NODE_EXPIRED) {
+      continue;
+    }
+
     _removeNodeSubtree(nodeId);
 
     node.updateState = NODE_EXPIRED;
@@ -323,9 +337,11 @@ export function scheduler_calculateWorkBatch() {
     if (parentId > 0) {
       // remove from the parent's children list
       let children = ActiveWindow.childrenListMap.get(parentId);
-      let index = children.indexOf(nodeId);
+      let index = children?.indexOf(nodeId) ?? -1;
 
-      children.splice(index, 1);
+      if (index >= 0) {
+        children.splice(index, 1);
+      }
     }
 
     schedulerOutputCommand.deletedNodeIds.push(nodeId);

@@ -1,5 +1,12 @@
-import { createSequence, _createComponent } from "./window.js";
-import { onDispose, useState, useCallback } from "./state.js";
+import { createSequence, _resolveNodeResult } from "./window.js";
+import {
+  getActiveWindow,
+  onDispose,
+  useDisposableEffect,
+  useEffect,
+  useState,
+  useCallback
+} from "./state.js";
 
 export function createCollection(initialItems) {
   return new Collection(initialItems);
@@ -8,6 +15,7 @@ export function createCollection(initialItems) {
 const MODIFY_INSERT = 1;
 const MODIFY_REMOVE = 2;
 const MODIFY_SET = 3;
+const MODIFY_SPLICE = 4;
 
 class Collection {
 
@@ -19,6 +27,7 @@ class Collection {
     }
 
     this.subscribeFns = [];
+    this.spliceSubscribeFns = [];
 
     let [lengthState, setLengthState] = useState(this.items.length);
 
@@ -37,6 +46,24 @@ class Collection {
       // TODO: optimize this
       let index = this.subscribeFns.indexOf(fn);
       this.subscribeFns.splice(index, 1);
+    };
+  }
+
+  subscribeSplices(fn) {
+    this.spliceSubscribeFns.push(fn);
+
+    if (this.items.length > 0) {
+      fn({
+        type: MODIFY_SPLICE,
+        index: 0,
+        deletionCount: 0,
+        items: this.items
+      });
+    }
+
+    return () => {
+      let index = this.spliceSubscribeFns.indexOf(fn);
+      this.spliceSubscribeFns.splice(index, 1);
     };
   }
 
@@ -74,6 +101,15 @@ class Collection {
 
     this.setLengthState(this.items.length);
 
+    this.spliceSubscribeFns.forEach(fn => {
+      fn({
+        type: MODIFY_SPLICE,
+        index,
+        deletionCount,
+        items
+      });
+    });
+
     if (deletionCount > 0) {
       this.subscribeFns.forEach(fn => {
         fn({ type: MODIFY_REMOVE, index, count: deletionCount });
@@ -106,6 +142,10 @@ class Collection {
     }
 
     this.items[index] = newItem;
+
+    this.spliceSubscribeFns.forEach(fn => {
+      fn({ type: MODIFY_SET, index, item: newItem });
+    });
 
     this.subscribeFns.forEach(fn => {
       fn({ type: MODIFY_SET, index, item: newItem });
@@ -141,51 +181,147 @@ class Collection {
 
 function _CollectionMap(props) {
   let sequence = createSequence();
-  let stateSetters = [];
+  let itemRecords = [];
+  let pendingChanges = [];
+  let processingChange = false;
   let { collection, renderFn, resolveState } = props;
+  let window = getActiveWindow();
+  let processNextChangeInScope;
 
-  let unsub = collection.subscribe(
-    useCallback(change => {
-      if (change.type === MODIFY_INSERT) {
-        let { startIndex, items } = change;
-        let nodes = [];
+  function finishChange() {
+    processingChange = false;
+    processNextChangeInScope();
+  }
 
-        for (let i = 0; i < items.length; i++) {
-          let item = items[i];
+  function createItemRecord(item, onInitialValue) {
+    let record = {
+      dispose: null,
+      itemId: null,
+      published: false,
+      ready: false,
+      setter: null,
+      value: null
+    };
 
-          let stateSetterContainer = {
-            setter: null
-          };
-
-          let component = _createComponent((props) => {
-            let [state, setState] = useState(item);
-            stateSetterContainer.setter = setState;
-
-            return () => {
-              if (resolveState) {
-                return renderFn(state());
-              } else {
-                return renderFn(state);
-              }
-            };
-          });
-
-          nodes.push(component);
-          stateSetters.splice(startIndex + i, 0, stateSetterContainer);
-        }
-
-        sequence.insert(startIndex, ...nodes);
-      } else if (change.type === MODIFY_REMOVE) {
-        let { index, count } = change;
-
-        sequence.remove(index, count);
-        stateSetters.splice(index, count);
-      } else if (change.type === MODIFY_SET) {
-        let { index, item } = change;
-
-        let stateSetter = stateSetters[index].setter;
-        stateSetter(item);
+    let publish = value => {
+      if (record.published) {
+        window._attach(sequence.id, record.itemId, value);
+        return;
       }
+
+      record.value = value;
+      if (!record.ready) {
+        record.ready = true;
+        onInitialValue();
+      }
+    };
+
+    record.dispose = useDisposableEffect(() => {
+      let [state, setState] = useState(item);
+      record.setter = setState;
+
+      useEffect(() => {
+        let nodeResult = resolveState
+          ? renderFn(state())
+          : renderFn(state);
+
+        _resolveNodeResult(nodeResult, publish);
+      });
+    });
+
+    return record;
+  }
+
+  function applySplice(change) {
+    let { index, deletionCount, items } = change;
+    let removedRecords = itemRecords.slice(
+      index,
+      index + deletionCount
+    );
+
+    // Dispose the old server-side component owners first. Their browser
+    // blocks remain in the visible sequence until the replacement values
+    // below have completed their first render.
+    removedRecords.forEach(record => record.dispose());
+
+    if (items.length === 0) {
+      if (deletionCount > 0) {
+        sequence.remove(index, deletionCount);
+      }
+      itemRecords.splice(index, deletionCount);
+      finishChange();
+      return;
+    }
+
+    let readyCount = 0;
+    let insertedRecords = [];
+    let commit = () => {
+      if (deletionCount > 0) {
+        sequence.remove(index, deletionCount);
+      }
+
+      let startItemId = sequence.insert(
+        index,
+        ...insertedRecords.map(record => record.value)
+      );
+
+      for (let offset = 0; offset < insertedRecords.length; offset++) {
+        let record = insertedRecords[offset];
+        record.itemId = startItemId + offset;
+        record.published = true;
+      }
+
+      itemRecords.splice(
+        index,
+        deletionCount,
+        ...insertedRecords
+      );
+      finishChange();
+    };
+
+    let markReady = () => {
+      readyCount++;
+      if (readyCount === insertedRecords.length) {
+        commit();
+      }
+    };
+
+    insertedRecords = items.map(item =>
+      createItemRecord(item, markReady)
+    );
+  }
+
+  function processNextChange() {
+    if (processingChange || pendingChanges.length === 0) {
+      return;
+    }
+
+    processingChange = true;
+    let change = pendingChanges.shift();
+
+    if (change.type === MODIFY_SPLICE) {
+      applySplice(change);
+      return;
+    }
+
+    if (change.type === MODIFY_SET) {
+      let record = itemRecords[change.index];
+      if (!record) {
+        throw new Error(
+          `Cannot set missing Collection item ${change.index}`
+        );
+      }
+      record.setter(change.item);
+      finishChange();
+    }
+  }
+
+  processNextChangeInScope = useCallback(processNextChange);
+
+  let unsub = collection.subscribeSplices(
+    useCallback(change => {
+      pendingChanges.push(change);
+      processNextChangeInScope();
     })
   );
 
