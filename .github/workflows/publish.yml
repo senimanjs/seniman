@@ -1,12 +1,13 @@
 name: Publish package
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Version expected in packages/seniman/package.json
-        required: true
-        type: string
+  pull_request:
+    branches:
+      - main
+    paths:
+      - packages/seniman/package.json
+    types:
+      - closed
 
 permissions:
   contents: read
@@ -22,6 +23,7 @@ defaults:
 
 jobs:
   publish:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
@@ -33,12 +35,16 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
-      - name: Verify version
-        env:
-          EXPECTED_VERSION: ${{ inputs.version }}
+      - name: Verify unpublished version
         run: |
-          ACTUAL_VERSION="$(node --print "require('./package.json').version")"
-          test "$ACTUAL_VERSION" = "$EXPECTED_VERSION"
+          PACKAGE_VERSION="$(node --print "require('./package.json').version")"
+
+          if npm view "seniman@$PACKAGE_VERSION" version >/dev/null 2>&1; then
+            echo "::error::seniman@$PACKAGE_VERSION is already published"
+            exit 1
+          fi
+
+          npm view seniman version >/dev/null
 
       - run: npm ci
       - run: npm run build
