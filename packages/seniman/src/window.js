@@ -1210,7 +1210,15 @@ export class Window {
           serverBindFns = untrack(() => serverBindFns());
         }
 
-        // TODO: allow unwrapped functions on $c contexts passed to eventHandlers (and onMount)
+        // Raw server functions captured by an onMount client function are
+        // shorthand for lifecycle-owned handlers.
+        if (Array.isArray(serverBindFns)) {
+          serverBindFns = serverBindFns.map((value) =>
+            typeof value === 'function'
+              ? this._allocateHandler(value)
+              : value
+          );
+        }
 
         this._streamFunctionInstallCommand(clientFnId);
         this._streamModuleInstallCommand(serverBindFns);
@@ -1329,7 +1337,15 @@ export class Window {
           serverBindFns = untrack(() => serverBindFns());
         }
 
-        // TODO: allow unwrapped functions on $c contexts passed to eventHandlers (and onMount)
+        // Raw server functions captured by a client event function are
+        // shorthand for lifecycle-owned handlers.
+        if (Array.isArray(serverBindFns)) {
+          serverBindFns = serverBindFns.map((value) =>
+            typeof value === 'function'
+              ? this._allocateHandler(value)
+              : value
+          );
+        }
 
         this._streamFunctionInstallCommand(clientFnId);
         this._streamModuleInstallCommand(serverBindFns);
