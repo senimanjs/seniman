@@ -35,6 +35,9 @@ const eventTypeIdMap = {
   'onMouseMove': 20,
   'onMouseDown': 21,
   'onMouseUp': 22,
+  'onSubmit': 23,
+  'onPaste': 24,
+  'onWheel': 25
 };
 
 const lifecycleTypeIdMap = {

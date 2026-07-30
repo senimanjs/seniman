@@ -42,6 +42,8 @@ const eventTypeNameMap = {
   21: 'mousedown',
   22: 'mouseup',
   23: 'submit',
+  24: 'paste',
+  25: 'wheel',
 };
 
 // TODO: use a LRU cache
