@@ -21,7 +21,14 @@
     let lastMessageTime = 0;
 
     let connectSocket = () => {
-      socket = new WebSocket(`${_window.origin.replace('http', 'ws')}?wi=${windowId}&ro=${readOffset}&vs=${_window.innerWidth}x${_window.innerHeight}&lo=${encodeURIComponent(_location.pathname + _location.search)}&vh=${_versionHash}`);
+      let viewport = _window.visualViewport;
+      let viewportWidth = Math.floor(
+        viewport ? viewport.width : _window.innerWidth
+      );
+      let viewportHeight = Math.floor(
+        viewport ? viewport.height : _window.innerHeight
+      );
+      socket = new WebSocket(`${_window.origin.replace('http', 'ws')}?wi=${windowId}&ro=${readOffset}&vs=${viewportWidth}x${viewportHeight}&lo=${encodeURIComponent(_location.pathname + _location.search)}&vh=${_versionHash}`);
       socket.binaryType = "arraybuffer";
 
       socket.onmessage = (msg) => {

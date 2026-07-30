@@ -139,6 +139,7 @@ function WindowResizeListener(props) {
   });
 
   client.exec($c(() => {
+    let lastViewportSize = '';
     let throttle = (func, delay) => {
       let lastCall = 0;
       let timeoutId;
@@ -161,9 +162,32 @@ function WindowResizeListener(props) {
       };
     }
 
-    window.addEventListener('resize', throttle(() => {
-      $s(onResize)(window.innerWidth, window.innerHeight);
-    }, 500));
+    let reportViewportSize = throttle(() => {
+      let viewport = window.visualViewport;
+      let width = Math.floor(
+        viewport ? viewport.width : window.innerWidth
+      );
+      let height = Math.floor(
+        viewport ? viewport.height : window.innerHeight
+      );
+      let viewportSize = `${width}x${height}`;
+
+      if (viewportSize === lastViewportSize) {
+        return;
+      }
+      lastViewportSize = viewportSize;
+      $s(onResize)(width, height);
+    }, 120);
+
+    window.addEventListener('resize', reportViewportSize, {
+      passive: true
+    });
+    window.visualViewport && window.visualViewport.addEventListener(
+      'resize',
+      reportViewportSize,
+      { passive: true }
+    );
+    reportViewportSize();
   }));
 }
 
