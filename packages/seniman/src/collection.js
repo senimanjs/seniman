@@ -89,7 +89,7 @@ class Collection {
   }
 
   remove(index, count) {
-    this.items.splice(index, count);
+    this.splice(index, count);
   }
 
   unshift(...items) {
