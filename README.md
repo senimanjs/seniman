@@ -147,6 +147,20 @@ node dist/index.js
 
 Open up your browser and navigate to `http://localhost:3002`, and you should see a counter that increments when you click the button. 
 
+### WebSocket compression
+
+WebSocket compression is opt-in for the Node server and Express adapters. Enable it through the top-level server options:
+
+```js
+import { createServer } from "seniman/server";
+
+let server = createServer(root, {
+  perMessageDeflate: true,
+});
+```
+
+Browsers negotiate `permessage-deflate` support automatically. Compression remains disabled when the option is omitted or `false`. On Cloudflare Workers, WebSocket compression is controlled by the Workers runtime instead.
+
 ## Example Apps
 
 - Our documentation site at [seniman.dev](https://seniman.dev)

@@ -2,6 +2,7 @@ import { createServer as httpCreateServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { createRoot } from '../window_manager.js';
 import { buildOriginCheckerFunction } from '../helpers.js';
+import { createWebSocketServerOptions } from '../websocket-options.js';
 
 
 class HeaderWrapper {
@@ -53,7 +54,9 @@ export function createServer(root, options = {}) {
     res.end(response.body);
   });
 
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer(
+    createWebSocketServerOptions(options)
+  );
 
   server.on('upgrade', function upgrade(req, socket, head) {
 

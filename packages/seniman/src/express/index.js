@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import { buildOriginCheckerFunction } from '../helpers.js';
 import { createRoot } from '../window_manager.js';
+import { createWebSocketServerOptions } from '../websocket-options.js';
 
 
 class HeaderWrapper {
@@ -53,7 +54,9 @@ export function wrapExpress(app, root, options = {}) {
   app.listen = function (port, host, backlog, callback) {
     let server = oldListen.call(app, port, host, backlog, callback);
 
-    const wsServer = new WebSocketServer({ noServer: true });
+    const wsServer = new WebSocketServer(
+      createWebSocketServerOptions(options)
+    );
 
     server.on('upgrade', (req, socket, head) => {
       if (!allowedOriginChecker(req.headers.origin)) {
