@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createWebSocketServerOptions } from '../src/websocket-options.js';
+import { createWebSocketServerOptions } from '../src/helpers.js';
 
 test('disables permessage-deflate by default', () => {
   assert.deepEqual(createWebSocketServerOptions({}), {

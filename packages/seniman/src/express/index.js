@@ -1,7 +1,9 @@
 import { WebSocketServer } from 'ws';
-import { buildOriginCheckerFunction } from '../helpers.js';
+import {
+  buildOriginCheckerFunction,
+  createWebSocketServerOptions
+} from '../helpers.js';
 import { createRoot } from '../window_manager.js';
-import { createWebSocketServerOptions } from '../websocket-options.js';
 
 
 class HeaderWrapper {
