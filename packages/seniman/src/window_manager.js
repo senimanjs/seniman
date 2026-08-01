@@ -191,7 +191,7 @@ class Root {
     this._setupWsListeners(ws, window.id);
   }
 
-  async getHtmlResponse({ url, headers, ipAddress, isSecure }) {
+  async getHtmlResponse({ url, headers, ipAddress, isSecure, auxContext = null }) {
     let isUnderRateLimit = this.windowCreationLimiter.consumeSync(ipAddress);
 
     if (!isUnderRateLimit) {
@@ -206,7 +206,7 @@ class Root {
     }
 
     let responseHeaders = {
-      'Content-Type': 'text/html',
+      'Content-Type': 'text/html; charset=utf-8',
       'Vary': 'Accept',
       'Cache-Control': 'no-store',
     };
@@ -228,7 +228,7 @@ class Root {
       let href = url;
 
       // TODO: check if we have a cached response for this request
-      let html = await this.renderHtml({ headers, href });
+      let html = await this.renderHtml({ headers, href, auxContext });
       responseHeaders['Content-Length'] = Buffer.byteLength(html);
 
       return {
@@ -271,7 +271,7 @@ class Root {
     };
   }
 
-  async renderHtml({ headers, href }) {
+  async renderHtml({ headers, href, auxContext = null }) {
     let cookieString = headers.get('cookie') || '';
 
     let pageParams = {
