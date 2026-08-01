@@ -25,6 +25,7 @@ The `client` object is used for server-side management of critical browser funct
 - [`cookie`](#cookie)
 - [`setCookie`](#setcookie)
 - [`viewportSize`](#viewportsize)
+- [`visualViewport`](#visualviewport)
 - [`exec`](#exec)
 
 Let's go through the usage of these properties.
@@ -189,7 +190,7 @@ You can see more expanded example of how to use cookie for session management in
 
 #### `viewportSize`
 
-The `viewportSize` state is a state getter for the current viewport size of the page in the shape of `{ width, height }`. The value of the `viewportSize` state is automatically updated when the page's viewport size changes. It is useful for implementing different layouts for different screen sizes.
+The `viewportSize` state is a state getter for the browser's layout viewport in the shape of `{ width, height }`. It uses `window.innerWidth` and `window.innerHeight`, is available during the initial render, and updates when the layout viewport changes. It is useful for implementing different layouts for different screen sizes.
 
 Here's one example of how you can use it to implement a responsive layout:
 
@@ -213,6 +214,25 @@ function Body() {
   )
 }
 
+```
+
+#### `visualViewport`
+
+The `visualViewport` state is a state getter for the portion of the page currently visible to the user. Its initial value is `null`; after the browser runtime reports its geometry, it has the shape `{ width, height, offsetLeft, offsetTop, scale }`.
+
+Unlike `viewportSize`, it can change when a software keyboard appears, the page is pinch-zoomed, or the visible viewport is panned. Use it for interfaces that must follow the visible screen, rather than for ordinary responsive layout.
+
+```js
+import { useClient, useMemo } from 'seniman';
+
+function VisibleViewportStatus() {
+  let client = useClient();
+  let visibleHeight = useMemo(() =>
+    client.visualViewport()?.height ?? client.viewportSize().height
+  );
+
+  return <p>Visible height: {visibleHeight()}px</p>;
+}
 ```
 
 ## Client Functions
