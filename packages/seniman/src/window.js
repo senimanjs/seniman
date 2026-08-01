@@ -132,62 +132,86 @@ function BackButtonListener(props) {
   }));
 }
 
-function WindowResizeListener(props) {
+function ViewportListener(props) {
   let client = useClient();
-  let onResize = createHandler((width, height) => {
-    props.onResize(width, height);
+  let onViewportChange = createHandler((
+    layoutWidth,
+    layoutHeight,
+    visualWidth,
+    visualHeight,
+    offsetLeft,
+    offsetTop,
+    scale
+  ) => {
+    props.onViewportChange({
+      layout: { width: layoutWidth, height: layoutHeight },
+      visual: {
+        width: visualWidth,
+        height: visualHeight,
+        offsetLeft,
+        offsetTop,
+        scale,
+      },
+    });
   });
 
   client.exec($c(() => {
-    let lastViewportSize = '';
-    let throttle = (func, delay) => {
-      let lastCall = 0;
-      let timeoutId;
-      let latestArgs;
-
-      return (...args) => {
-        latestArgs = args;
-        clearTimeout(timeoutId);
-
-        let _now = Date.now();
-        if (_now - lastCall >= delay) {
-          lastCall = _now;
-          func.apply(null, latestArgs);
-        } else {
-          timeoutId = setTimeout(() => {
-            lastCall = Date.now();
-            func.apply(null, latestArgs);
-          }, delay - (_now - lastCall));
-        }
-      };
-    }
-
-    let reportViewportSize = throttle(() => {
+    let frame = 0;
+    let lastViewportState = '';
+    let reportViewportState = () => {
+      frame = 0;
       let viewport = window.visualViewport;
-      let width = Math.floor(
-        viewport ? viewport.width : window.innerWidth
-      );
-      let height = Math.floor(
-        viewport ? viewport.height : window.innerHeight
-      );
-      let viewportSize = `${width}x${height}`;
+      let layoutWidth = Math.floor(window.innerWidth);
+      let layoutHeight = Math.floor(window.innerHeight);
+      let visualWidth = viewport ? viewport.width : layoutWidth;
+      let visualHeight = viewport ? viewport.height : layoutHeight;
+      let offsetLeft = viewport ? viewport.offsetLeft : 0;
+      let offsetTop = viewport ? viewport.offsetTop : 0;
+      let scale = viewport ? viewport.scale : 1;
+      let viewportState = [
+        layoutWidth,
+        layoutHeight,
+        visualWidth,
+        visualHeight,
+        offsetLeft,
+        offsetTop,
+        scale,
+      ].join(':');
 
-      if (viewportSize === lastViewportSize) {
+      if (viewportState === lastViewportState) {
         return;
       }
-      lastViewportSize = viewportSize;
-      $s(onResize)(width, height);
-    }, 120);
+      lastViewportState = viewportState;
+      $s(onViewportChange)(
+        layoutWidth,
+        layoutHeight,
+        visualWidth,
+        visualHeight,
+        offsetLeft,
+        offsetTop,
+        scale
+      );
+    };
+    let scheduleViewportReport = () => {
+      if (!frame) {
+        frame = requestAnimationFrame(reportViewportState);
+      }
+    };
 
-    window.addEventListener('resize', reportViewportSize, {
+    window.addEventListener('resize', scheduleViewportReport, {
       passive: true
     });
     window.visualViewport && window.visualViewport.addEventListener(
       'resize',
-      reportViewportSize,
+      scheduleViewportReport,
       { passive: true }
     );
-    reportViewportSize();
+    window.visualViewport && window.visualViewport.addEventListener(
+      'scroll',
+      scheduleViewportReport,
+      { passive: true }
+    );
+    reportViewportState();
   }));
 }
 
@@ -299,6 +323,7 @@ export class Window {
     this.rootDisposer = useDisposableEffect(() => {
       let [getCookie, setCookie] = useState(cookieString);
       let [viewportSizeSignal, setViewportSize] = useState({ width: viewportSize[0], height: viewportSize[1] });
+      let [visualViewportSignal, setVisualViewport] = useState(null);
       let [shouldSendPostScript, setShouldSendPostScript] = useState(false);
       let [locationUrl, setLocationUrl] = useState(url);
 
@@ -389,6 +414,7 @@ export class Window {
 
       let clientContext = {
         viewportSize: viewportSizeSignal,
+        visualViewport: visualViewportSignal,
 
         cookie: (cookieKey) => {
           return useMemo(() => {
@@ -461,8 +487,26 @@ export class Window {
         setLocationUrl(new URL(hrefString));
       }
 
-      let onResize = (width, height) => {
-        setViewportSize({ width, height });
+      let onViewportChange = ({ layout, visual }) => {
+        let currentLayout = viewportSizeSignal();
+        if (
+          currentLayout.width !== layout.width ||
+          currentLayout.height !== layout.height
+        ) {
+          setViewportSize(layout);
+        }
+
+        let currentVisual = visualViewportSignal();
+        if (
+          !currentVisual ||
+          currentVisual.width !== visual.width ||
+          currentVisual.height !== visual.height ||
+          currentVisual.offsetLeft !== visual.offsetLeft ||
+          currentVisual.offsetTop !== visual.offsetTop ||
+          currentVisual.scale !== visual.scale
+        ) {
+          setVisualViewport(visual);
+        }
       }
 
       let headSequence = createSequence();
@@ -483,7 +527,7 @@ export class Window {
         <DefaultErrorHandler>
           {rootFn}
           <BackButtonListener onBackButton={onBackButton} />
-          {shouldSendPostScript() ? <WindowResizeListener onResize={onResize} /> : null}
+          <ViewportListener onViewportChange={onViewportChange} />
           {shouldSendPostScript() ? <DefaultNetworkStatusView /> : null}
         </DefaultErrorHandler>
       );
