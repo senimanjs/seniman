@@ -13,6 +13,7 @@ export async function runFetch(req, env, root, allowedOriginChecker) {
   const url = req.url;
   const headers = req.headers;
   const ipAddress = headers.get('x-forwarded-for') || headers.get('CF-Connecting-IP');
+  const auxContext = !!env ? { [EnvContext.id]: env } : null;
 
   if (upgradeHeader == "websocket") {
     if (!allowedOriginChecker(headers.get("Origin"))) {
@@ -41,15 +42,13 @@ export async function runFetch(req, env, root, allowedOriginChecker) {
       }
     };
 
-    let auxContext = !!env ? { [EnvContext.id]: env } : null;
-
     root.applyNewConnection(ws, { url, headers, ipAddress }, auxContext);
 
     return new Response(null, { status: 101, webSocket: client })
   } else {
     // TODO: have the logic be configurable?
     const isSecure = req.headers.get('x-forwarded-proto') == 'https';
-    const response = await root.getHtmlResponse({ url, headers, ipAddress, isSecure });;
+    const response = await root.getHtmlResponse({ url, headers, ipAddress, isSecure, auxContext });
 
     return new Response(response.body, { status: response.statusCode, headers: response.headers })
   }
