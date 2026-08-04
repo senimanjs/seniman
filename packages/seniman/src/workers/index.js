@@ -15,6 +15,8 @@ export async function runFetch(req, env, root, allowedOriginChecker) {
   const ipAddress = headers.get('x-forwarded-for') || headers.get('CF-Connecting-IP');
   const auxContext = !!env ? { [EnvContext.id]: env } : null;
 
+  root.configure(env);
+
   if (upgradeHeader == "websocket") {
     if (!allowedOriginChecker(headers.get("Origin"))) {
       return new Response("Unauthorized", { status: 401 });
