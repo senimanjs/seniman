@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "0.0.176",
+  "version": "0.0.177",
   "description": "",
   "main": "./dist/index.js",
   "type": "module",
@@ -33,7 +33,7 @@
   "license": "ISC",
   "dependencies": {
     "fast-ratelimit": "^3.0.1",
-    "nanoid": "^4.0.0",
+    "nanoid": "^5.1.16",
     "stacktrace-parser": "^0.1.10",
     "ws": "^8.12.0"
   },
