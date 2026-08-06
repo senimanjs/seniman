@@ -13,7 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "immer": "^10.0.1",
-    "seniman": "^0.0.164"
+    "seniman": "^0.0.178"
   },
   "devDependencies": {
     "@babel/cli": "^7.21.0",
