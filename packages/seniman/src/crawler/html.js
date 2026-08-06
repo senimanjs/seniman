@@ -466,8 +466,12 @@ export class HtmlRenderingContext {
             let channelId = getUint16();
             return getChannelObject(channelId);
           case ARGTYPE_MODULE:
-            let moduleId = getUint16();
-            return moduleMap.get(moduleId);
+            getUint16();
+            // Modules are installed by the browser runtime, so there is no
+            // client module object to reconstruct while rendering crawler HTML.
+            // Consume the ID from the buffer and discard the value instead of
+            // trying to resolve it through a client-only module map.
+            return null;
           case ARGTYPE_ARRAY_BUFFER:
             let arrayBufferLength = getUint16();
             let dstUint8 = new Uint8Array(arrayBufferLength);
