@@ -34,7 +34,8 @@ Finally, we need to add the generated CSS file to our application. Open `src/ind
 
 ```js
 
-import Style from 'seniman/head';
+import fs from 'node:fs';
+import { Style } from 'seniman/head';
 
 // Load the generated Tailwind CSS file 
 const tailwindCssText = fs.readFileSync('./dist/output.css', 'utf8');
