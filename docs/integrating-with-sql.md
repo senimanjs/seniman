@@ -77,7 +77,7 @@ function Root(props) {
 
 To maintain our tasks data, we use the `useState` function to get us two functions: `getTasks` and `setTasks`, which are used to get and set the value of the tasks state variable during the lifecycle of this component. 
 
-This function is a close cousin of the `useState` function in React, but with one major difference: in Seniman, the component is only called once -- which is why we're giving you an accessor function (`getTasks`) to get the current value of the state variable, instead of returning the value directly. We also give you a setter function (`setTasks`) to set the value of the state variable. 
+Unlike state models that rerender the whole component by default, Seniman returns an accessor function (`getTasks`). Calling that accessor establishes a dependency in the reactive scope where it is used. The setter function (`setTasks`) changes the value and updates the scopes that depend on it.
 
 Now, let's start populating the tasks state with data from the database inside the component:
 
@@ -127,15 +127,15 @@ In the delete button, you can see that we're passing an anonymous function to th
 Next, let's take a look at the implementation `deleteTask` we're calling from the handler:
 
 ```js
-let deleteTask = (taskId) => {
-  db.run("DELETE FROM tasks WHERE id = ?", taskId);
+let deleteTask = async (taskId) => {
+  await db.run("DELETE FROM tasks WHERE id = ?", taskId);
 
-  loadTasks();
+  await loadTasks();
 };
 
 ```
 
-We tell the database to delete the task with the given `id`, and then we reload the tasks from the database. The list will be re-rendered accordingly.
+We tell the database to delete the task with the given `id`, wait for that operation to finish, and then reload the tasks from the database. The list will be re-rendered accordingly.
 
 Next, let's take a look at the add task functionality:
 
@@ -200,4 +200,3 @@ serve(root, 3002);
 Here, we wrap our `Root` component using the `createRoot` function, which we then pass to the `serve` function to start the server. The `serve` function also takes a port number as its second argument, which is the port number that the server will listen to. When you open the browser, you should see the todo list application running at [http://localhost:3002](http://localhost:3002). 
 
 We've now reached the end of the tutorial. With just one UI component, we've built a todo list application that stores data in an in-memory SQLite database --  tightly integrating user interaction, UI state, and database operations all within the component code, greatly simplifying the application stack.
-

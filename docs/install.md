@@ -20,7 +20,7 @@ npm install --save-dev @babel/cli @babel/plugin-syntax-jsx
 
 Add the following to your project's `package.json` since the examples used here mostly use ES6 imports:
 
-```js
+```json
   "type": "module"
 ```
 
