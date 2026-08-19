@@ -5,10 +5,11 @@ const NODE_FRESH = 0;
 const NODE_QUEUED = 2;
 const NODE_EXPIRED = 3;
 const INPUT_FRAME_HEADER_SIZE = 12;
-const OUTPUT_RECORD_HEADER_SIZE = 16;
+const OUTPUT_PACKET_HEADER_SIZE = 28;
 
-export const SCHEDULER_OUTPUT_RUN_NODES = 1;
-export const SCHEDULER_OUTPUT_DELETE_NODES = 2;
+export const SCHEDULER_PACKET_START = 1;
+export const SCHEDULER_PACKET_END = 2;
+export const SCHEDULER_WINDOW_WORK_QUANTUM = 256;
 
 const windowMap = new Map();
 const freeWindowSlots = [];
@@ -17,7 +18,8 @@ const windowSlotGenerations = [];
 let nextWindowSlot = 1;
 let activeWindowQueue = [];
 let activeWindowQueueHead = 0;
-let pendingOutputType = 0;
+let pendingOutputPacket = false;
+let pendingOutputPacketStarted = false;
 let pendingDeletedNodeIndex = -1;
 let pendingNodeIndex = 0;
 
@@ -27,6 +29,8 @@ export const schedulerOutputCommand = {
   windowId: -1,
   slot: 0,
   generation: 0,
+  packetId: 0,
+  workCost: 0,
   nodeIds: [],
   deletedNodeIds: []
 };
@@ -49,6 +53,7 @@ export function scheduler_registerWindow(windowId) {
     windowId,
     slot,
     generation,
+    nextPacketId: 1,
     queued: false,
     childrenListMap: new Map(),
     sourcesMap: new Map(),
@@ -126,7 +131,7 @@ function takeActiveWindow() {
 }
 
 export function scheduler_hasWork() {
-  return pendingOutputType !== 0 || peekActiveWindow() !== null;
+  return pendingOutputPacket || peekActiveWindow() !== null;
 }
 
 function postStateWrite(stateId) {
@@ -429,6 +434,8 @@ export function scheduler_calculateWorkBatch() {
 
   schedulerOutputCommand.nodeIds = [];
   schedulerOutputCommand.deletedNodeIds = [];
+  schedulerOutputCommand.packetId = 0;
+  schedulerOutputCommand.workCost = 0;
 
   if (!window) {
     schedulerOutputCommand.windowId = -1;
@@ -449,8 +456,19 @@ export function scheduler_calculateWorkBatch() {
   schedulerOutputCommand.windowId = batchWindowId;
   schedulerOutputCommand.slot = window.slot;
   schedulerOutputCommand.generation = window.generation;
+  schedulerOutputCommand.packetId = window.nextPacketId++;
 
-  while (disposeList.length) {
+  if (window.nextPacketId > 0xffffffff) {
+    window.nextPacketId = 1;
+  }
+
+  let workCost = 0;
+
+  while (
+    disposeList.length &&
+    workCost < SCHEDULER_WINDOW_WORK_QUANTUM
+  ) {
+    let deletedNodeCountBefore = schedulerOutputCommand.deletedNodeIds.length;
     let [parentId, nodeId] = disposeList.pop();
     let node = ActiveWindow.nodeMap.get(nodeId);
 
@@ -458,6 +476,7 @@ export function scheduler_calculateWorkBatch() {
     // subtree, including descendants which already have explicit disposers in
     // this batch. Only the first path owns the scheduler cleanup.
     if (!node || node.updateState === NODE_EXPIRED) {
+      workCost++;
       continue;
     }
 
@@ -477,42 +496,62 @@ export function scheduler_calculateWorkBatch() {
     }
 
     schedulerOutputCommand.deletedNodeIds.push(nodeId);
+    workCost += schedulerOutputCommand.deletedNodeIds.length -
+      deletedNodeCountBefore;
   }
 
-  let i = 0;
-
-  while (!workQueue.isEmpty()) {
+  while (
+    disposeList.length === 0 &&
+    !workQueue.isEmpty() &&
+    workCost < SCHEDULER_WINDOW_WORK_QUANTUM
+  ) {
     let node = workQueue.poll();
+    workCost++;
 
     if (node.updateState === NODE_EXPIRED) {
       continue;
     }
 
+    let deletedNodeCountBefore = schedulerOutputCommand.deletedNodeIds.length;
     cleanNode(node);
+    workCost += schedulerOutputCommand.deletedNodeIds.length -
+      deletedNodeCountBefore;
 
     schedulerOutputCommand.nodeIds.push(node.id);
-
-    i++;
   }
 
   // run internal clean ups of the deleted nodes
   _deletedNodeCleanup();
 
+  if (disposeList.length || !workQueue.isEmpty()) {
+    activateWindow(window);
+  }
+
+  schedulerOutputCommand.workCost = workCost;
   ActiveWindow = null;
   return schedulerOutputCommand;
 }
 
-function writeOutputRecordHeader(buffer, offset, type, count) {
-  buffer.writeUInt8(type, offset);
+function writeOutputPacketHeader(
+  buffer,
+  offset,
+  flags,
+  deletedNodeCount,
+  nodeCount
+) {
+  buffer.writeUInt8(flags, offset);
   buffer.writeUInt8(0, offset + 1);
   buffer.writeUInt16LE(0, offset + 2);
   buffer.writeUInt32LE(schedulerOutputCommand.slot, offset + 4);
   buffer.writeUInt32LE(schedulerOutputCommand.generation, offset + 8);
-  buffer.writeUInt32LE(count, offset + 12);
+  buffer.writeUInt32LE(schedulerOutputCommand.packetId, offset + 12);
+  buffer.writeUInt32LE(deletedNodeCount, offset + 16);
+  buffer.writeUInt32LE(nodeCount, offset + 20);
+  buffer.writeUInt32LE(schedulerOutputCommand.workCost, offset + 24);
 }
 
 function preparePendingOutput() {
-  while (pendingOutputType === 0) {
+  while (!pendingOutputPacket) {
     if (!peekActiveWindow()) {
       return false;
     }
@@ -521,86 +560,94 @@ function preparePendingOutput() {
     pendingDeletedNodeIndex = schedulerOutputCommand.deletedNodeIds.length - 1;
     pendingNodeIndex = 0;
 
-    if (pendingDeletedNodeIndex >= 0) {
-      pendingOutputType = SCHEDULER_OUTPUT_DELETE_NODES;
-    } else if (schedulerOutputCommand.nodeIds.length > 0) {
-      pendingOutputType = SCHEDULER_OUTPUT_RUN_NODES;
+    if (
+      pendingDeletedNodeIndex >= 0 ||
+      schedulerOutputCommand.nodeIds.length > 0
+    ) {
+      pendingOutputPacket = true;
+      pendingOutputPacketStarted = false;
     }
   }
 
   return true;
 }
 
-export function scheduler_drainWork(buffer) {
-  if (buffer.length < OUTPUT_RECORD_HEADER_SIZE + 4) {
+export function scheduler_drainWork(buffer, workBudget = Infinity) {
+  if (buffer.length < OUTPUT_PACKET_HEADER_SIZE + 4) {
     throw new Error('Scheduler output buffer is too small');
   }
 
   let writeOffset = 0;
+  let drainedWorkCost = 0;
 
   while (
     buffer.length - writeOffset >=
-    OUTPUT_RECORD_HEADER_SIZE + 4
+    OUTPUT_PACKET_HEADER_SIZE + 4
   ) {
+    if (!pendingOutputPacket && drainedWorkCost >= workBudget) {
+      break;
+    }
+
     if (!preparePendingOutput()) {
       break;
     }
 
+    let headerOffset = writeOffset;
+    let flags = pendingOutputPacketStarted ? 0 : SCHEDULER_PACKET_START;
     let availableNodeCount = Math.floor(
-      (buffer.length - writeOffset - OUTPUT_RECORD_HEADER_SIZE) / 4
+      (buffer.length - writeOffset - OUTPUT_PACKET_HEADER_SIZE) / 4
     );
-    let count;
+    let deletedNodeCount = Math.min(
+      availableNodeCount,
+      pendingDeletedNodeIndex + 1
+    );
+    let nodeCount;
 
-    if (pendingOutputType === SCHEDULER_OUTPUT_DELETE_NODES) {
-      count = Math.min(availableNodeCount, pendingDeletedNodeIndex + 1);
-      writeOutputRecordHeader(
-        buffer,
-        writeOffset,
-        SCHEDULER_OUTPUT_DELETE_NODES,
-        count
+    writeOffset += OUTPUT_PACKET_HEADER_SIZE;
+
+    for (let i = 0; i < deletedNodeCount; i++) {
+      buffer.writeUInt32LE(
+        schedulerOutputCommand.deletedNodeIds[pendingDeletedNodeIndex--],
+        writeOffset
       );
-      writeOffset += OUTPUT_RECORD_HEADER_SIZE;
-
-      for (let i = 0; i < count; i++) {
-        buffer.writeUInt32LE(
-          schedulerOutputCommand.deletedNodeIds[pendingDeletedNodeIndex--],
-          writeOffset
-        );
-        writeOffset += 4;
-      }
-
-      if (pendingDeletedNodeIndex < 0) {
-        schedulerOutputCommand.deletedNodeIds = [];
-        pendingOutputType = schedulerOutputCommand.nodeIds.length > 0
-          ? SCHEDULER_OUTPUT_RUN_NODES
-          : 0;
-      }
-    } else {
-      count = Math.min(
-        availableNodeCount,
-        schedulerOutputCommand.nodeIds.length - pendingNodeIndex
-      );
-      writeOutputRecordHeader(
-        buffer,
-        writeOffset,
-        SCHEDULER_OUTPUT_RUN_NODES,
-        count
-      );
-      writeOffset += OUTPUT_RECORD_HEADER_SIZE;
-
-      for (let i = 0; i < count; i++) {
-        buffer.writeUInt32LE(
-          schedulerOutputCommand.nodeIds[pendingNodeIndex++],
-          writeOffset
-        );
-        writeOffset += 4;
-      }
-
-      if (pendingNodeIndex === schedulerOutputCommand.nodeIds.length) {
-        schedulerOutputCommand.nodeIds = [];
-        pendingOutputType = 0;
-      }
+      writeOffset += 4;
     }
+
+    availableNodeCount -= deletedNodeCount;
+    nodeCount = Math.min(
+      availableNodeCount,
+      schedulerOutputCommand.nodeIds.length - pendingNodeIndex
+    );
+
+    for (let i = 0; i < nodeCount; i++) {
+      buffer.writeUInt32LE(
+        schedulerOutputCommand.nodeIds[pendingNodeIndex++],
+        writeOffset
+      );
+      writeOffset += 4;
+    }
+
+    pendingOutputPacketStarted = true;
+
+    if (
+      pendingDeletedNodeIndex < 0 &&
+      pendingNodeIndex === schedulerOutputCommand.nodeIds.length
+    ) {
+      flags |= SCHEDULER_PACKET_END;
+      schedulerOutputCommand.deletedNodeIds = [];
+      schedulerOutputCommand.nodeIds = [];
+      pendingOutputPacket = false;
+      pendingOutputPacketStarted = false;
+      drainedWorkCost += schedulerOutputCommand.workCost;
+    }
+
+    writeOutputPacketHeader(
+      buffer,
+      headerOffset,
+      flags,
+      deletedNodeCount,
+      nodeCount
+    );
   }
 
   return writeOffset;

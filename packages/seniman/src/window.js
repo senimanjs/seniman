@@ -236,7 +236,6 @@ const CMD_RUN_LIFECYCLE = 17;
 const CMD_SEQUENCE_INSERT_ITEMS = 18;
 const CMD_SEQUENCE_REMOVE_ITEMS = 19;
 
-const pingBuffer = Buffer.from([0]);
 const emptyBuffer = Buffer.alloc(0);
 const DELETE_BLOCK_BUFFER_SIZE = 2048;
 const MAX_BLOCK_ID = 0x7fff;
@@ -323,7 +322,12 @@ export class Window {
 
     this.pages = [];
     this.global_readOffset = 0;
+    this.global_publishOffset = 0;
     this.global_writeOffset = 0;
+    this.publications = null;
+    this.publicationHead = 0;
+    this.publicationOpen = false;
+    this.publicationPacketId = 0;
     this.mutationGroup = null;
 
     this.bufferFn = bufferFn;
@@ -337,6 +341,7 @@ export class Window {
     // reuse the same buffer for all block delete commands
     this.deleteBlockCommandBuffer = Buffer.alloc(DELETE_BLOCK_BUFFER_SIZE * 2);
     this.deleteBlockCount = 0;
+    this.pendingDeleteBlockChunks = null;
     this.deleteBlockFlushTimer = null;
     this.destroyed = false;
 
@@ -694,10 +699,50 @@ export class Window {
     this._flushMutationGroup();
   }
 
-  sendPing() {
-    if (!this.destroyed) {
-      this.bufferFn(pingBuffer);
+  beginPublication(packetId = 0) {
+    if (this.destroyed) {
+      return;
     }
+
+    if (this.publicationOpen) {
+      throw new Error('Cannot begin a window publication while one is open');
+    }
+
+    this.publicationOpen = true;
+    this.publicationPacketId = packetId;
+  }
+
+  commitPublication(packetId = this.publicationPacketId) {
+    if (this.destroyed) {
+      this.publicationOpen = false;
+      this.publicationPacketId = 0;
+      return;
+    }
+
+    if (!this.publicationOpen) {
+      throw new Error('Cannot commit a window publication that is not open');
+    }
+
+    if (packetId !== this.publicationPacketId) {
+      throw new Error('Cannot commit a different window publication packet');
+    }
+
+    clearTimeout(this.deleteBlockFlushTimer);
+    this.deleteBlockFlushTimer = null;
+    this._flushPendingBlockDeletes();
+    this.publicationOpen = false;
+    this.publicationPacketId = 0;
+    this._flushMutationGroup();
+  }
+
+  sendPing() {
+    if (this.destroyed) {
+      return;
+    }
+
+    let buffer = this._allocCommandBuffer(1);
+    buffer.writeUInt8(0);
+    this.flushCommandBuffer();
   }
 
   _handleBlockCleanup(blockId) {
@@ -794,6 +839,17 @@ export class Window {
     let deleteBlockCount = this.deleteBlockCount;
     this.deleteBlockCommandBuffer.copy(tempBuffer, 0, 0, this.deleteBlockCount * 2);
 
+    this.deleteBlockCount = 0;
+
+    if (this.publicationOpen) {
+      if (!this.pendingDeleteBlockChunks) {
+        this.pendingDeleteBlockChunks = [];
+      }
+
+      this.pendingDeleteBlockChunks.push([tempBuffer, deleteBlockCount]);
+      return;
+    }
+
     // Schedule to send the delete block command after the tick
     // Note: we needed to do delay sending out the delete message to the browser
     // because the browser may still need the reference to the block during cleanNode() to insert the replacement block.
@@ -806,20 +862,8 @@ export class Window {
         return;
       }
 
-      let buf = this._allocCommandBuffer(1 + 2 * deleteBlockCount + 2);
-
-      buf.writeUInt8(CMD_REMOVE_BLOCKS, 0);
-
-      // copy over the block ids
-      tempBuffer.copy(buf, 1, 0, deleteBlockCount * 2);
-
-      // write the end marker
-      buf.writeUInt16BE(0, 1 + 2 * deleteBlockCount);
-
-      this._recycleBlockIds(tempBuffer, deleteBlockCount);
+      this._writeBlockDeleteCommand(tempBuffer, deleteBlockCount);
     }, 0);
-
-    this.deleteBlockCount = 0;
   }
 
   flushBlockDeleteQueue() {
@@ -828,23 +872,48 @@ export class Window {
       return;
     }
 
-    let deleteBlockCount = this.deleteBlockCount;
-    if (deleteBlockCount === 0) {
+    if (this.publicationOpen) {
       return;
     }
 
+    this._flushPendingBlockDeletes();
+  }
+
+  _writeBlockDeleteCommand(blockIds, deleteBlockCount) {
     let buf = this._allocCommandBuffer(1 + 2 * deleteBlockCount + 2);
 
     buf.writeUInt8(CMD_REMOVE_BLOCKS, 0);
 
     // copy over the block ids
-    this.deleteBlockCommandBuffer.copy(buf, 1, 0, deleteBlockCount * 2);
+    blockIds.copy(buf, 1, 0, deleteBlockCount * 2);
 
     // write the end marker
     buf.writeUInt16BE(0, 1 + 2 * deleteBlockCount);
 
+    this._recycleBlockIds(blockIds, deleteBlockCount);
+  }
+
+  _flushPendingBlockDeletes() {
+    if (this.pendingDeleteBlockChunks) {
+      for (let [buffer, count] of this.pendingDeleteBlockChunks) {
+        this._writeBlockDeleteCommand(buffer, count);
+      }
+
+      this.pendingDeleteBlockChunks = null;
+    }
+
+    let deleteBlockCount = this.deleteBlockCount;
+
+    if (deleteBlockCount === 0) {
+      return;
+    }
+
+    this._writeBlockDeleteCommand(
+      this.deleteBlockCommandBuffer,
+      deleteBlockCount
+    );
+
     this.deleteBlockCount = 0;
-    this._recycleBlockIds(this.deleteBlockCommandBuffer, deleteBlockCount);
   }
 
   registerPong(pongBuffer) {
@@ -874,12 +943,40 @@ export class Window {
       return;
     }
 
-    // TODO: check against writeOffset to make sure we're not reading ahead
     if (readOffset < this.global_readOffset) {
       throw new Error(`Invalid offset: ${readOffset} : ${this.global_readOffset}`);
     }
 
+    if (readOffset > this.global_publishOffset) {
+      throw new Error(
+        `Invalid offset beyond published output: ${readOffset} : ${this.global_publishOffset}`
+      );
+    }
+
     this.global_readOffset = readOffset;
+
+    while (
+      this.publications &&
+      this.publicationHead < this.publications.length &&
+      this.publications[this.publicationHead + 1] <= readOffset
+    ) {
+      this.publicationHead += 2;
+    }
+
+    if (
+      this.publications &&
+      this.publicationHead === this.publications.length
+    ) {
+      this.publications = null;
+      this.publicationHead = 0;
+    } else if (
+      this.publications &&
+      this.publicationHead >= 128 &&
+      this.publicationHead * 2 >= this.publications.length
+    ) {
+      this.publications = this.publications.slice(this.publicationHead);
+      this.publicationHead = 0;
+    }
 
     // free unused pages
     while (true) {
@@ -912,28 +1009,32 @@ export class Window {
       return;
     }
 
-    // if there are new commands generated during disconnection,
-    // let's restream them
-    if (this.global_writeOffset > this.global_readOffset) {
+    if (this.global_publishOffset > this.global_readOffset) {
       let readOffset = this.global_readOffset;
+      let publications = this.publications;
 
-      for (let i = 0; i < this.pages.length; i++) {
-        let page = this.pages[i];
-        let size;
-        let offset = readOffset - page.global_headOffset;
-
-        if (page.finalSize > 0) {
-          size = (page.global_headOffset + page.finalSize) - readOffset;
-        } else {
-          size = this.global_writeOffset - readOffset; // 6 - 3
-        }
-
-        this.bufferFn(page.buffer.subarray(offset, offset + size));
-
-        readOffset += size;
+      if (!publications) {
+        throw new Error('Cannot replay a missing window publication');
       }
 
-      if (readOffset != this.global_writeOffset) {
+      for (
+        let i = this.publicationHead;
+        i < publications.length;
+        i += 2
+      ) {
+        let startOffset = publications[i];
+        let endOffset = publications[i + 1];
+
+        if (endOffset <= readOffset) {
+          continue;
+        }
+
+        startOffset = Math.max(readOffset, startOffset);
+        this.bufferFn(this._readOutputRange(startOffset, endOffset));
+        readOffset = endOffset;
+      }
+
+      if (readOffset != this.global_publishOffset) {
         throw new Error();
       }
     }
@@ -1009,6 +1110,11 @@ export class Window {
     clearTimeout(this.postScriptTimeout);
 
     this.mutationGroup = null;
+    this.publications = null;
+    this.publicationHead = 0;
+    this.publicationOpen = false;
+    this.publicationPacketId = 0;
+    this.pendingDeleteBlockChunks = null;
 
     // A websocket send may still reference an unacknowledged buffer. Only
     // recycle pages the client has confirmed; leave the rest to Node.
@@ -1044,22 +1150,74 @@ export class Window {
       return;
     }
 
-    let mg = this.mutationGroup;
-
-    if (this.connected && mg && ((this.global_writeOffset - mg.pageStartOffset) > 0)) {
-
-      let buffer = mg.page.buffer;
-      let offset = mg.pageStartOffset - mg.page.global_headOffset;
-      let size = this.global_writeOffset - mg.pageStartOffset;
-
-      this.bufferFn(buffer.subarray(offset, offset + size));
+    if (this.publicationOpen) {
+      return;
     }
+
+    let mg = this.mutationGroup;
 
     if (mg && mg.page.buffer.length > STANDARD_PAGE_SIZE) {
       mg.page.finalSize = this.global_writeOffset - mg.page.global_headOffset;
     }
 
     this.mutationGroup = null;
+    this._publishWrittenOutput();
+  }
+
+  _readOutputRange(startOffset, endOffset) {
+    let buffers = [];
+    let readOffset = startOffset;
+
+    for (let page of this.pages) {
+      let pageStartOffset = page.global_headOffset;
+      let pageEndOffset = page.finalSize > 0
+        ? pageStartOffset + page.finalSize
+        : this.global_writeOffset;
+
+      if (pageEndOffset <= readOffset || pageStartOffset >= endOffset) {
+        continue;
+      }
+
+      let chunkStartOffset = Math.max(readOffset, pageStartOffset);
+      let chunkEndOffset = Math.min(endOffset, pageEndOffset);
+      buffers.push(page.buffer.subarray(
+        chunkStartOffset - pageStartOffset,
+        chunkEndOffset - pageStartOffset
+      ));
+      readOffset = chunkEndOffset;
+
+      if (readOffset === endOffset) {
+        break;
+      }
+    }
+
+    if (readOffset !== endOffset) {
+      throw new Error('Cannot read a missing window output range');
+    }
+
+    return buffers.length === 1
+      ? buffers[0]
+      : Buffer.concat(buffers, endOffset - startOffset);
+  }
+
+  _publishWrittenOutput() {
+    let startOffset = this.global_publishOffset;
+    let endOffset = this.global_writeOffset;
+
+    if (startOffset === endOffset) {
+      return;
+    }
+
+    if (!this.publications) {
+      this.publications = [];
+    }
+
+    this.publications.push(startOffset, endOffset);
+    this.global_publishOffset = endOffset;
+
+    if (this.connected) {
+      this.bufferFn(this._readOutputRange(startOffset, endOffset));
+    }
   }
 
   _allocCommandBuffer(size) {
