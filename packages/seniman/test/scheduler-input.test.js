@@ -8,6 +8,7 @@ import {
   schedulerOutputBuffer,
   SCHEDULER_INPUT_PAGE_SIZE,
   SCHEDULER_OUTPUT_PAGE_SIZE,
+  SCHEDULER_TURN_WORK_BUDGET,
   onDispose,
   useState,
   useEffect
@@ -18,17 +19,33 @@ import {
   scheduler_hasWork,
   scheduler_ingest,
   scheduler_registerWindow,
-  SCHEDULER_OUTPUT_RUN_NODES
+  SCHEDULER_PACKET_END,
+  SCHEDULER_PACKET_START,
+  SCHEDULER_WINDOW_WORK_QUANTUM
 } from '../dist/scheduler.js';
 
-const waitForScheduler = () => new Promise(resolve => setTimeout(resolve, 0));
+async function waitForScheduler() {
+  do {
+    await new Promise(resolve => setTimeout(resolve, 0));
+  } while (scheduler_hasWork() || schedulerInputWriter.offset > 0);
+}
 
 function createWindow(id) {
   return {
     id,
     destroyed: false,
+    publicationOpen: false,
+    publicationPacketId: 0,
     lastReadableId: 1,
-    lastEffectId: 2
+    lastEffectId: 2,
+    beginPublication(packetId) {
+      this.publicationOpen = true;
+      this.publicationPacketId = packetId;
+    },
+    commitPublication() {
+      this.publicationOpen = false;
+      this.publicationPacketId = 0;
+    }
   };
 }
 
@@ -46,17 +63,13 @@ function drainSchedulerNodeIds() {
     let offset = 0;
 
     while (offset < length) {
-      let type = output.readUInt8(offset);
-      let count = output.readUInt32LE(offset + 12);
-      offset += 16;
+      let deletedNodeCount = output.readUInt32LE(offset + 16);
+      let nodeCount = output.readUInt32LE(offset + 20);
+      offset += 28 + deletedNodeCount * 4;
 
-      for (let i = 0; i < count; i++) {
-        let nodeId = output.readUInt32LE(offset);
+      for (let i = 0; i < nodeCount; i++) {
+        nodeIds.push(output.readUInt32LE(offset));
         offset += 4;
-
-        if (type === SCHEDULER_OUTPUT_RUN_NODES) {
-          nodeIds.push(nodeId);
-        }
       }
     }
   }
@@ -86,6 +99,46 @@ function ingestSchedulerCommands(handle, commands) {
   }
 
   scheduler_ingest(input, input.length);
+}
+
+function drainSchedulerRecords() {
+  let output = Buffer.alloc(SCHEDULER_OUTPUT_PAGE_SIZE);
+  let length = scheduler_drainWork(output);
+  let records = [];
+  let offset = 0;
+
+  while (offset < length) {
+    let flags = output.readUInt8(offset);
+    let slot = output.readUInt32LE(offset + 4);
+    let packetId = output.readUInt32LE(offset + 12);
+    let deletedNodeCount = output.readUInt32LE(offset + 16);
+    let nodeCount = output.readUInt32LE(offset + 20);
+    let workCost = output.readUInt32LE(offset + 24);
+    let deletedNodeIds = [];
+    let nodeIds = [];
+    offset += 28;
+
+    for (let i = 0; i < deletedNodeCount; i++) {
+      deletedNodeIds.push(output.readUInt32LE(offset));
+      offset += 4;
+    }
+
+    for (let i = 0; i < nodeCount; i++) {
+      nodeIds.push(output.readUInt32LE(offset));
+      offset += 4;
+    }
+
+    records.push({
+      flags,
+      slot,
+      packetId,
+      workCost,
+      deletedNodeIds,
+      nodeIds
+    });
+  }
+
+  return records;
 }
 
 test('scheduler input supports more than 128 simultaneously dirty windows', async () => {
@@ -128,6 +181,28 @@ test('scheduler input rolls over without growing its shared page', async () => {
   await waitForScheduler();
   assert.equal(effectRunCount, effectCount);
   assert.equal(schedulerInputWriter.buffer.length, SCHEDULER_INPUT_PAGE_SIZE);
+
+  deregisterWindow(window);
+});
+
+test('scheduler yields after the per-turn work budget', async () => {
+  let window = createWindow(25000);
+  let effectRunCount = 0;
+  let effectCount = SCHEDULER_TURN_WORK_BUDGET + 10;
+
+  registerWindow(window);
+  runInWindow(window.id, () => {
+    for (let i = 0; i < effectCount; i++) {
+      useEffect(() => effectRunCount++);
+    }
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(effectRunCount, SCHEDULER_TURN_WORK_BUDGET);
+  assert.equal(scheduler_hasWork(), true);
+
+  await waitForScheduler();
+  assert.equal(effectRunCount, effectCount);
 
   deregisterWindow(window);
 });
@@ -181,9 +256,10 @@ test('scheduler output drains through fixed-size continuation pages', () => {
 
   scheduler_ingest(input, input.length);
 
-  let output = Buffer.alloc(28);
+  let output = Buffer.alloc(32);
   let nodeIds = [];
   let drainCount = 0;
+  let packetId;
 
   while (true) {
     let length = scheduler_drainWork(output);
@@ -196,16 +272,27 @@ test('scheduler output drains through fixed-size continuation pages', () => {
     let offset = 0;
 
     while (offset < length) {
-      assert.equal(output.readUInt8(offset), SCHEDULER_OUTPUT_RUN_NODES);
+      let flags = output.readUInt8(offset);
       assert.equal(output.readUInt32LE(offset + 4), handle.slot);
       assert.equal(output.readUInt32LE(offset + 8), handle.generation);
+      packetId ??= output.readUInt32LE(offset + 12);
+      assert.equal(output.readUInt32LE(offset + 12), packetId);
+      assert.equal(output.readUInt32LE(offset + 16), 0);
 
-      let count = output.readUInt32LE(offset + 12);
-      offset += 16;
+      let count = output.readUInt32LE(offset + 20);
+      offset += 28;
+
+      if (drainCount === 1) {
+        assert.ok(flags & SCHEDULER_PACKET_START);
+      }
 
       for (let i = 0; i < count; i++) {
         nodeIds.push(output.readUInt32LE(offset));
         offset += 4;
+      }
+
+      if (nodeIds.length === effectCount) {
+        assert.ok(flags & SCHEDULER_PACKET_END);
       }
     }
   }
@@ -301,4 +388,117 @@ test('dirty ancestor expires its queued old child before replacement', async () 
   assert.equal(oldChildDisposeCount, 1);
 
   deregisterWindow(window);
+});
+
+test('scheduler rotates unfinished windows after one work quantum', () => {
+  let busyHandle = scheduler_registerWindow(43000);
+  let smallHandle = scheduler_registerWindow(43001);
+  let busyNodeCount = SCHEDULER_WINDOW_WORK_QUANTUM + 10;
+  let busyCommands = [];
+
+  for (let i = 0; i < busyNodeCount; i++) {
+    busyCommands.push([3, 0, 4 + i * 2]);
+  }
+
+  ingestSchedulerCommands(busyHandle, busyCommands);
+  ingestSchedulerCommands(smallHandle, [[3, 0, 4]]);
+
+  let records = drainSchedulerRecords();
+
+  assert.deepEqual(
+    records.map(record => [
+      record.slot,
+      record.deletedNodeIds.length,
+      record.nodeIds.length,
+      record.workCost
+    ]),
+    [
+      [
+        busyHandle.slot,
+        0,
+        SCHEDULER_WINDOW_WORK_QUANTUM,
+        SCHEDULER_WINDOW_WORK_QUANTUM
+      ],
+      [smallHandle.slot, 0, 1, 1],
+      [busyHandle.slot, 0, 10, 10]
+    ]
+  );
+  assert.deepEqual(
+    records
+      .filter(record => record.slot === busyHandle.slot)
+      .flatMap(record => record.nodeIds),
+    Array.from({ length: busyNodeCount }, (_, i) => 4 + i * 2)
+  );
+  assert.equal(scheduler_hasWork(), false);
+
+  scheduler_deregisterWindow(busyHandle.slot, busyHandle.generation);
+  scheduler_deregisterWindow(smallHandle.slot, smallHandle.generation);
+});
+
+test('scheduler applies the work quantum to disposals', () => {
+  let busyHandle = scheduler_registerWindow(44000);
+  let smallHandle = scheduler_registerWindow(44001);
+  let busyNodeCount = SCHEDULER_WINDOW_WORK_QUANTUM + 10;
+  let registerCommands = [];
+  let disposeCommands = [];
+
+  for (let i = 0; i < busyNodeCount; i++) {
+    let nodeId = 4 + i * 2;
+    registerCommands.push([3, 0, nodeId]);
+    disposeCommands.push([4, 0, nodeId]);
+  }
+
+  ingestSchedulerCommands(busyHandle, registerCommands);
+  drainSchedulerNodeIds();
+
+  ingestSchedulerCommands(busyHandle, disposeCommands);
+  ingestSchedulerCommands(smallHandle, [[3, 0, 4]]);
+
+  assert.deepEqual(
+    drainSchedulerRecords().map(record => [
+      record.slot,
+      record.deletedNodeIds.length,
+      record.nodeIds.length
+    ]),
+    [
+      [busyHandle.slot, SCHEDULER_WINDOW_WORK_QUANTUM, 0],
+      [smallHandle.slot, 0, 1],
+      [busyHandle.slot, 10, 0]
+    ]
+  );
+  assert.equal(scheduler_hasWork(), false);
+
+  scheduler_deregisterWindow(busyHandle.slot, busyHandle.generation);
+  scheduler_deregisterWindow(smallHandle.slot, smallHandle.generation);
+});
+
+test('scheduler packets keep replacement deletion and forward work together', () => {
+  let handle = scheduler_registerWindow(45000);
+
+  ingestSchedulerCommands(handle, [[3, 0, 4]]);
+  drainSchedulerNodeIds();
+  ingestSchedulerCommands(handle, [[3, 4, 6]]);
+  drainSchedulerNodeIds();
+
+  ingestSchedulerCommands(handle, [
+    [2, 4, 101],
+    [1, 4, 101],
+    [2, 6, 103],
+    [1, 6, 103],
+    [6, 101],
+    [6, 103]
+  ]);
+
+  let records = drainSchedulerRecords();
+
+  assert.equal(records.length, 1);
+  assert.equal(
+    records[0].flags,
+    SCHEDULER_PACKET_START | SCHEDULER_PACKET_END
+  );
+  assert.deepEqual(records[0].deletedNodeIds, [6]);
+  assert.deepEqual(records[0].nodeIds, [4]);
+  assert.equal(scheduler_hasWork(), false);
+
+  scheduler_deregisterWindow(handle.slot, handle.generation);
 });

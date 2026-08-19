@@ -12,8 +12,9 @@ import {
   scheduler_deregisterWindow,
   scheduler_ingest,
   scheduler_drainWork,
-  SCHEDULER_OUTPUT_RUN_NODES,
-  SCHEDULER_OUTPUT_DELETE_NODES,
+  scheduler_hasWork,
+  SCHEDULER_PACKET_START,
+  SCHEDULER_PACKET_END,
   schedulerOutputCommand
 } from "./scheduler.js";
 
@@ -167,23 +168,31 @@ function _scheduleExecWork() {
   }
 
   ExecWorkStartTimeout = setTimeout(() => {
-    _execWork();
     ExecWorkStartTimeout = null;
+    _execWork();
   }, 0);
 }
 
 function _execWork() {
   _flushSchedulerInput();
+  let packetContinues = false;
 
-  while (true) {
-    let outputLength = scheduler_drainWork(schedulerOutputBuffer);
+  do {
+    let outputLength = scheduler_drainWork(
+      schedulerOutputBuffer,
+      packetContinues ? 0 : SCHEDULER_TURN_WORK_BUDGET
+    );
 
     if (outputLength === 0) {
       break;
     }
 
-    _executeSchedulerOutput(outputLength);
+    packetContinues = _executeSchedulerOutput(outputLength);
     _flushSchedulerInput();
+  } while (packetContinues);
+
+  if (scheduler_hasWork()) {
+    _scheduleExecWork();
   }
 
   _setActiveWindowId(null);
@@ -193,8 +202,9 @@ function _execWork() {
 
 export const SCHEDULER_OUTPUT_PAGE_SIZE = 64 * 1024;
 export const SCHEDULER_INPUT_PAGE_SIZE = 64 * 1024;
+export const SCHEDULER_TURN_WORK_BUDGET = 1024;
 const SCHEDULER_INPUT_FRAME_HEADER_SIZE = 12;
-const SCHEDULER_OUTPUT_RECORD_HEADER_SIZE = 16;
+const SCHEDULER_OUTPUT_PACKET_HEADER_SIZE = 28;
 
 export const schedulerOutputBuffer = Buffer.allocUnsafe(
   SCHEDULER_OUTPUT_PAGE_SIZE
@@ -208,28 +218,31 @@ export let schedulerInputWriter = {
   frameGeneration: 0
 };
 
-// Output records are [type, slot, generation, node count, node IDs].
+// Output packets contain deletion IDs followed by forward node IDs.
 function _executeSchedulerOutput(length) {
   let readOffset = 0;
+  let packetContinues = false;
 
   while (readOffset < length) {
-    if (length - readOffset < SCHEDULER_OUTPUT_RECORD_HEADER_SIZE) {
-      throw new Error('Invalid scheduler output record');
+    if (length - readOffset < SCHEDULER_OUTPUT_PACKET_HEADER_SIZE) {
+      throw new Error('Invalid scheduler output packet');
     }
 
-    let type = schedulerOutputBuffer.readUInt8(readOffset);
+    let flags = schedulerOutputBuffer.readUInt8(readOffset);
     let slot = schedulerOutputBuffer.readUInt32LE(readOffset + 4);
     let generation = schedulerOutputBuffer.readUInt32LE(readOffset + 8);
-    let nodeCount = schedulerOutputBuffer.readUInt32LE(readOffset + 12);
+    let packetId = schedulerOutputBuffer.readUInt32LE(readOffset + 12);
+    let deletedNodeCount = schedulerOutputBuffer.readUInt32LE(readOffset + 16);
+    let nodeCount = schedulerOutputBuffer.readUInt32LE(readOffset + 20);
     let recordEnd = readOffset +
-      SCHEDULER_OUTPUT_RECORD_HEADER_SIZE +
-      nodeCount * 4;
+      SCHEDULER_OUTPUT_PACKET_HEADER_SIZE +
+      (deletedNodeCount + nodeCount) * 4;
 
     if (recordEnd > length) {
-      throw new Error('Invalid scheduler output record length');
+      throw new Error('Invalid scheduler output packet length');
     }
 
-    readOffset += SCHEDULER_OUTPUT_RECORD_HEADER_SIZE;
+    readOffset += SCHEDULER_OUTPUT_PACKET_HEADER_SIZE;
 
     let window = schedulerWindowMap.get(slot);
     let isCurrentWindow = window &&
@@ -237,33 +250,49 @@ function _executeSchedulerOutput(length) {
 
     if (isCurrentWindow) {
       _setActiveWindowId(window.id);
+
+      if (flags & SCHEDULER_PACKET_START) {
+        window.beginPublication(packetId);
+      } else if (!window.destroyed && (
+        !window.publicationOpen ||
+        window.publicationPacketId !== packetId
+      )) {
+        throw new Error('Scheduler output continued a different publication');
+      }
+    }
+
+    for (let i = 0; i < deletedNodeCount; i++) {
+      let nodeId = schedulerOutputBuffer.readUInt32LE(readOffset);
+      readOffset += 4;
+
+      if (isCurrentWindow) {
+        _runEffectDisposers(nodeId, true);
+        _deleteNode(nodeId);
+      }
     }
 
     for (let i = 0; i < nodeCount; i++) {
       let nodeId = schedulerOutputBuffer.readUInt32LE(readOffset);
       readOffset += 4;
 
-      if (!isCurrentWindow) {
-        continue;
-      }
-
-      if (type === SCHEDULER_OUTPUT_DELETE_NODES) {
-        _runEffectDisposers(nodeId, true);
-        _deleteNode(nodeId);
-      } else if (type === SCHEDULER_OUTPUT_RUN_NODES) {
-        if (!window.destroyed) {
-          _runEffectDisposers(nodeId, false);
-          _runNode(nodeId);
-        }
-      } else {
-        throw new Error(`Invalid scheduler output type: ${type}`);
+      if (isCurrentWindow && !window.destroyed) {
+        _runEffectDisposers(nodeId, false);
+        _runNode(nodeId);
       }
     }
 
     if (readOffset !== recordEnd) {
       throw new Error('Invalid scheduler output node count');
     }
+
+    if (isCurrentWindow && (flags & SCHEDULER_PACKET_END)) {
+      window.commitPublication(packetId);
+    }
+
+    packetContinues = (flags & SCHEDULER_PACKET_END) === 0;
   }
+
+  return packetContinues;
 }
 
 function _closeSchedulerInputFrame() {

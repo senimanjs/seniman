@@ -66,6 +66,81 @@ test('commands use standard and exact-sized emergency pages', () => {
   assert.equal(window.global_writeOffset, writeOffset);
 });
 
+test('window publication commits rollover pages as one replayable packet', () => {
+  let output = [];
+  let window = new Window(
+    { lowMemoryMode: false },
+    { windowId: '123456789012345678901' },
+    null,
+    null,
+    buffer => output.push(Buffer.from(buffer))
+  );
+
+  window.flushCommandBuffer();
+  let initialOffset = window.global_publishOffset;
+  window.registerReadOffset(initialOffset);
+  output = [];
+
+  window.beginPublication();
+  window._allocCommandBuffer(STANDARD_PAGE_SIZE - initialOffset).fill(1);
+  window._allocCommandBuffer(1000).fill(2);
+  window._handleBlockCleanup(11);
+  window.flushCommandBuffer();
+
+  assert.deepEqual(output, []);
+  assert.equal(window.global_publishOffset, initialOffset);
+  assert.throws(
+    () => window.registerReadOffset(window.global_writeOffset),
+    /beyond published output/
+  );
+
+  window._restreamUnreadPages();
+  assert.deepEqual(output, []);
+
+  window.commitPublication();
+
+  assert.equal(output.length, 1);
+  assert.equal(
+    output[0].length,
+    STANDARD_PAGE_SIZE - initialOffset + 1000 + 5
+  );
+  assert.deepEqual(
+    output[0].subarray(-5),
+    Buffer.from([9, 0, 11, 0, 0])
+  );
+  assert.equal(window.global_publishOffset, window.global_writeOffset);
+
+  let committedPacket = output[0];
+  output = [];
+  window._restreamUnreadPages();
+  assert.deepEqual(output, [committedPacket]);
+});
+
+test('ping participates in the published and acknowledged byte stream', () => {
+  let output = [];
+  let window = new Window(
+    { lowMemoryMode: false },
+    { windowId: '123456789012345678901' },
+    null,
+    null,
+    buffer => output.push(Buffer.from(buffer))
+  );
+
+  window.flushCommandBuffer();
+  window.registerReadOffset(window.global_publishOffset);
+  output = [];
+  let offsetBeforePing = window.global_publishOffset;
+
+  window.sendPing();
+
+  assert.deepEqual(output, [Buffer.from([0])]);
+  assert.equal(window.global_writeOffset, offsetBeforePing + 1);
+  assert.equal(window.global_publishOffset, offsetBeforePing + 1);
+  assert.doesNotThrow(() => {
+    window.registerReadOffset(offsetBeforePing + 1);
+  });
+});
+
 test('large initial templates are not limited by page size', async () => {
   let text = 'large-template-content-'.repeat(1000);
   let textBuffer = Buffer.from(text);
