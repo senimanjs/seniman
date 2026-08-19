@@ -1,4 +1,5 @@
 export const STANDARD_PAGE_SIZE = 4096 * 2;
+export const MAX_RETAINED_STANDARD_PAGE_COUNT = 256;
 
 const DEFAULT_MAX_PAGE_SIZE = 4096 * 32;
 const configuredMaxPageSize = process.env.SENIMAN_MAX_PAGE_SIZE;
@@ -34,6 +35,10 @@ function getPageSize(commandSize) {
 export const bufferPool = {
   getPageSize,
 
+  get retainedCount() {
+    return reuseBufferQueue.length;
+  },
+
   alloc: (minimumSize = STANDARD_PAGE_SIZE) => {
     let pageSize = getPageSize(minimumSize);
 
@@ -43,8 +48,14 @@ export const bufferPool = {
   },
 
   returnBuffer: (buffer) => {
-    if (buffer.length == STANDARD_PAGE_SIZE) {
+    if (
+      buffer.length == STANDARD_PAGE_SIZE &&
+      reuseBufferQueue.length < MAX_RETAINED_STANDARD_PAGE_COUNT
+    ) {
       reuseBufferQueue.push(buffer);
+      return true;
     }
+
+    return false;
   }
 }
