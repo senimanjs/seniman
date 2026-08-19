@@ -280,6 +280,16 @@
     return dv.getUint16((processOffset += 2) - 2);
   }
 
+  let getUvarint = () => {
+    let value = 0, multiplier = 1, byte;
+    do {
+      byte = getUint8();
+      value += (byte & 0x7f) * multiplier;
+      multiplier *= 0x80;
+    } while (byte & 0x80);
+    return value;
+  }
+
   let getInt16 = () => {
     return dv.getInt16((processOffset += 2) - 2);
   }
@@ -328,7 +338,7 @@
       case UPDATE_MODE_STYLEPROP:
       case UPDATE_MODE_SET_ATTR:
         {
-          let mapIndex = getUint8();
+          let mapIndex = getUvarint();
           let propName = GlobalTokenList[mapIndex];
 
           let propValueLength = getUint16();
@@ -366,7 +376,7 @@
       */
       case UPDATE_MODE_REMOVE_ATTR:
         {
-          let mapIndex = getUint8();
+          let mapIndex = getUvarint();
           let propName = GlobalTokenList[mapIndex];
 
           if (propName == 'checked') {
