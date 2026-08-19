@@ -14,11 +14,8 @@ import {
   scheduler_drainWork,
   scheduler_hasWork,
   SCHEDULER_PACKET_START,
-  SCHEDULER_PACKET_END,
-  schedulerOutputCommand
+  SCHEDULER_PACKET_END
 } from "./scheduler.js";
-
-export { schedulerOutputCommand };
 
 let ActiveNode = null;
 let ActiveWindow = null;
