@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveNode, getActiveWindow, useCallback, onDispose, getActiveScope, runInScope, runInWindow } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
-import { bufferPool, SMALL_PAGE_SIZE } from './buffer-pool.js';
+import { bufferPool, STANDARD_PAGE_SIZE } from './buffer-pool.js';
 import { DefaultErrorHandler } from './errors.js';
 import { HeadContext, createHeadContextValue } from './head.js';
 import { DefaultNetworkStatusView } from './network.js';
@@ -959,7 +959,7 @@ export class Window {
       this.bufferFn(buffer.subarray(offset, offset + size));
     }
 
-    if (mg && mg.page.buffer.length > SMALL_PAGE_SIZE) {
+    if (mg && mg.page.buffer.length > STANDARD_PAGE_SIZE) {
       mg.page.finalSize = this.global_writeOffset - mg.page.global_headOffset;
     }
 

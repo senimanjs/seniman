@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRoot, _createBlock, _declareBlock } from '../dist/index.js';
-import { MAX_PAGE_SIZE, MEDIUM_PAGE_SIZE, SMALL_PAGE_SIZE } from '../dist/buffer-pool.js';
+import { MAX_PAGE_SIZE, STANDARD_PAGE_SIZE } from '../dist/buffer-pool.js';
 import { Window } from '../dist/window.js';
 
-test('commands use fixed page sizes and replay from their page', () => {
+test('commands use standard and exact-sized emergency pages', () => {
   let output = [];
   let window = new Window(
     { lowMemoryMode: false },
@@ -27,8 +27,8 @@ test('commands use fixed page sizes and replay from their page', () => {
   assert.equal(output[1].readUInt8(4), 1);
   assert.equal(output[1].readUInt16BE(5), value.length);
   assert.equal(output[1].subarray(7).toString(), value);
-  assert.equal(window.pages[0].buffer.length, SMALL_PAGE_SIZE);
-  assert.equal(window.pages[1].buffer.length, MAX_PAGE_SIZE);
+  assert.equal(window.pages[0].buffer.length, STANDARD_PAGE_SIZE);
+  assert.equal(window.pages[1].buffer.length, output[1].length);
 
   let commandOffset = output[0].length;
   let finalOffset = commandOffset + output[1].length;
@@ -43,21 +43,19 @@ test('commands use fixed page sizes and replay from their page', () => {
   assert.equal(window.pages.length, 0);
 
   output = [];
-  let mediumBuffer = window._allocCommandBuffer(5000);
-  mediumBuffer.fill(1);
+  let standardBuffer = window._allocCommandBuffer(5000);
+  standardBuffer.fill(1);
   window.flushCommandBuffer();
   assert.equal(output[0].length, 5000);
-  assert.equal(window.pages[0].buffer.length, MEDIUM_PAGE_SIZE);
-
-  window.registerReadOffset(window.global_writeOffset);
-  assert.equal(window.pages.length, 0);
+  assert.equal(window.pages[0].buffer.length, STANDARD_PAGE_SIZE);
 
   output = [];
   let buf = window._allocCommandBuffer(1);
   buf.writeUInt8(0, 0);
   window.flushCommandBuffer();
   assert.deepEqual(output, [Buffer.from([0])]);
-  assert.equal(window.pages[0].buffer.length, SMALL_PAGE_SIZE);
+  assert.equal(window.pages.length, 1);
+  assert.equal(window.pages[0].buffer.length, STANDARD_PAGE_SIZE);
 
   let writeOffset = window.global_writeOffset;
   assert.throws(
