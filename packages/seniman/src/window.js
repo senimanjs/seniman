@@ -241,6 +241,24 @@ const scratchBuffer = Buffer.alloc(32768);
 const DELETE_BLOCK_BUFFER_SIZE = 2048;
 const MAX_BLOCK_ID = 0x7fff;
 
+function uvarintSize(value) {
+  let size = 1;
+  while (value >= 0x80) {
+    value = Math.floor(value / 0x80);
+    size++;
+  }
+  return size;
+}
+
+function writeUvarint(buffer, value, offset) {
+  do {
+    let byte = value % 0x80;
+    value = Math.floor(value / 0x80);
+    buffer.writeUInt8(value ? byte | 0x80 : byte, offset++);
+  } while (value);
+  return offset;
+}
+
 let _allocatedWindowId = 1;
 
 export class Window {
@@ -1492,15 +1510,14 @@ export class Window {
       // TODO: improve this abstraction
       let elRef = {
         _staticHelper: (mode, propName, propValue) => {
-          let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1 + 2 + propValue.length);
+          let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + uvarintSize(propName) + 2 + propValue.length);
 
           buf.writeUInt8(CMD_ELEMENT_UPDATE, 0);
           buf.writeUInt16BE(blockId, 1);
           buf.writeUInt8(targetId, 3);
           buf.writeUInt8(mode, 4);
 
-          buf.writeUInt8(propName, 5); // propName is in this case a number -- map index.
-          let offset = 6;
+          let offset = writeUvarint(buf, propName, 5);
 
           buf.writeUInt16BE(propValue.length, offset);
           offset += 2;
@@ -1588,27 +1605,27 @@ export class Window {
         },
 
         removeAttribute: (propName) => {
-          let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 1);
+          let tokenId = this._registerAttrKey(propName);
+          let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + uvarintSize(tokenId));
 
           buf.writeUInt8(CMD_ELEMENT_UPDATE, 0);
           buf.writeUInt16BE(blockId, 1);
           buf.writeUInt8(targetId, 3);
           buf.writeUInt8(UPDATE_MODE_REMOVE_ATTR, 4);
-          buf.writeUInt8(propName, 5); // propName is in this case a number -- map index.
+          writeUvarint(buf, tokenId, 5);
         },
 
         setAttribute: (propName, propValue) => {
-          let attrKey = this._registerAttrKey(propName);
-
           if (typeof propValue != 'string') {
             if (!propValue) {
-              elRef.removeAttribute(attrKey);
+              elRef.removeAttribute(propName);
               return;
             } else {
               propValue = propValue.toString();
             }
           }
 
+          let attrKey = this._registerAttrKey(propName);
           elRef._staticHelper(UPDATE_MODE_SET_ATTR, attrKey, propValue);
         },
         setClassName: (className) => {
