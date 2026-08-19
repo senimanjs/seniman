@@ -6,19 +6,32 @@ export const CoreNetworkModule = createInternalModule(1);
 export let NetworkManagerModule = createModule($c(() => {
   let coreNetwork = $s(CoreNetworkModule);
   let requestReopen = false;
+  let reconnectDisabled = false;
 
-  coreNetwork.onClose(() => {
-    requestReopen = true;
+  coreNetwork.onClose((event) => {
+    if (event.code == 3002) {
+      reconnectDisabled = true;
+      clearInterval(intv);
+      callbacks.disconnected.forEach(cb => cb());
+    } else {
+      requestReopen = true;
+    }
   });
 
   coreNetwork.onError(() => {
-    requestReopen = true;
+    if (!reconnectDisabled) {
+      requestReopen = true;
+    }
   });
 
   let lastIntervalTime = Date.now();
   let pingWaitCounter = 0;
 
   let setIntervalFn = () => setInterval(() => {
+    if (reconnectDisabled) {
+      return;
+    }
+
     let _now = Date.now();
     let lastMessageTime = coreNetwork.lastMessageTime();
     let pingLate = (_now - lastMessageTime) > 4000;
@@ -74,7 +87,9 @@ export let NetworkManagerModule = createModule($c(() => {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState == 'visible') {
       // TODO: should run this immediately
-      intv = setIntervalFn();
+      if (!reconnectDisabled) {
+        intv = setIntervalFn();
+      }
     } else {
       clearInterval(intv);
     }
@@ -89,6 +104,10 @@ export let NetworkManagerModule = createModule($c(() => {
   return {
     on: (eventName, callback) => {
       callbacks[eventName].push(callback);
+
+      if (reconnectDisabled && eventName == 'disconnected') {
+        callback();
+      }
     }
   }
 }));

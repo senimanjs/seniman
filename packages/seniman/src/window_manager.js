@@ -25,6 +25,9 @@ class Root {
 
     this.externalWindowIdMapping = new Map();
     this.windowConnectionMap = new Map();
+    this.retainedOutputBytes = 0;
+    this.outputProgressHead = null;
+    this.outputProgressTail = null;
     this.config = null;
     this.rateLimitDisabled = false;
     this.messageLimiter = null;
@@ -82,6 +85,8 @@ class Root {
     this.config = config;
     this.crawlerRenderingEnabled = config.enableCrawlerRenderer;
     this.crawlerRenderer = this.crawlerRenderingEnabled ? (this.crawlerRenderer || new CrawlerRenderer()) : null;
+
+    this._cullRetainedOutputIfNeeded();
 
     if (rateLimitConfigChanged && !this.rateLimitDisabled) {
       this._configureRateLimiters();
@@ -198,6 +203,7 @@ class Root {
 
     registerWindow(window);
     window.onBuffer(this._setupWsListeners(ws, window.id));
+    window.enableOutputRetentionTracking();
 
     window.start();
 
@@ -384,12 +390,108 @@ class Root {
     };
   }
 
-  _closeWindowConnection(windowId) {
+  _closeWindowConnection(windowId, code) {
     let connection = this.windowConnectionMap.get(windowId);
 
     if (connection) {
       this.windowConnectionMap.delete(windowId);
-      connection.ws.close();
+      connection.ws.close(code);
+    }
+  }
+
+  _unlinkOutputProgressWindow(window) {
+    if (!window.outputProgressListed) {
+      return;
+    }
+
+    let previous = window.outputProgressPrev;
+    let next = window.outputProgressNext;
+
+    if (previous) {
+      previous.outputProgressNext = next;
+    } else {
+      this.outputProgressHead = next;
+    }
+
+    if (next) {
+      next.outputProgressPrev = previous;
+    } else {
+      this.outputProgressTail = previous;
+    }
+
+    window.outputProgressPrev = null;
+    window.outputProgressNext = null;
+    window.outputProgressListed = false;
+  }
+
+  _appendOutputProgressWindow(window) {
+    window.outputProgressPrev = this.outputProgressTail;
+    window.outputProgressNext = null;
+    window.outputProgressListed = true;
+
+    if (this.outputProgressTail) {
+      this.outputProgressTail.outputProgressNext = window;
+    } else {
+      this.outputProgressHead = window;
+    }
+
+    this.outputProgressTail = window;
+  }
+
+  _updateWindowRetainedOutput(window, madeProgress = false) {
+    if (!window.outputRetentionTracking || window.destroyed) {
+      return;
+    }
+
+    let retainedBytes = window.global_publishOffset - window.global_readOffset;
+    this.retainedOutputBytes += retainedBytes - window.retainedOutputBytes;
+    window.retainedOutputBytes = retainedBytes;
+
+    if (retainedBytes === 0) {
+      this._unlinkOutputProgressWindow(window);
+    } else if (!window.outputProgressListed) {
+      this._appendOutputProgressWindow(window);
+    } else if (madeProgress && this.outputProgressTail !== window) {
+      this._unlinkOutputProgressWindow(window);
+      this._appendOutputProgressWindow(window);
+    }
+
+    this._cullRetainedOutputIfNeeded();
+  }
+
+  _releaseWindowRetainedOutput(window) {
+    this.retainedOutputBytes -= window.retainedOutputBytes;
+    window.retainedOutputBytes = 0;
+    this._unlinkOutputProgressWindow(window);
+  }
+
+  _expireWindowForOutputBacklog(window) {
+    if (window.destroyed) {
+      this._releaseWindowRetainedOutput(window);
+      return;
+    }
+
+    this._closeWindowConnection(window.id, 3002);
+    window.destroy();
+  }
+
+  _cullRetainedOutputIfNeeded() {
+    let maxRetainedBytes = this.config?.maxRetainedOutputBytes || 0;
+
+    if (
+      maxRetainedBytes === 0 ||
+      this.retainedOutputBytes <= maxRetainedBytes
+    ) {
+      return;
+    }
+
+    let lowWatermark = Math.floor(maxRetainedBytes * 0.75);
+
+    while (
+      this.retainedOutputBytes > lowWatermark &&
+      this.outputProgressHead
+    ) {
+      this._expireWindowForOutputBacklog(this.outputProgressHead);
     }
   }
 

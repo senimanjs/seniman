@@ -318,7 +318,9 @@ export class Window {
 
     this.destroyFnCallback = null;
     this.connected = true;
+    this.destroyed = false;
     this.rootFn = rootFn;
+    this.rootDisposer = () => {};
 
     this.pages = [];
     this.global_readOffset = 0;
@@ -329,6 +331,11 @@ export class Window {
     this.publicationOpen = false;
     this.publicationPacketId = 0;
     this.mutationGroup = null;
+    this.outputRetentionTracking = false;
+    this.retainedOutputBytes = 0;
+    this.outputProgressPrev = null;
+    this.outputProgressNext = null;
+    this.outputProgressListed = false;
 
     this.bufferFn = bufferFn;
 
@@ -343,7 +350,6 @@ export class Window {
     this.deleteBlockCount = 0;
     this.pendingDeleteBlockChunks = null;
     this.deleteBlockFlushTimer = null;
-    this.destroyed = false;
 
     this.clientTemplateInstallationSet = new Set();
     this.clientFunctionInstallationSet = new Set();
@@ -695,6 +701,15 @@ export class Window {
     this.bufferFn = bufferFn;
   }
 
+  enableOutputRetentionTracking() {
+    if (this.destroyed || this.outputRetentionTracking) {
+      return;
+    }
+
+    this.outputRetentionTracking = true;
+    this.windowManager._updateWindowRetainedOutput(this);
+  }
+
   flushCommandBuffer() {
     this._flushMutationGroup();
   }
@@ -953,6 +968,7 @@ export class Window {
       );
     }
 
+    let madeProgress = readOffset > this.global_readOffset;
     this.global_readOffset = readOffset;
 
     while (
@@ -1001,6 +1017,10 @@ export class Window {
       } else {
         break;
       }
+    }
+
+    if (this.outputRetentionTracking) {
+      this.windowManager._updateWindowRetainedOutput(this, madeProgress);
     }
   }
 
@@ -1116,6 +1136,11 @@ export class Window {
     this.publicationPacketId = 0;
     this.pendingDeleteBlockChunks = null;
 
+    if (this.outputRetentionTracking) {
+      this.windowManager._releaseWindowRetainedOutput(this);
+      this.outputRetentionTracking = false;
+    }
+
     // A websocket send may still reference an unacknowledged buffer. Only
     // recycle pages the client has confirmed; leave the rest to Node.
     this.pages.forEach(page => {
@@ -1208,12 +1233,37 @@ export class Window {
       return;
     }
 
+    if (this.outputRetentionTracking) {
+      let config = this.windowManager.config;
+      let maxBytes = config.maxUnacknowledgedOutputBytes;
+      let maxPublications = config.maxUnacknowledgedPublications;
+      let publicationCount = this.publications
+        ? (this.publications.length - this.publicationHead) / 2
+        : 0;
+
+      if (
+        (maxBytes > 0 && endOffset - this.global_readOffset > maxBytes) ||
+        (maxPublications > 0 && publicationCount + 1 > maxPublications)
+      ) {
+        this.windowManager._expireWindowForOutputBacklog(this);
+        return;
+      }
+    }
+
     if (!this.publications) {
       this.publications = [];
     }
 
     this.publications.push(startOffset, endOffset);
     this.global_publishOffset = endOffset;
+
+    if (this.outputRetentionTracking) {
+      this.windowManager._updateWindowRetainedOutput(this);
+
+      if (this.destroyed) {
+        return;
+      }
+    }
 
     if (this.connected) {
       this.bufferFn(this._readOutputRange(startOffset, endOffset));

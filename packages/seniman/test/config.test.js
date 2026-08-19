@@ -9,6 +9,9 @@ test('createConfig returns Seniman defaults', () => {
   assert.equal(config.enableCrawlerRenderer, false);
   assert.equal(config.maxInputEventBufferSize, 65536);
   assert.equal(config.rateLimitWindowInputThreshold, 32);
+  assert.equal(config.maxUnacknowledgedOutputBytes, 256 * 1024);
+  assert.equal(config.maxUnacknowledgedPublications, 256);
+  assert.equal(config.maxRetainedOutputBytes, 256 * 1024 * 1024);
 });
 
 test('createConfig resolves values from the supplied environment', () => {
@@ -16,11 +19,17 @@ test('createConfig resolves values from the supplied environment', () => {
     SENIMAN_ENABLE_CRAWLER_RENDERER: '1',
     SENIMAN_MAX_INPUT_EVENT_BUFFER_SIZE: '2048',
     SENIMAN_RATELIMIT_WINDOW_INPUT_THRESHOLD: '12',
+    SENIMAN_MAX_UNACKNOWLEDGED_OUTPUT_BYTES: '4096',
+    SENIMAN_MAX_UNACKNOWLEDGED_PUBLICATIONS: '16',
+    SENIMAN_MAX_RETAINED_OUTPUT_BYTES: '65536',
   });
 
   assert.equal(config.enableCrawlerRenderer, true);
   assert.equal(config.maxInputEventBufferSize, 2048);
   assert.equal(config.rateLimitWindowInputThreshold, 12);
+  assert.equal(config.maxUnacknowledgedOutputBytes, 4096);
+  assert.equal(config.maxUnacknowledgedPublications, 16);
+  assert.equal(config.maxRetainedOutputBytes, 65536);
 });
 
 test('createRoot configures itself from process.env', () => {

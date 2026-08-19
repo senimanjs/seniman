@@ -27,6 +27,9 @@ export function createConfig(env = null) {
   return Object.freeze({
     rssLowMemoryThreshold,
     rssLowMemoryThresholdEnabled: rssLowMemoryThreshold > 0,
+    maxUnacknowledgedOutputBytes: readConfigValueAsInt(env, "SENIMAN_MAX_UNACKNOWLEDGED_OUTPUT_BYTES", 256 * 1024),
+    maxUnacknowledgedPublications: readConfigValueAsInt(env, "SENIMAN_MAX_UNACKNOWLEDGED_PUBLICATIONS", 256),
+    maxRetainedOutputBytes: readConfigValueAsInt(env, "SENIMAN_MAX_RETAINED_OUTPUT_BYTES", 256 * 1024 * 1024),
     rateLimitWindowInputThreshold: readConfigValueAsInt(env, "SENIMAN_RATELIMIT_WINDOW_INPUT_THRESHOLD", 32),
     rateLimitWindowInputTtlSeconds: readConfigValueAsInt(env, "SENIMAN_RATELIMIT_WINDOW_INPUT_TTL_SECONDS", 2),
     maxInputEventBufferSize: readConfigValueAsInt(env, "SENIMAN_MAX_INPUT_EVENT_BUFFER_SIZE", 65536),
@@ -42,6 +45,9 @@ const defaultConfig = createConfig(processEnv);
 // Preserve the existing named exports for compatibility.
 export const RSS_LOW_MEMORY_THRESHOLD = defaultConfig.rssLowMemoryThreshold;
 export const RSS_LOW_MEMORY_THRESHOLD_ENABLED = defaultConfig.rssLowMemoryThresholdEnabled;
+export const MAX_UNACKNOWLEDGED_OUTPUT_BYTES = defaultConfig.maxUnacknowledgedOutputBytes;
+export const MAX_UNACKNOWLEDGED_PUBLICATIONS = defaultConfig.maxUnacknowledgedPublications;
+export const MAX_RETAINED_OUTPUT_BYTES = defaultConfig.maxRetainedOutputBytes;
 
 if (RSS_LOW_MEMORY_THRESHOLD_ENABLED) {
   console.log('RSS_LOW_MEMORY_THRESHOLD enabled: ', RSS_LOW_MEMORY_THRESHOLD + 'MB');

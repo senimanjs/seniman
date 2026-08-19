@@ -7,6 +7,7 @@ class FakeWebSocket {
     this.listeners = new Map();
     this.sent = [];
     this.closed = false;
+    this.closeCode = null;
   }
 
   on(type, fn) {
@@ -21,8 +22,9 @@ class FakeWebSocket {
     this.sent.push(buffer);
   }
 
-  close() {
+  close(code) {
     this.closed = true;
+    this.closeCode = code;
     this.emit('close');
   }
 }
@@ -74,4 +76,28 @@ test('closing a window connection clears ownership before close fires', () => {
   assert.equal(ws.closed, true);
   assert.equal(disconnectCount, 0);
   assert.equal(root.windowConnectionMap.has(9), false);
+});
+
+test('output pressure closes a window with the overload code', () => {
+  let root = createRoot(() => null);
+  let ws = new FakeWebSocket();
+  let released = false;
+  let window = {
+    id: 10,
+    destroyed: false,
+    retainedOutputBytes: 8,
+    outputProgressListed: false,
+    destroy() {
+      this.destroyed = true;
+      released = true;
+    }
+  };
+
+  root._setupWsListeners(ws, window.id);
+  root._expireWindowForOutputBacklog(window);
+
+  assert.equal(ws.closed, true);
+  assert.equal(ws.closeCode, 3002);
+  assert.equal(root.windowConnectionMap.has(window.id), false);
+  assert.equal(released, true);
 });
