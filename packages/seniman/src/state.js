@@ -130,8 +130,11 @@ export function enqueueWindowInput(windowId, inputBuffer) {
     }
   });
 
+  if (ExecWorkStartTimeout) {
+    clearTimeout(ExecWorkStartTimeout);
+    ExecWorkStartTimeout = null;
+  }
   _execWork();
-  ExecWorkStartTimeout = null;
 
   _setActiveWindowId(null);
 }

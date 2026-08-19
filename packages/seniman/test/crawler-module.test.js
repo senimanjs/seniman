@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createModule, createRoot, useClient } from '../dist/index.js';
+import { createModule, createRoot, onDispose, useClient } from '../dist/index.js';
 import { _declareClientFunction } from '../dist/declare.js';
 
 test('crawler rendering ignores client-only module bindings', async () => {
   let clientFnId = _declareClientFunction({ argNames: [], body: '' });
   let module = createModule({ clientFnId, serverBindFns: [] });
+  let disposeCount = 0;
 
   function App() {
     let client = useClient();
+    onDispose(() => disposeCount++);
 
     client.exec({
       clientFnId,
@@ -29,4 +31,6 @@ test('crawler rendering ignores client-only module bindings', async () => {
   });
 
   assert.equal(response.statusCode, 200);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(disposeCount, 1);
 });
