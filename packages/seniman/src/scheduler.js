@@ -1,20 +1,55 @@
-import { schedulerInputWriter, schedulerOutputCommand } from "./state.js";
-
 // This scheduler module & external call flow (strictly using buffers as high-perf I/O interface)
 // is structured such that we'll be able to move this to a WASM module in the future.
 
 const NODE_FRESH = 0;
 const NODE_QUEUED = 2;
 const NODE_EXPIRED = 3;
+const INPUT_FRAME_HEADER_SIZE = 12;
+const OUTPUT_RECORD_HEADER_SIZE = 16;
+
+export const SCHEDULER_OUTPUT_RUN_NODES = 1;
+export const SCHEDULER_OUTPUT_DELETE_NODES = 2;
 
 const windowMap = new Map();
+const freeWindowSlots = [];
+const windowSlotGenerations = [];
+
+let nextWindowSlot = 1;
+let activeWindowQueue = [];
+let activeWindowQueueHead = 0;
+let pendingOutputType = 0;
+let pendingDeletedNodeIndex = -1;
+let pendingNodeIndex = 0;
 
 let ActiveWindow = null;
 
+export const schedulerOutputCommand = {
+  windowId: -1,
+  slot: 0,
+  generation: 0,
+  nodeIds: [],
+  deletedNodeIds: []
+};
+
 export function scheduler_registerWindow(windowId) {
-  // TODO: move to a more efficient buffer pool approach soon
-  windowMap.set(windowId, {
-    id: windowId,
+  let slot = freeWindowSlots.pop();
+
+  if (slot == null) {
+    slot = nextWindowSlot++;
+  }
+
+  let generation = ((windowSlotGenerations[slot] || 0) + 1) >>> 0;
+
+  if (generation === 0) {
+    generation = 1;
+  }
+
+  windowSlotGenerations[slot] = generation;
+  windowMap.set(slot, {
+    windowId,
+    slot,
+    generation,
+    queued: false,
     childrenListMap: new Map(),
     sourcesMap: new Map(),
     observersMap: new Map(),
@@ -23,10 +58,75 @@ export function scheduler_registerWindow(windowId) {
     workQueue: new WorkQueue(),
     disposeList: []
   });
+
+  return { slot, generation };
 }
 
-export function scheduler_deregisterWindow(windowId) {
-  windowMap.delete(windowId);
+export function scheduler_deregisterWindow(slot, generation) {
+  let window = windowMap.get(slot);
+
+  if (!window || window.generation !== generation) {
+    return;
+  }
+
+  window.queued = false;
+  windowMap.delete(slot);
+  freeWindowSlots.push(slot);
+}
+
+function activateWindow(window) {
+  if (window.queued) {
+    return;
+  }
+
+  window.queued = true;
+  activeWindowQueue.push(window.slot, window.generation);
+}
+
+function compactActiveWindowQueue() {
+  if (activeWindowQueueHead === activeWindowQueue.length) {
+    activeWindowQueue = [];
+    activeWindowQueueHead = 0;
+  } else if (
+    activeWindowQueueHead >= 2048 &&
+    activeWindowQueueHead * 2 >= activeWindowQueue.length
+  ) {
+    activeWindowQueue = activeWindowQueue.slice(activeWindowQueueHead);
+    activeWindowQueueHead = 0;
+  }
+}
+
+function peekActiveWindow() {
+  while (activeWindowQueueHead < activeWindowQueue.length) {
+    let slot = activeWindowQueue[activeWindowQueueHead];
+    let generation = activeWindowQueue[activeWindowQueueHead + 1];
+    let window = windowMap.get(slot);
+
+    if (window?.queued && window.generation === generation) {
+      return window;
+    }
+
+    activeWindowQueueHead += 2;
+  }
+
+  compactActiveWindowQueue();
+  return null;
+}
+
+function takeActiveWindow() {
+  let window = peekActiveWindow();
+
+  if (window) {
+    activeWindowQueueHead += 2;
+    window.queued = false;
+    compactActiveWindowQueue();
+  }
+
+  return window;
+}
+
+export function scheduler_hasWork() {
+  return pendingOutputType !== 0 || peekActiveWindow() !== null;
 }
 
 function postStateWrite(stateId) {
@@ -150,6 +250,7 @@ function registerEffect(parentNodeId, effectId) {
 function disposeEffect(parentId, effectId) {
 
   ActiveWindow.disposeList.push([parentId, effectId]);
+  activateWindow(ActiveWindow);
 }
 
 ///////////////////////
@@ -247,65 +348,97 @@ function _removeNodeSubtree(nodeId) {
 
 function pushToWorkQueue(window, node) {
   window.workQueue.add(node);
+  activateWindow(window);
 }
 
-/*
-Scheduler Input command types:
-- 1: registerDependency (windowId, activeNodeId, stateId)
-- 2: registerState (windowId, effectId, stateId)
-- 3: registerEffect (windowId, parentNodeId, effectId)
-- 4: disposeEffect (windowId, effectId)
-- 5: registerMemo (windowId, parentNodeId, memoId)
-- 6: postStateWrite (windowId, stateId)
-- 7: deregisterWindow (windowId)
-*/
-export function scheduler_calculateWorkBatch() {
-
-  // get the window we should process
-  let entryIndex = schedulerInputWriter.activeWindowIndices[0];
-  let windowInputEntry = schedulerInputWriter.windowInputEntries[entryIndex];
-  let batchWindowId = windowInputEntry.windowId;
-
-  _setActiveWindowId(batchWindowId);
-
-  let { buffer, offset } = windowInputEntry;
-  let readOffset = 0;
-
-  function readUInt32() {
-    let value = buffer.readUInt32LE(readOffset);
-    readOffset += 4;
-    return value;
+export function scheduler_ingest(buffer, length) {
+  if (length > buffer.length) {
+    throw new Error('Scheduler input length exceeds its buffer');
   }
 
-  while (readOffset < offset) {
-    let commandType = buffer.readUInt8(readOffset);
+  let readOffset = 0;
 
-    readOffset++;
+  while (readOffset < length) {
+    if (length - readOffset < INPUT_FRAME_HEADER_SIZE) {
+      throw new Error('Invalid scheduler input frame');
+    }
 
-    switch (commandType) {
-      case 1:
-        registerDependency(readUInt32(), readUInt32());
-        break;
-      case 2:
-        registerState(readUInt32(), readUInt32());
-        break;
-      case 3:
-        registerEffect(readUInt32(), readUInt32());
-        break;
-      case 4:
-        disposeEffect(readUInt32(), readUInt32());
-        break;
-      case 5:
-        registerMemo(readUInt32(), readUInt32());
-        break;
-      case 6:
-        postStateWrite(readUInt32());
-        break;
+    let slot = buffer.readUInt32LE(readOffset);
+    let generation = buffer.readUInt32LE(readOffset + 4);
+    let commandByteLength = buffer.readUInt32LE(readOffset + 8);
+    let frameEnd = readOffset + INPUT_FRAME_HEADER_SIZE + commandByteLength;
+
+    if (frameEnd > length) {
+      throw new Error('Invalid scheduler input frame length');
+    }
+
+    readOffset += INPUT_FRAME_HEADER_SIZE;
+
+    let window = windowMap.get(slot);
+
+    if (!window || window.generation !== generation) {
+      readOffset = frameEnd;
+      continue;
+    }
+
+    ActiveWindow = window;
+
+    function readUInt32() {
+      let value = buffer.readUInt32LE(readOffset);
+      readOffset += 4;
+      return value;
+    }
+
+    while (readOffset < frameEnd) {
+      let commandType = buffer.readUInt8(readOffset++);
+
+      switch (commandType) {
+        case 1:
+          registerDependency(readUInt32(), readUInt32());
+          break;
+        case 2:
+          registerState(readUInt32(), readUInt32());
+          break;
+        case 3:
+          registerEffect(readUInt32(), readUInt32());
+          break;
+        case 4:
+          disposeEffect(readUInt32(), readUInt32());
+          break;
+        case 5:
+          registerMemo(readUInt32(), readUInt32());
+          break;
+        case 6:
+          postStateWrite(readUInt32());
+          break;
+        default:
+          throw new Error(`Invalid scheduler input command: ${commandType}`);
+      }
+    }
+
+    if (readOffset !== frameEnd) {
+      throw new Error('Invalid scheduler input command length');
     }
   }
 
-  // reset the window's input entry for the next tick
-  windowInputEntry.offset = 0;
+  ActiveWindow = null;
+}
+
+export function scheduler_calculateWorkBatch() {
+  let window = takeActiveWindow();
+
+  schedulerOutputCommand.nodeIds = [];
+  schedulerOutputCommand.deletedNodeIds = [];
+
+  if (!window) {
+    schedulerOutputCommand.windowId = -1;
+    schedulerOutputCommand.slot = 0;
+    schedulerOutputCommand.generation = 0;
+    return schedulerOutputCommand;
+  }
+
+  ActiveWindow = window;
+  let batchWindowId = window.windowId;
 
   ////////////////////////////
   // SCHEDULER OUTPUT WRITE STAGE
@@ -313,10 +446,9 @@ export function scheduler_calculateWorkBatch() {
   const disposeList = ActiveWindow.disposeList;
 
   // tells state.js which window the output is for
-  // will also be used to clear the input entry for the window
   schedulerOutputCommand.windowId = batchWindowId;
-  schedulerOutputCommand.nodeIds = [];
-  schedulerOutputCommand.deletedNodeIds = [];
+  schedulerOutputCommand.slot = window.slot;
+  schedulerOutputCommand.generation = window.generation;
 
   while (disposeList.length) {
     let [parentId, nodeId] = disposeList.pop();
@@ -365,6 +497,113 @@ export function scheduler_calculateWorkBatch() {
 
   // run internal clean ups of the deleted nodes
   _deletedNodeCleanup();
+
+  ActiveWindow = null;
+  return schedulerOutputCommand;
+}
+
+function writeOutputRecordHeader(buffer, offset, type, count) {
+  buffer.writeUInt8(type, offset);
+  buffer.writeUInt8(0, offset + 1);
+  buffer.writeUInt16LE(0, offset + 2);
+  buffer.writeUInt32LE(schedulerOutputCommand.slot, offset + 4);
+  buffer.writeUInt32LE(schedulerOutputCommand.generation, offset + 8);
+  buffer.writeUInt32LE(count, offset + 12);
+}
+
+function preparePendingOutput() {
+  while (pendingOutputType === 0) {
+    if (!peekActiveWindow()) {
+      return false;
+    }
+
+    scheduler_calculateWorkBatch();
+    pendingDeletedNodeIndex = schedulerOutputCommand.deletedNodeIds.length - 1;
+    pendingNodeIndex = 0;
+
+    if (pendingDeletedNodeIndex >= 0) {
+      pendingOutputType = SCHEDULER_OUTPUT_DELETE_NODES;
+    } else if (schedulerOutputCommand.nodeIds.length > 0) {
+      pendingOutputType = SCHEDULER_OUTPUT_RUN_NODES;
+    }
+  }
+
+  return true;
+}
+
+export function scheduler_drainWork(buffer) {
+  if (buffer.length < OUTPUT_RECORD_HEADER_SIZE + 4) {
+    throw new Error('Scheduler output buffer is too small');
+  }
+
+  let writeOffset = 0;
+
+  while (
+    buffer.length - writeOffset >=
+    OUTPUT_RECORD_HEADER_SIZE + 4
+  ) {
+    if (!preparePendingOutput()) {
+      break;
+    }
+
+    let availableNodeCount = Math.floor(
+      (buffer.length - writeOffset - OUTPUT_RECORD_HEADER_SIZE) / 4
+    );
+    let count;
+
+    if (pendingOutputType === SCHEDULER_OUTPUT_DELETE_NODES) {
+      count = Math.min(availableNodeCount, pendingDeletedNodeIndex + 1);
+      writeOutputRecordHeader(
+        buffer,
+        writeOffset,
+        SCHEDULER_OUTPUT_DELETE_NODES,
+        count
+      );
+      writeOffset += OUTPUT_RECORD_HEADER_SIZE;
+
+      for (let i = 0; i < count; i++) {
+        buffer.writeUInt32LE(
+          schedulerOutputCommand.deletedNodeIds[pendingDeletedNodeIndex--],
+          writeOffset
+        );
+        writeOffset += 4;
+      }
+
+      if (pendingDeletedNodeIndex < 0) {
+        schedulerOutputCommand.deletedNodeIds = [];
+        pendingOutputType = schedulerOutputCommand.nodeIds.length > 0
+          ? SCHEDULER_OUTPUT_RUN_NODES
+          : 0;
+      }
+    } else {
+      count = Math.min(
+        availableNodeCount,
+        schedulerOutputCommand.nodeIds.length - pendingNodeIndex
+      );
+      writeOutputRecordHeader(
+        buffer,
+        writeOffset,
+        SCHEDULER_OUTPUT_RUN_NODES,
+        count
+      );
+      writeOffset += OUTPUT_RECORD_HEADER_SIZE;
+
+      for (let i = 0; i < count; i++) {
+        buffer.writeUInt32LE(
+          schedulerOutputCommand.nodeIds[pendingNodeIndex++],
+          writeOffset
+        );
+        writeOffset += 4;
+      }
+
+      if (pendingNodeIndex === schedulerOutputCommand.nodeIds.length) {
+        schedulerOutputCommand.nodeIds = [];
+        pendingOutputType = 0;
+      }
+    }
+  }
+
+  return writeOffset;
 }
 
 function _deletedNodeCleanup() {
@@ -390,14 +629,6 @@ function _deletedNodeCleanup() {
     } else {
       ActiveWindow.observersMap.delete(childNodeId);
     }
-  }
-}
-
-function _setActiveWindowId(windowId) {
-  if (windowId) {
-    ActiveWindow = windowMap.get(windowId);
-  } else {
-    ActiveWindow = null;
   }
 }
 
