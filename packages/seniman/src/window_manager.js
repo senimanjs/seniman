@@ -44,7 +44,8 @@ class Root {
   }
 
   hasWindow(windowId) {
-    return getWindow(windowId) != null;
+    let window = getWindow(windowId);
+    return window != null && !window.destroyed;
   }
 
   setRateLimit({ disabled }) {
@@ -345,6 +346,11 @@ class Root {
     let windowId = this._convertExternalWindowIdToInternal(pageParams.windowId);
 
     let window = getWindow(windowId);
+
+    if (!window || window.destroyed) {
+      ws.close(3001);
+      return;
+    }
 
     // update the window's buffer push function to refer to the new websocket
     window.onBuffer(buf => ws.send(buf));

@@ -523,6 +523,10 @@ export class Window {
         },
 
         exec: (clientFnSpec) => {
+          if (this.destroyed) {
+            return;
+          }
+
           let { clientFnId, serverBindFns } = clientFnSpec;
 
           // if the serverBindFns value is a function, it means it's the new compiler output
@@ -679,6 +683,9 @@ export class Window {
   }
 
   onBuffer(bufferFn) {
+    if (this.destroyed) {
+      return;
+    }
     this.bufferFn = bufferFn;
   }
 
@@ -687,7 +694,9 @@ export class Window {
   }
 
   sendPing() {
-    this.bufferFn(pingBuffer);
+    if (!this.destroyed) {
+      this.bufferFn(pingBuffer);
+    }
   }
 
   _handleBlockCleanup(blockId) {
@@ -787,6 +796,10 @@ export class Window {
   }
 
   registerPong(pongBuffer) {
+    if (this.destroyed) {
+      return;
+    }
+
     this.lastPongTime = Date.now();
     this.connected = true;
 
@@ -805,6 +818,9 @@ export class Window {
   }
 
   registerReadOffset(readOffset) {
+    if (this.destroyed) {
+      return;
+    }
 
     // TODO: check against writeOffset to make sure we're not reading ahead
     if (readOffset < this.global_readOffset) {
@@ -840,6 +856,10 @@ export class Window {
   }
 
   _restreamUnreadPages() {
+    if (this.destroyed) {
+      return;
+    }
+
     // if there are new commands generated during disconnection,
     // let's restream them
     if (this.global_writeOffset > this.global_readOffset) {
@@ -868,6 +888,9 @@ export class Window {
   }
 
   reconnect(pageParams) {
+    if (this.destroyed) {
+      return;
+    }
 
     let { windowId,
       currentPath,
@@ -892,6 +915,10 @@ export class Window {
   }
 
   processInput(inputBuffer) {
+    if (this.destroyed) {
+      return;
+    }
+
     let txPortId = inputBuffer.readUInt16LE(0);
 
     if (!this.eventHandlers.has(txPortId)) {
@@ -913,6 +940,8 @@ export class Window {
       return;
     }
     this.destroyed = true;
+    this.connected = false;
+    this.reconnectionId = 0;
 
     clearTimeout(this.deleteBlockFlushTimer);
     this.deleteBlockFlushTimer = null;
@@ -920,17 +949,28 @@ export class Window {
 
     // give time for the root disposer tree to complete run
     setTimeout(() => {
-      this.destroyFnCallback();
+      let destroyFnCallback = this.destroyFnCallback;
+      this.destroyFnCallback = null;
+      destroyFnCallback?.();
     }, 10);
 
-    // this terminates the ping loop
-    this.reconnectionId = 0;
-
     clearTimeout(this.postScriptTimeout);
-    // return active pages' buffers to the pool
+
+    this.mutationGroup = null;
+
+    // A websocket send may still reference an unacknowledged buffer. Only
+    // recycle pages the client has confirmed; leave the rest to Node.
     this.pages.forEach(page => {
-      bufferPool.returnBuffer(page.buffer);
+      let pageEndOffset = page.finalSize > 0
+        ? page.global_headOffset + page.finalSize
+        : this.global_writeOffset;
+
+      if (pageEndOffset <= this.global_readOffset) {
+        bufferPool.returnBuffer(page.buffer);
+      }
     });
+    this.pages = [];
+    this.bufferFn = null;
   }
 
   _allocPage(headOffset, pageSize) {
@@ -947,6 +987,10 @@ export class Window {
   }
 
   _flushMutationGroup() {
+    if (this.destroyed) {
+      this.mutationGroup = null;
+      return;
+    }
 
     let mg = this.mutationGroup;
 
@@ -967,6 +1011,10 @@ export class Window {
   }
 
   _allocCommandBuffer(size) {
+    if (this.destroyed) {
+      throw new Error('Cannot write a client command after the window has been destroyed');
+    }
+
     let pageSize = bufferPool.getPageSize(size);
 
     // if the command buffer hasn't been initialized after the last flush, let's initialize it
@@ -1480,7 +1528,9 @@ export class Window {
       type: 'channel',
       id: channelId,
       send: (value) => {
-        this._streamChannelSendMessageCommand(channelId, value);
+        if (!this.destroyed) {
+          this._streamChannelSendMessageCommand(channelId, value);
+        }
       }
     };
   }

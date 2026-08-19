@@ -29,6 +29,8 @@ export function registerWindow(window) {
 }
 
 export function deregisterWindow(window) {
+  _releaseWindowInputEntry(window.id);
+
   windowMap.delete(window.id);
   windowNodeMap.delete(window.id);
 
@@ -112,6 +114,11 @@ function _runEffectDisposers(nodeId, isDeletion) {
 }
 
 export function enqueueWindowInput(windowId, inputBuffer) {
+  let window = windowMap.get(windowId);
+
+  if (!window || window.destroyed) {
+    return;
+  }
 
   _setActiveWindowId(windowId);
 
@@ -174,32 +181,27 @@ function _execWork() {
         _deleteNode(nodeId);
       }
 
-      for (let i = 0; i < availableSchedulerCommandCount; i++) {
-        let nodeId = schedulerOutputCommand.nodeIds[i];
+      let window = windowMap.get(batchWindowId);
 
-        _runEffectDisposers(nodeId, false);
-        _runNode(nodeId);
+      if (window && !window.destroyed) {
+        for (let i = 0; i < availableSchedulerCommandCount; i++) {
+          let nodeId = schedulerOutputCommand.nodeIds[i];
+
+          _runEffectDisposers(nodeId, false);
+          _runNode(nodeId);
+        }
       }
 
       // if the window input entry has new input writes in this tick, 
       // then continue the loop, skipping the window entry deletion below
       let windowInputEntry = schedulerInputWriter.windowEntryMap.get(batchWindowId);
 
-      if (windowInputEntry.offset > 0) {
+      if (windowInputEntry?.offset > 0) {
         continue;
       }
     }
 
-    // free the window input entry for reuse
-
-    // remove the active window entry index & push into the free window indices so it can be reused
-    schedulerInputWriter.freeEntryIndices.push(schedulerInputWriter.activeWindowIndices.shift());
-
-    // reduce the active window count
-    schedulerInputWriter.activeWindowCount--;
-
-    // remove the entry from the map
-    schedulerInputWriter.windowEntryMap.delete(batchWindowId);
+    _releaseWindowInputEntry(batchWindowId);
   }
 }
 
@@ -216,12 +218,34 @@ export let schedulerInputWriter = {
 // TODO: use buffer pool to allocate these on-demand
 for (let i = 0; i < 128; i++) {
   schedulerInputWriter.windowInputEntries.push({
+    index: i,
     buffer: Buffer.allocUnsafe(4096),
     offset: 0,
     windowId: -1
   });
 
   schedulerInputWriter.freeEntryIndices.push(i);
+}
+
+function _releaseWindowInputEntry(windowId) {
+  let windowInputEntry = schedulerInputWriter.windowEntryMap.get(windowId);
+
+  if (!windowInputEntry) {
+    return;
+  }
+
+  let entryIndex = windowInputEntry.index;
+  let activeIndex = schedulerInputWriter.activeWindowIndices.indexOf(entryIndex);
+
+  if (activeIndex >= 0) {
+    schedulerInputWriter.activeWindowIndices.splice(activeIndex, 1);
+    schedulerInputWriter.activeWindowCount--;
+  }
+
+  windowInputEntry.offset = 0;
+  windowInputEntry.windowId = -1;
+  schedulerInputWriter.windowEntryMap.delete(windowId);
+  schedulerInputWriter.freeEntryIndices.push(entryIndex);
 }
 
 function _writeInputCommand(windowId, size) {
@@ -308,6 +332,11 @@ function _registerMemo(windowId, parentNodeId, memoId) {
 }
 
 function _postStateWrite(windowId, stateId) {
+  let window = windowMap.get(windowId);
+
+  if (!window || window.destroyed) {
+    return;
+  }
 
   let buf = _writeInputCommand(windowId, 5);
   buf.writeUInt8(6, 0);
@@ -376,6 +405,11 @@ export function useState(initialValue, options = { equals }) {
   }
 
   function setState(newValue) {
+    let window = windowMap.get(ActiveWindowId);
+
+    if (!window || window.destroyed) {
+      return;
+    }
 
     if (newValue instanceof Function) {
       newValue = newValue(state.value);
@@ -486,6 +520,12 @@ export function useCallback(fn) {
   let _activeNode = ActiveNode;
 
   return (...args) => {
+    let window = windowMap.get(_activeWindowId);
+
+    if (!window || window.destroyed) {
+      return;
+    }
+
     let _prevNode = ActiveNode;
     let _prevWindowId = _activeWindowId;
 
