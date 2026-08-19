@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveNode, getActiveWindow, useCallback, onDispose, getActiveScope, runInScope, runInWindow } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
-import { bufferPool, PAGE_SIZE } from './buffer-pool.js';
+import { bufferPool, SMALL_PAGE_SIZE } from './buffer-pool.js';
 import { DefaultErrorHandler } from './errors.js';
 import { HeadContext, createHeadContextValue } from './head.js';
 import { DefaultNetworkStatusView } from './network.js';
@@ -933,11 +933,11 @@ export class Window {
     });
   }
 
-  _allocPage(headOffset, minimumSize) {
+  _allocPage(headOffset, pageSize) {
 
     let page = {
       global_headOffset: headOffset,
-      buffer: bufferPool.alloc(minimumSize),
+      buffer: bufferPool.alloc(pageSize),
       finalSize: 0
     };
 
@@ -959,7 +959,7 @@ export class Window {
       this.bufferFn(buffer.subarray(offset, offset + size));
     }
 
-    if (mg && mg.page.buffer.length > PAGE_SIZE) {
+    if (mg && mg.page.buffer.length > SMALL_PAGE_SIZE) {
       mg.page.finalSize = this.global_writeOffset - mg.page.global_headOffset;
     }
 
@@ -967,13 +967,14 @@ export class Window {
   }
 
   _allocCommandBuffer(size) {
+    let pageSize = bufferPool.getPageSize(size);
 
     // if the command buffer hasn't been initialized after the last flush, let's initialize it
     if (!this.mutationGroup) {
       let pageCount = this.pages.length;
       let lastPage = this.pages[pageCount - 1];
       let page = !lastPage || lastPage.finalSize > 0
-        ? this._allocPage(this.global_writeOffset, size)
+        ? this._allocPage(this.global_writeOffset, pageSize)
         : lastPage;
 
       this.mutationGroup = {
@@ -997,7 +998,7 @@ export class Window {
 
       this._flushMutationGroup();
 
-      let newPage = this._allocPage(this.global_writeOffset, size);
+      let newPage = this._allocPage(this.global_writeOffset, pageSize);
 
       mg = this.mutationGroup = {
         page: newPage,

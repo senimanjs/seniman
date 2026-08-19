@@ -1,32 +1,56 @@
-const DEFAULT_PAGE_SIZE = 4096 * 4;
+export const SMALL_PAGE_SIZE = 4096;
+export const MEDIUM_PAGE_SIZE = 4096 * 4;
 
-const pageSize = parseInt(process.env.SENIMAN_PAGE_SIZE) || DEFAULT_PAGE_SIZE;
+const DEFAULT_MAX_PAGE_SIZE = 4096 * 32;
+const configuredMaxPageSize = process.env.SENIMAN_MAX_PAGE_SIZE;
 
-if (pageSize != DEFAULT_PAGE_SIZE) {
-  console.log(`Setting custom page size to ${pageSize} bytes`);
+export const MAX_PAGE_SIZE = configuredMaxPageSize
+  ? Number(configuredMaxPageSize)
+  : DEFAULT_MAX_PAGE_SIZE;
+
+if (!Number.isSafeInteger(MAX_PAGE_SIZE) || MAX_PAGE_SIZE < MEDIUM_PAGE_SIZE) {
+  throw new Error(`SENIMAN_MAX_PAGE_SIZE must be an integer of at least ${MEDIUM_PAGE_SIZE} bytes`);
 }
 
-// Seniman page size in bytes
-export const PAGE_SIZE = pageSize;
+if (MAX_PAGE_SIZE != DEFAULT_MAX_PAGE_SIZE) {
+  console.log(`Setting maximum page size to ${MAX_PAGE_SIZE} bytes`);
+}
 
-const reuseBufferQueue = [];
+const reuseBufferQueues = new Map();
+
+for (let pageSize of [SMALL_PAGE_SIZE, MEDIUM_PAGE_SIZE, MAX_PAGE_SIZE]) {
+  reuseBufferQueues.set(pageSize, []);
+}
+
+function getPageSize(minimumSize) {
+  if (minimumSize <= SMALL_PAGE_SIZE) {
+    return SMALL_PAGE_SIZE;
+  } else if (minimumSize <= MEDIUM_PAGE_SIZE) {
+    return MEDIUM_PAGE_SIZE;
+  } else if (minimumSize <= MAX_PAGE_SIZE) {
+    return MAX_PAGE_SIZE;
+  }
+
+  throw new Error(
+    `Seniman command requires ${minimumSize} bytes, exceeding SENIMAN_MAX_PAGE_SIZE=${MAX_PAGE_SIZE}. ` +
+    `Set SENIMAN_MAX_PAGE_SIZE=${minimumSize} or higher, or preferably stagger large initial rendering ` +
+    `into smaller updates for a faster user-visible response.`
+  );
+}
 
 export const bufferPool = {
+  getPageSize,
 
-  alloc: (minimumSize = PAGE_SIZE) => {
+  alloc: (minimumSize = SMALL_PAGE_SIZE) => {
+    let pageSize = getPageSize(minimumSize);
+    let reuseBufferQueue = reuseBufferQueues.get(pageSize);
 
-    if (minimumSize > PAGE_SIZE) {
-      return Buffer.allocUnsafe(minimumSize);
-    } else if (reuseBufferQueue.length > 0) {
-      return reuseBufferQueue.pop();
-    } else {
-      return Buffer.allocUnsafe(PAGE_SIZE);
-    }
+    return reuseBufferQueue.length > 0
+      ? reuseBufferQueue.pop()
+      : Buffer.allocUnsafe(pageSize);
   },
 
   returnBuffer: (buffer) => {
-    if (buffer.length == PAGE_SIZE) {
-      reuseBufferQueue.push(buffer);
-    }
+    reuseBufferQueues.get(buffer.length)?.push(buffer);
   }
 }
