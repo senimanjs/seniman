@@ -33,9 +33,6 @@ export function _declareBlock(def) {
 let CMD_INSTALL_TEMPLATE = 1;
 let CMD_MODIFY_TOKENMAP = 12;
 
-let variableScratchBuffer = Buffer.alloc(2048);
-let installScratchBuffer = Buffer.alloc(4096 * 2);
-
 export function streamBlockTemplateInstall(window, templateId) {
 
   let blockDef = blockDefinitions.get(templateId);
@@ -43,50 +40,53 @@ export function streamBlockTemplateInstall(window, templateId) {
   let [tokenIndexes, installList] = installTokens2(blockDef.tokens, window.tokenList);
 
   if (installList) {
-    variableScratchBuffer.writeUInt8(CMD_MODIFY_TOKENMAP, 0);
+    let tokenBuffers = installList.map(token => Buffer.from(token));
+    let commandSize = 2;
 
+    for (let tokenBuffer of tokenBuffers) {
+      if (tokenBuffer.length > 255) {
+        throw new Error('Template tokens cannot exceed 255 bytes');
+      }
+      commandSize += 1 + tokenBuffer.length;
+    }
+
+    let buf = window._allocCommandBuffer(commandSize);
+    buf.writeUInt8(CMD_MODIFY_TOKENMAP, 0);
     let offset2 = 1;
 
-    installList.forEach((token) => {
-      let tokenLength = Buffer.byteLength(token);
-
-      variableScratchBuffer.writeUInt8(tokenLength, offset2);
+    tokenBuffers.forEach((tokenBuffer) => {
+      buf.writeUInt8(tokenBuffer.length, offset2);
       offset2++;
 
-      variableScratchBuffer.write(token, offset2, tokenLength);
-      offset2 += tokenLength;
+      tokenBuffer.copy(buf, offset2);
+      offset2 += tokenBuffer.length;
     });
 
-    variableScratchBuffer.writeUInt8(0, offset2);
-    offset2++;
-
-    // copy the scratch buffer to a real command buffer
-    variableScratchBuffer.copy(window._allocCommandBuffer(offset2), 0, 0, offset2);
+    buf.writeUInt8(0, offset2);
   }
 
   //////////////////////////
 
+  let commandSize = 3 + tokenIndexes.length * 2 + 2
+    + blockDef.templateBuffer.length + blockDef.elScriptBuffer.length;
+  let installBuffer = window._allocCommandBuffer(commandSize);
   let offset = 0;
-  installScratchBuffer.writeUInt8(CMD_INSTALL_TEMPLATE, 0);
-  installScratchBuffer.writeUInt16BE(templateId, 1);
+  installBuffer.writeUInt8(CMD_INSTALL_TEMPLATE, 0);
+  installBuffer.writeUInt16BE(templateId, 1);
   offset += 3;
 
   tokenIndexes.forEach((tokenId) => {
-    installScratchBuffer.writeUInt16BE(tokenId, offset);
+    installBuffer.writeUInt16BE(tokenId, offset);
     offset += 2;
   });
 
-  installScratchBuffer.writeUInt16BE(0, offset);
+  installBuffer.writeUInt16BE(0, offset);
   offset += 2;
 
-  blockDef.templateBuffer.copy(installScratchBuffer, offset);
+  blockDef.templateBuffer.copy(installBuffer, offset);
   offset += blockDef.templateBuffer.length;
 
-  blockDef.elScriptBuffer.copy(installScratchBuffer, offset);
-  offset += blockDef.elScriptBuffer.length;
-
-  // copy the scratch buffer to a real command buffer
-    installScratchBuffer.copy(window._allocCommandBuffer(offset), 0, 0, offset);
+  blockDef.elScriptBuffer.copy(installBuffer, offset);
 }
 
 function installTokens2(blockTokens, tokenList) {

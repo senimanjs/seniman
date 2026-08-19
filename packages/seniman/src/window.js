@@ -237,7 +237,7 @@ const CMD_SEQUENCE_INSERT_ITEMS = 18;
 const CMD_SEQUENCE_REMOVE_ITEMS = 19;
 
 const pingBuffer = Buffer.from([0]);
-const scratchBuffer = Buffer.alloc(32768);
+const emptyBuffer = Buffer.alloc(0);
 const DELETE_BLOCK_BUFFER_SIZE = 2048;
 const MAX_BLOCK_ID = 0x7fff;
 
@@ -257,6 +257,51 @@ function writeUvarint(buffer, value, offset) {
     buffer.writeUInt8(value ? byte | 0x80 : byte, offset++);
   } while (value);
   return offset;
+}
+
+class BufferWriter {
+  constructor(buffer) {
+    this.buffer = buffer;
+    this.offset = 0;
+  }
+
+  writeUInt8(value) {
+    this.buffer?.writeUInt8(value, this.offset);
+    this.offset++;
+  }
+
+  writeUInt16BE(value) {
+    this.buffer?.writeUInt16BE(value, this.offset);
+    this.offset += 2;
+  }
+
+  writeInt16BE(value) {
+    this.buffer?.writeInt16BE(value, this.offset);
+    this.offset += 2;
+  }
+
+  writeInt32BE(value) {
+    this.buffer?.writeInt32BE(value, this.offset);
+    this.offset += 4;
+  }
+
+  writeDoubleBE(value) {
+    this.buffer?.writeDoubleBE(value, this.offset);
+    this.offset += 8;
+  }
+
+  writeString(value) {
+    let length = Buffer.byteLength(value);
+    this.buffer?.write(value, this.offset, length);
+    this.offset += length;
+  }
+
+  writeBuffer(value) {
+    if (this.buffer) {
+      value.copy(this.buffer, this.offset);
+    }
+    this.offset += value.length;
+  }
 }
 
 let _allocatedWindowId = 1;
@@ -489,13 +534,10 @@ export class Window {
           this._streamFunctionInstallCommand(clientFnId);
           this._streamModuleInstallCommand(serverBindFns);
 
-          let sbvBuffer = this._encodeServerBoundValues(serverBindFns || []);
-          let buf = this._allocCommandBuffer(1 + 2 + sbvBuffer.length);
-
-          buf.writeUInt8(CMD_RUN_CLIENT_FUNCTION, 0);
-          buf.writeUInt16BE(clientFnId, 1);
-
-          sbvBuffer.copy(buf, 3);
+          let writer = this._allocServerBoundCommand(3, serverBindFns || []);
+          writer.writeUInt8(CMD_RUN_CLIENT_FUNCTION);
+          writer.writeUInt16BE(clientFnId);
+          this._writeServerBoundValues(writer, serverBindFns || []);
         }
       };
 
@@ -626,14 +668,11 @@ export class Window {
           this._streamModuleInstallCommand(serverBindFns);
 
           // stream the module install command
-          let sbvBuffer = this._encodeServerBoundValues(serverBindFns || []);
-          let buf = this._allocCommandBuffer(1 + 2 + 2 + sbvBuffer.length);
-
-          buf.writeUInt8(CMD_INIT_MODULE, 0);
-          buf.writeUInt16BE(moduleId, 1);
-          buf.writeUInt16BE(clientFn.clientFnId, 3);
-
-          sbvBuffer.copy(buf, 5);
+          let writer = this._allocServerBoundCommand(5, serverBindFns || []);
+          writer.writeUInt8(CMD_INIT_MODULE);
+          writer.writeUInt16BE(moduleId);
+          writer.writeUInt16BE(clientFn.clientFnId);
+          this._writeServerBoundValues(writer, serverBindFns || []);
         }
       }
     }
@@ -778,6 +817,10 @@ export class Window {
     while (true) {
       let page = this.pages[0];
 
+      if (!page) {
+        break;
+      }
+
       // if page finalSize is 0, it means the page is still being actively written to
       // and not ready to be freed yet
       if (page.finalSize == 0) {
@@ -890,11 +933,11 @@ export class Window {
     });
   }
 
-  _allocPage(headOffset) {
+  _allocPage(headOffset, minimumSize) {
 
     let page = {
       global_headOffset: headOffset,
-      buffer: bufferPool.alloc(),
+      buffer: bufferPool.alloc(minimumSize),
       finalSize: 0
     };
 
@@ -916,20 +959,22 @@ export class Window {
       this.bufferFn(buffer.subarray(offset, offset + size));
     }
 
+    if (mg && mg.page.buffer.length > PAGE_SIZE) {
+      mg.page.finalSize = this.global_writeOffset - mg.page.global_headOffset;
+    }
+
     this.mutationGroup = null;
   }
 
   _allocCommandBuffer(size) {
 
-    if (size > PAGE_SIZE) {
-      // TODO: support command-stitching so that we can support commands larger than the default page size
-      throw new Error(`Command size is too large. The current page size is ${PAGE_SIZE} bytes, but the command size is ${size} bytes. This is currently unsupported; try setting the env var SENIMAN_PAGE_SIZE=${size} or a larger value.`);
-    }
-
     // if the command buffer hasn't been initialized after the last flush, let's initialize it
     if (!this.mutationGroup) {
       let pageCount = this.pages.length;
-      let page = pageCount == 0 ? this._allocPage(this.global_writeOffset) : this.pages[pageCount - 1];
+      let lastPage = this.pages[pageCount - 1];
+      let page = !lastPage || lastPage.finalSize > 0
+        ? this._allocPage(this.global_writeOffset, size)
+        : lastPage;
 
       this.mutationGroup = {
         page,
@@ -946,13 +991,13 @@ export class Window {
     let currentPageOffset = this.global_writeOffset - mg.page.global_headOffset;
 
     // if we're about to overflow the current page, let's allocate a new one
-    if ((currentPageOffset + size) >= PAGE_SIZE) {
+    if ((currentPageOffset + size) > mg.page.buffer.length) {
       let page = mg.page;
       page.finalSize = currentPageOffset;
 
       this._flushMutationGroup();
 
-      let newPage = this._allocPage(this.global_writeOffset);
+      let newPage = this._allocPage(this.global_writeOffset, size);
 
       mg = this.mutationGroup = {
         page: newPage,
@@ -987,10 +1032,7 @@ export class Window {
   }
 
 
-  _encodeServerBoundValues(serverBindFns) {
-    // create a buffer to hold the encoded server bound values
-    let buf = scratchBuffer;
-    let offset = 0;
+  _writeServerBoundValues(writer, serverBindFns) {
 
     // TODO: move these constants
     const ARGTYPE_STRING = 1;
@@ -1011,8 +1053,7 @@ export class Window {
 
     let argsCount = serverBindFns.length;
 
-    buf.writeUInt8(argsCount, offset);
-    offset++;
+    writer.writeUInt8(argsCount);
 
     function encodeValue(arg) {
 
@@ -1023,71 +1064,46 @@ export class Window {
 
       // check if arg is string, number, boolean, object, null, a callback, or a channel
       if (typeof arg === 'string') {
-        buf.writeUInt8(ARGTYPE_STRING, offset);
-        offset++;
+        writer.writeUInt8(ARGTYPE_STRING);
 
         let str = arg;
         let strLen = Buffer.byteLength(str);
 
-        buf.writeUInt16BE(strLen, offset);
-        offset += 2;
-        buf.write(str, offset);
-        offset += strLen;
+        writer.writeUInt16BE(strLen);
+        writer.writeString(str);
       } else if (typeof arg === 'number') {
         let isInt = Number.isInteger(arg);
 
         if (isInt && Math.abs(arg) < 32768) {
-          buf.writeUInt8(ARGTYPE_INT16, offset);
-          offset++;
-
-          buf.writeInt16BE(arg, offset);
-          offset += 2;
+          writer.writeUInt8(ARGTYPE_INT16);
+          writer.writeInt16BE(arg);
         } else if (isInt) {
-          buf.writeUInt8(ARGTYPE_INT32, offset);
-          offset++;
-
-          buf.writeInt32BE(arg, offset);
-          offset += 4;
+          writer.writeUInt8(ARGTYPE_INT32);
+          writer.writeInt32BE(arg);
         } else {
-          buf.writeUInt8(ARGTYPE_FLOAT64, offset);
-          offset++;
-
-          buf.writeDoubleBE(arg, offset);
-          offset += 8;
+          writer.writeUInt8(ARGTYPE_FLOAT64);
+          writer.writeDoubleBE(arg);
         }
       } else if (typeof arg === 'boolean') {
-        buf.writeUInt8(ARGTYPE_BOOLEAN, offset);
-        offset++;
-        buf.writeUInt8(arg ? 1 : 0, offset);
-        offset++;
+        writer.writeUInt8(ARGTYPE_BOOLEAN);
+        writer.writeUInt8(arg ? 1 : 0);
       } else if (arg === null || arg === undefined) {
-        buf.writeUInt8(ARGTYPE_NULL, offset);
-        offset++;
+        writer.writeUInt8(ARGTYPE_NULL);
       } else if (arg.type == 'handler') {
-        buf.writeUInt8(ARGTYPE_HANDLER, offset);
-        offset++;
-        buf.writeUInt16BE(arg.id, offset);
-        offset += 2;
+        writer.writeUInt8(ARGTYPE_HANDLER);
+        writer.writeUInt16BE(arg.id);
       } else if (arg.type == 'ref') {
-        buf.writeUInt8(ARGTYPE_REF, offset);
-        offset++;
-        buf.writeUInt16BE(arg.id, offset);
-        offset += 2;
+        writer.writeUInt8(ARGTYPE_REF);
+        writer.writeUInt16BE(arg.id);
       } else if (arg.type == 'channel') {
-        buf.writeUInt8(ARGTYPE_CHANNEL, offset);
-        offset++;
-        buf.writeUInt16BE(arg.id, offset);
-        offset += 2;
+        writer.writeUInt8(ARGTYPE_CHANNEL);
+        writer.writeUInt16BE(arg.id);
       } else if (arg.type == 'module') {
-        buf.writeUInt8(ARGTYPE_MODULE, offset);
-        offset++;
-        buf.writeUInt16BE(arg.id, offset);
-        offset += 2;
+        writer.writeUInt8(ARGTYPE_MODULE);
+        writer.writeUInt16BE(arg.id);
       } else if (Array.isArray(arg)) {
-        buf.writeUInt8(ARGTYPE_ARRAY, offset);
-        offset++;
-        buf.writeUInt16BE(arg.length, offset);
-        offset += 2;
+        writer.writeUInt8(ARGTYPE_ARRAY);
+        writer.writeUInt16BE(arg.length);
 
         for (let j = 0; j < arg.length; j++) {
           encodeValue(arg[j]);
@@ -1098,32 +1114,21 @@ export class Window {
           throw new Error('Maximum length of ArrayBuffer to encode is 65535 bytes');
         }
 
-        buf.writeUInt8(ARGTYPE_ARRAY_BUFFER, offset);
-        offset++;
-        buf.writeUInt16BE(arg.length, offset);
-        offset += 2;
-
-        //console.log('buffer length', arg.length);
-
-        arg.copy(buf, offset);
-        offset += arg.length;
+        writer.writeUInt8(ARGTYPE_ARRAY_BUFFER);
+        writer.writeUInt16BE(arg.length);
+        writer.writeBuffer(arg);
       } else if (typeof arg === 'object') {
-        buf.writeUInt8(ARGTYPE_OBJECT, offset);
-        offset++;
+        writer.writeUInt8(ARGTYPE_OBJECT);
 
         let keys = Object.keys(arg);
-        buf.writeUInt16BE(keys.length, offset);
-        offset += 2;
+        writer.writeUInt16BE(keys.length);
 
         for (let j = 0; j < keys.length; j++) {
           let key = keys[j];
           let keyLength = Buffer.byteLength(key);
 
-          buf.writeUInt16BE(keyLength, offset);
-          offset += 2;
-
-          buf.write(key, offset);
-          offset += keyLength;
+          writer.writeUInt16BE(keyLength);
+          writer.writeString(key);
 
           encodeValue(arg[key]);
         }
@@ -1137,8 +1142,12 @@ export class Window {
 
       encodeValue(arg);
     }
+  }
 
-    return buf.subarray(0, offset);
+  _allocServerBoundCommand(prefixSize, serverBindFns) {
+    let sizeWriter = new BufferWriter();
+    this._writeServerBoundValues(sizeWriter, serverBindFns);
+    return new BufferWriter(this._allocCommandBuffer(prefixSize + sizeWriter.offset));
   }
 
   _streamTemplateInstallCommand(templateId) {
@@ -1153,12 +1162,11 @@ export class Window {
 
     if (!this.clientFunctionInstallationSet.has(functionId)) {
       let cfDef = clientFunctionDefinitions.get(functionId);
-      let sbvBuffer = this._encodeServerBoundValues([cfDef.argNames, cfDef.body]);
-      let buf = this._allocCommandBuffer(1 + 2 + sbvBuffer.length);
-
-      buf.writeUInt8(CMD_INSTALL_CLIENT_FUNCTION, 0);
-      buf.writeUInt16BE(functionId, 1);
-      sbvBuffer.copy(buf, 3);
+      let serverBindFns = [cfDef.argNames, cfDef.body];
+      let writer = this._allocServerBoundCommand(3, serverBindFns);
+      writer.writeUInt8(CMD_INSTALL_CLIENT_FUNCTION);
+      writer.writeUInt16BE(functionId);
+      this._writeServerBoundValues(writer, serverBindFns);
 
       this.clientFunctionInstallationSet.add(functionId);
     }
@@ -1329,18 +1337,13 @@ export class Window {
   }
 
   _streamRunLifecycleCommand(blockId, targetId, clientFnId, serverBindFns) {
-
-    let sbvBuffer = this._encodeServerBoundValues(serverBindFns);
-
-    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + sbvBuffer.length);
-
-    buf.writeUInt8(CMD_RUN_LIFECYCLE, 0);
-    buf.writeUInt16BE(blockId, 1);
-    buf.writeUInt8(targetId, 3);
-    buf.writeUInt8(1, 4); // type: ref || onMount
-    buf.writeUInt16BE(clientFnId, 5);
-
-    sbvBuffer.copy(buf, 7);
+    let writer = this._allocServerBoundCommand(7, serverBindFns);
+    writer.writeUInt8(CMD_RUN_LIFECYCLE);
+    writer.writeUInt16BE(blockId);
+    writer.writeUInt8(targetId);
+    writer.writeUInt8(1); // type: ref || onMount
+    writer.writeUInt16BE(clientFnId);
+    this._writeServerBoundValues(writer, serverBindFns);
   }
 
   _handleBlockEventHandlers(newBlockId, eventHandlers) {
@@ -1423,17 +1426,13 @@ export class Window {
       this._streamInstallEventTypeCommand(eventType);
     }
 
-    let sbvBuffer = this._encodeServerBoundValues(serverBindFns);
-
-    let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + 2 + sbvBuffer.length);
-
-    buf.writeUInt8(CMD_ATTACH_EVENT_V2, 0);
-    buf.writeUInt16BE(blockId, 1);
-    buf.writeUInt8(targetId, 3);
-    buf.writeUInt8(eventType, 4);
-    buf.writeUInt16BE(clientFnId, 5);
-
-    sbvBuffer.copy(buf, 7);
+    let writer = this._allocServerBoundCommand(7, serverBindFns);
+    writer.writeUInt8(CMD_ATTACH_EVENT_V2);
+    writer.writeUInt16BE(blockId);
+    writer.writeUInt8(targetId);
+    writer.writeUInt8(eventType);
+    writer.writeUInt16BE(clientFnId);
+    this._writeServerBoundValues(writer, serverBindFns);
   }
 
   _allocateHandler(fn) {
@@ -1486,12 +1485,11 @@ export class Window {
   }
 
   _streamChannelSendMessageCommand(channelId, value) {
-    let sbvBuf = this._encodeServerBoundValues([value]);
-    let buf = this._allocCommandBuffer(1 + 2 + sbvBuf.length);
-
-    buf.writeUInt8(CMD_CHANNEL_MESSAGE, 0);
-    buf.writeUInt16BE(channelId, 1);
-    sbvBuf.copy(buf, 3);
+    let serverBindFns = [value];
+    let writer = this._allocServerBoundCommand(3, serverBindFns);
+    writer.writeUInt8(CMD_CHANNEL_MESSAGE);
+    writer.writeUInt16BE(channelId);
+    this._writeServerBoundValues(writer, serverBindFns);
   }
 
   _handleElementEffects(blockId, elementEffects) {
@@ -1538,7 +1536,8 @@ export class Window {
         },
 
         setMultiStyleProperties: (styleProps) => {
-          const kebabPropertyPairs = [];
+          const propertyPairs = [];
+          let commandSize = 7;
 
           for (const key in styleProps) {
             const kebabCaseKey = camelCaseToKebabCase(key);
@@ -1550,58 +1549,45 @@ export class Window {
               value = value.toString();
             }
 
-            kebabPropertyPairs.push([kebabCaseKey, value]);
+            let keyIndex = this.tokenList.get(kebabCaseKey);
+            let valueIndex = this.tokenList.get(value);
+
+            propertyPairs.push([kebabCaseKey, value, keyIndex, valueIndex]);
+            commandSize += 4;
+            commandSize += keyIndex ? 0 : Buffer.byteLength(kebabCaseKey);
+            commandSize += valueIndex ? 0 : Buffer.byteLength(value);
           }
 
-          let buf2 = scratchBuffer;
-
-          buf2.writeUInt8(CMD_ELEMENT_UPDATE, 0);
-          buf2.writeUInt16BE(blockId, 1);
-          buf2.writeUInt8(targetId, 3);
-          buf2.writeUInt8(UPDATE_MODE_MULTI_STYLEPROP, 4);
-
-          let offset = 5;
+          let writer = new BufferWriter(this._allocCommandBuffer(commandSize));
+          writer.writeUInt8(CMD_ELEMENT_UPDATE);
+          writer.writeUInt16BE(blockId);
+          writer.writeUInt8(targetId);
+          writer.writeUInt8(UPDATE_MODE_MULTI_STYLEPROP);
 
           // first 16 bytes are either the length of the property key or the ID of the property key
           // in the static map if it exists there.
-          for (let i = 0; i < kebabPropertyPairs.length; i++) {
-            const pair = kebabPropertyPairs[i];
-            const [key, value] = pair;
+          for (let i = 0; i < propertyPairs.length; i++) {
+            const [key, value, keyIndex, valueIndex] = propertyPairs[i];
 
             // TODO: add more logic to dynamically determine if we should add the current token to the static map
-            if (this.tokenList.get(key)) {
-              // let keyIndex = build.reverseIndexMap.stylePropertyKeys[key] + 1;
-              let keyIndex = this.tokenList.get(key);
+            if (keyIndex) {
               // set 16-th bit to 1 to denote that this is static map compression index
               // (stylePropertyKeyMap on the client)
-              buf2.writeUInt16BE(keyIndex |= (1 << 15), offset);
-              offset += 2;
+              writer.writeUInt16BE(keyIndex | (1 << 15));
             } else {
-              buf2.writeUInt16BE(key.length, offset);
-              offset += 2;
-              buf2.write(key, offset, key.length);
-              offset += key.length;
+              writer.writeUInt16BE(Buffer.byteLength(key));
+              writer.writeString(key);
             }
 
-            if (this.tokenList.get(value)) {
-              //let valueIndex = build.reverseIndexMap.stylePropertyValues[value] + 1;
-              let valueIndex = this.tokenList.get(value);
-              buf2.writeUInt16BE(valueIndex |= (1 << 15), offset);
-              offset += 2;
+            if (valueIndex) {
+              writer.writeUInt16BE(valueIndex | (1 << 15));
             } else {
-              buf2.writeUInt16BE(value.length, offset);
-              offset += 2;
-              buf2.write(value, offset, value.length);
-              offset += value.length;
+              writer.writeUInt16BE(Buffer.byteLength(value));
+              writer.writeString(value);
             }
           }
 
-          buf2.writeUInt16BE(0, offset);
-          offset += 2;
-
-          let buf3 = this._allocCommandBuffer(offset);
-
-          buf2.copy(buf3, 0, 0, offset);
+          writer.writeUInt16BE(0);
         },
 
         removeAttribute: (propName) => {
@@ -1810,78 +1796,34 @@ export class Window {
     buf.writeUInt16BE(count, 5);
   }
 
-  _createSequenceAppendTextCommand(buffer, offset, textString) {
-
-    // 2 bytes (16b LE)
-    // take the first byte:
-    // check first bit if value is 0
-    // if 0, this is a text
-    // if 1, this is a blockId
-
-
-    // if text:
-    // bit-shift the 16-bit value to exclude the first bit
-    // get the value
-    // if larger than 0, then interpret the value as the string length
-    // if 0, then stop
-
-
-    // if blockId.
-    // bit-shift the 16-bit value to exclude the first bit
-    // get the value
-    // value is blockId
-
-    let textBuffer = Buffer.from(textString, "utf-8");
-    let textLength = textBuffer.length;
-
-    if (textLength > 32677) {
-      throw new Error();
-    }
-
-    buffer.writeUInt16BE(textLength, offset);
-    textBuffer.copy(buffer, offset + 2);
-
-    return 2 + textLength;
-  }
-
-  _createSequenceAppendBlockCommand(buffer, offset, blockId) {
-    buffer.writeUInt16BE(blockId |= (1 << 15), offset);
-    return 2;
-  }
-
   _insert_sequenceItems(sequence, startIndex, startItemId, nodeResults) {
 
     let sequenceId = sequence.id;
-
-    scratchBuffer.writeUInt8(CMD_SEQUENCE_INSERT_ITEMS, 0);
-    scratchBuffer.writeUInt16BE(sequenceId, 1);
-    scratchBuffer.writeUInt16BE(startIndex, 3);
-    scratchBuffer.writeUInt16BE(nodeResults.length, 5);
-
-    let offset = 7;
-
+    let encodedItems = [];
+    let commandSize = 7;
     let disposeFns = [];
 
     for (let i = 0; i < nodeResults.length; i++) {
       let nodeResult = nodeResults[i];
       let itemId = startItemId + i;
       let disposeFn = null;
+      let encodedItem;
 
       if (typeof nodeResult == 'string') {
-        offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, nodeResult);
+        encodedItem = Buffer.from(nodeResult);
       } else if (typeof nodeResult == 'number') {
-        offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, nodeResult.toString());
+        encodedItem = Buffer.from(nodeResult.toString());
       } else if (!nodeResult) {
-        offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, '');
+        encodedItem = emptyBuffer;
       } else {
         switch (nodeResult.constructor) {
           case Block:
-            offset += this._createSequenceAppendBlockCommand(scratchBuffer, offset, nodeResult.id);
+            encodedItem = nodeResult.id | (1 << 15);
             // TODO: handle manually removing the block on removal
             break;
           case Component: {
             // append an empty textnode at the component's index -- the next scheduler loop will then replace it with the actual component
-            offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, '');
+            encodedItem = emptyBuffer;
 
             disposeFn = useDisposableEffect(() => {
               this._attach(sequenceId, itemId, nodeResult.fn(nodeResult.props));
@@ -1890,7 +1832,7 @@ export class Window {
           }
           case Function: {
             // append and empty textnode at the function's index -- the next scheduler loop will then replace it with the actual function result
-            offset += this._createSequenceAppendTextCommand(scratchBuffer, offset, '');
+            encodedItem = emptyBuffer;
 
             disposeFn = useDisposableEffect(() => {
               let value = nodeResult();
@@ -1911,14 +1853,35 @@ export class Window {
         }
       }
 
+      if (encodedItem instanceof Buffer) {
+        if (encodedItem.length > 0x7fff) {
+          throw new Error('Sequence text items cannot exceed 32767 bytes');
+        }
+        commandSize += 2 + encodedItem.length;
+      } else {
+        commandSize += 2;
+      }
+
+      encodedItems.push(encodedItem);
       disposeFns.push(disposeFn);
     }
 
     sequence.registerDisposeFns(startIndex, disposeFns);
 
-    let buf = this._allocCommandBuffer(offset);
+    let writer = new BufferWriter(this._allocCommandBuffer(commandSize));
+    writer.writeUInt8(CMD_SEQUENCE_INSERT_ITEMS);
+    writer.writeUInt16BE(sequenceId);
+    writer.writeUInt16BE(startIndex);
+    writer.writeUInt16BE(nodeResults.length);
 
-    scratchBuffer.copy(buf, 0, 0, offset);
+    for (let encodedItem of encodedItems) {
+      if (encodedItem instanceof Buffer) {
+        writer.writeUInt16BE(encodedItem.length);
+        writer.writeBuffer(encodedItem);
+      } else {
+        writer.writeUInt16BE(encodedItem);
+      }
+    }
   }
 }
 

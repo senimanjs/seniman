@@ -13,16 +13,20 @@ const reuseBufferQueue = [];
 
 export const bufferPool = {
 
-  alloc: () => {
+  alloc: (minimumSize = PAGE_SIZE) => {
 
-    if (reuseBufferQueue.length > 0) {
-      return reuseBufferQueue.shift();
+    if (minimumSize > PAGE_SIZE) {
+      return Buffer.allocUnsafe(minimumSize);
+    } else if (reuseBufferQueue.length > 0) {
+      return reuseBufferQueue.pop();
     } else {
       return Buffer.allocUnsafe(PAGE_SIZE);
     }
   },
 
   returnBuffer: (buffer) => {
-    reuseBufferQueue.push(buffer);
+    if (buffer.length == PAGE_SIZE) {
+      reuseBufferQueue.push(buffer);
+    }
   }
 }
