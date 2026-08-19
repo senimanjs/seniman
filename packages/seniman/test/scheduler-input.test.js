@@ -307,6 +307,76 @@ test('scheduler output drains through fixed-size continuation pages', () => {
   scheduler_deregisterWindow(handle.slot, handle.generation);
 });
 
+test('replacement deletions stream before forward work across pages', () => {
+  let handle = scheduler_registerWindow(40500);
+  let childCount = 20;
+  let registerCommands = [];
+
+  ingestSchedulerCommands(handle, [[3, 0, 4]]);
+  drainSchedulerNodeIds();
+
+  for (let i = 0; i < childCount; i++) {
+    registerCommands.push([3, 4, 6 + i * 2]);
+  }
+
+  ingestSchedulerCommands(handle, registerCommands);
+  drainSchedulerNodeIds();
+  ingestSchedulerCommands(handle, [
+    [2, 4, 101],
+    [1, 4, 101],
+    [6, 101]
+  ]);
+
+  let output = Buffer.alloc(32);
+  let deletedNodeIds = [];
+  let nodeIds = [];
+  let flags = [];
+  let packetId;
+  let sawForwardNode = false;
+
+  while (true) {
+    let length = scheduler_drainWork(output);
+
+    if (length === 0) {
+      break;
+    }
+
+    let recordFlags = output.readUInt8(0);
+    let recordPacketId = output.readUInt32LE(12);
+    let deletedNodeCount = output.readUInt32LE(16);
+    let nodeCount = output.readUInt32LE(20);
+    let offset = 28;
+
+    packetId ??= recordPacketId;
+    assert.equal(recordPacketId, packetId);
+    flags.push(recordFlags);
+
+    for (let i = 0; i < deletedNodeCount; i++) {
+      assert.equal(sawForwardNode, false);
+      deletedNodeIds.push(output.readUInt32LE(offset));
+      offset += 4;
+    }
+
+    for (let i = 0; i < nodeCount; i++) {
+      sawForwardNode = true;
+      nodeIds.push(output.readUInt32LE(offset));
+      offset += 4;
+    }
+  }
+
+  assert.ok(flags[0] & SCHEDULER_PACKET_START);
+  assert.ok(flags.at(-1) & SCHEDULER_PACKET_END);
+  assert.ok(flags.length > 1);
+  assert.deepEqual(
+    deletedNodeIds,
+    Array.from({ length: childCount }, (_, i) => 6 + (childCount - i - 1) * 2)
+  );
+  assert.deepEqual(nodeIds, [4]);
+  assert.equal(scheduler_hasWork(), false);
+
+  scheduler_deregisterWindow(handle.slot, handle.generation);
+});
+
 test('scheduler preserves stable depth ordering', () => {
   let handle = scheduler_registerWindow(41000);
 

@@ -4,6 +4,7 @@
 const NODE_FRESH = 0;
 const NODE_QUEUED = 2;
 const NODE_EXPIRED = 3;
+const NODE_DELETING = 4;
 const INPUT_FRAME_HEADER_SIZE = 12;
 const OUTPUT_PACKET_HEADER_SIZE = 28;
 
@@ -18,22 +19,36 @@ const windowSlotGenerations = [];
 let nextWindowSlot = 1;
 let activeWindowQueue = [];
 let activeWindowQueueHead = 0;
-let pendingOutputPacket = false;
-let pendingOutputPacketStarted = false;
-let pendingDeletedNodeIndex = -1;
-let pendingNodeIndex = 0;
+
+const OPERATION_NONE = 0;
+const OPERATION_DISPOSE = 1;
+const OPERATION_CLEAN = 2;
+const PACKET_CALCULATE = 0;
+const PACKET_FORWARD = 1;
+
+let pendingWindow = null;
+let pendingPacketId = 0;
+let pendingPacketWorkCost = 0;
+let pendingPacketPhase = PACKET_CALCULATE;
+let pendingPacketStarted = false;
+let pendingOperation = OPERATION_NONE;
+let pendingOperationNode = null;
+let pendingOperationParentId = 0;
+let pendingForwardNodeCount = 0;
+let pendingForwardNodeIndex = 0;
+
+// A packet can contain at most one forward node per unit of scheduler work.
+// Deletions stream directly to the output page and can exceed this bound.
+const pendingForwardNodeIds = new Uint32Array(
+  SCHEDULER_WINDOW_WORK_QUANTUM
+);
+
+let ActiveOutputBuffer = null;
+let ActiveOutputOffset = 0;
+let ActiveOutputEnd = 0;
+let ActiveOutputDeletedNodeCount = 0;
 
 let ActiveWindow = null;
-
-export const schedulerOutputCommand = {
-  windowId: -1,
-  slot: 0,
-  generation: 0,
-  packetId: 0,
-  workCost: 0,
-  nodeIds: [],
-  deletedNodeIds: []
-};
 
 export function scheduler_registerWindow(windowId) {
   let slot = freeWindowSlots.pop();
@@ -131,7 +146,7 @@ function takeActiveWindow() {
 }
 
 export function scheduler_hasWork() {
-  return pendingOutputPacket || peekActiveWindow() !== null;
+  return pendingWindow !== null || peekActiveWindow() !== null;
 }
 
 function postStateWrite(stateId) {
@@ -303,52 +318,43 @@ function _removeEffectStates(nodeId) {
   ActiveWindow.effectStatesMap.set(nodeId, []);
 }
 
-function cleanNode(node) {
-  let nodeId = node.id;
-  let isEffect = nodeId % 2 == 0;
-  if (isEffect) {
-    // TODO: run this a bit later during calculateWork? or after the complete batch is executed.
-    _removeEffectStates(nodeId);
-
-    _removeNodeSubtree(nodeId);
-  }
-
-  _removeNodeFromSources(nodeId);
-
-  node.updateState = NODE_FRESH;
-}
-
 function _removeNodeSubtree(nodeId) {
   let children = ActiveWindow.childrenListMap.get(nodeId);
 
   if (!children) {
-    return;
+    return true;
   }
 
-  let childrenCount = children.length;
-
-  for (let i = 0; i < childrenCount; i++) {
-    let childNodeId = children[i];
+  while (children.length) {
+    let childIndex = children.length - 1;
+    let childNodeId = children[childIndex];
     let childNode = ActiveWindow.nodeMap.get(childNodeId);
 
-    // A descendant can already be expired when its own disposer and an
-    // ancestor disposer are processed in the same scheduler batch.
     if (!childNode || childNode.updateState === NODE_EXPIRED) {
+      children.pop();
       continue;
     }
 
     let isEffect = childNodeId % 2 == 0;
 
-    childNode.updateState = NODE_EXPIRED;
+    childNode.updateState = NODE_DELETING;
 
-    schedulerOutputCommand.deletedNodeIds.push(childNodeId);
-
-    if (isEffect) {
-      _removeNodeSubtree(childNodeId);
+    if (isEffect && !_removeNodeSubtree(childNodeId)) {
+      return false;
     }
+
+    if (ActiveOutputOffset + 4 > ActiveOutputEnd) {
+      return false;
+    }
+
+    children.pop();
+    childNode.updateState = NODE_EXPIRED;
+    _deletedNodeCleanup(childNode);
+    _writeDeletedNode(childNodeId);
   }
 
   ActiveWindow.childrenListMap.set(nodeId, []);
+  return true;
 }
 
 function pushToWorkQueue(window, node) {
@@ -429,65 +435,44 @@ export function scheduler_ingest(buffer, length) {
   ActiveWindow = null;
 }
 
-export function scheduler_calculateWorkBatch() {
+function startPendingPacket() {
   let window = takeActiveWindow();
 
-  schedulerOutputCommand.nodeIds = [];
-  schedulerOutputCommand.deletedNodeIds = [];
-  schedulerOutputCommand.packetId = 0;
-  schedulerOutputCommand.workCost = 0;
-
   if (!window) {
-    schedulerOutputCommand.windowId = -1;
-    schedulerOutputCommand.slot = 0;
-    schedulerOutputCommand.generation = 0;
-    return schedulerOutputCommand;
+    return false;
   }
 
-  ActiveWindow = window;
-  let batchWindowId = window.windowId;
-
-  ////////////////////////////
-  // SCHEDULER OUTPUT WRITE STAGE
-  const workQueue = ActiveWindow.workQueue;
-  const disposeList = ActiveWindow.disposeList;
-
-  // tells state.js which window the output is for
-  schedulerOutputCommand.windowId = batchWindowId;
-  schedulerOutputCommand.slot = window.slot;
-  schedulerOutputCommand.generation = window.generation;
-  schedulerOutputCommand.packetId = window.nextPacketId++;
+  pendingWindow = window;
+  pendingPacketId = window.nextPacketId++;
+  pendingPacketWorkCost = 0;
+  pendingPacketPhase = PACKET_CALCULATE;
+  pendingPacketStarted = false;
+  pendingOperation = OPERATION_NONE;
+  pendingOperationNode = null;
+  pendingOperationParentId = 0;
+  pendingForwardNodeCount = 0;
+  pendingForwardNodeIndex = 0;
 
   if (window.nextPacketId > 0xffffffff) {
     window.nextPacketId = 1;
   }
 
-  let workCost = 0;
+  return true;
+}
 
-  while (
-    disposeList.length &&
-    workCost < SCHEDULER_WINDOW_WORK_QUANTUM
-  ) {
-    let deletedNodeCountBefore = schedulerOutputCommand.deletedNodeIds.length;
-    let [parentId, nodeId] = disposeList.pop();
-    let node = ActiveWindow.nodeMap.get(nodeId);
+function finishPendingOperation() {
+  let node = pendingOperationNode;
+  let nodeId = node.id;
 
-    // Disposal requests may overlap: deleting an ancestor expires its entire
-    // subtree, including descendants which already have explicit disposers in
-    // this batch. Only the first path owns the scheduler cleanup.
-    if (!node || node.updateState === NODE_EXPIRED) {
-      workCost++;
-      continue;
+  if (pendingOperation === OPERATION_DISPOSE) {
+    if (ActiveOutputOffset + 4 > ActiveOutputEnd) {
+      return false;
     }
 
-    _removeNodeSubtree(nodeId);
-
-    node.updateState = NODE_EXPIRED;
-
-    // if parent is not root
-    if (parentId > 0) {
-      // remove from the parent's children list
-      let children = ActiveWindow.childrenListMap.get(parentId);
+    if (pendingOperationParentId > 0) {
+      let children = ActiveWindow.childrenListMap.get(
+        pendingOperationParentId
+      );
       let index = children?.indexOf(nodeId) ?? -1;
 
       if (index >= 0) {
@@ -495,41 +480,117 @@ export function scheduler_calculateWorkBatch() {
       }
     }
 
-    schedulerOutputCommand.deletedNodeIds.push(nodeId);
-    workCost += schedulerOutputCommand.deletedNodeIds.length -
-      deletedNodeCountBefore;
+    node.updateState = NODE_EXPIRED;
+    _deletedNodeCleanup(node);
+    _writeDeletedNode(nodeId);
+  } else {
+    _removeNodeFromSources(nodeId);
+    node.updateState = NODE_FRESH;
+    pendingForwardNodeIds[pendingForwardNodeCount++] = nodeId;
   }
 
-  while (
-    disposeList.length === 0 &&
-    !workQueue.isEmpty() &&
-    workCost < SCHEDULER_WINDOW_WORK_QUANTUM
-  ) {
-    let node = workQueue.poll();
-    workCost++;
+  pendingOperation = OPERATION_NONE;
+  pendingOperationNode = null;
+  pendingOperationParentId = 0;
+  return true;
+}
 
-    if (node.updateState === NODE_EXPIRED) {
-      continue;
+function continuePendingOperation() {
+  let nodeId = pendingOperationNode.id;
+
+  if (nodeId % 2 === 0 && !_removeNodeSubtree(nodeId)) {
+    return false;
+  }
+
+  return finishPendingOperation();
+}
+
+function calculatePendingPacket() {
+  let window = pendingWindow;
+  let workQueue = window.workQueue;
+  let disposeList = window.disposeList;
+
+  ActiveWindow = window;
+
+  try {
+    while (
+      pendingOperation !== OPERATION_NONE ||
+      pendingPacketWorkCost < SCHEDULER_WINDOW_WORK_QUANTUM
+    ) {
+      if (pendingOperation !== OPERATION_NONE) {
+        if (!continuePendingOperation()) {
+          return false;
+        }
+
+        continue;
+      }
+
+      if (disposeList.length) {
+        let disposal = disposeList.pop();
+        let parentId = disposal[0];
+        let node = window.nodeMap.get(disposal[1]);
+
+        // Disposal requests can overlap when an ancestor owns cleanup for an
+        // explicitly disposed descendant in the same packet.
+        if (
+          !node ||
+          node.updateState === NODE_EXPIRED ||
+          node.updateState === NODE_DELETING
+        ) {
+          pendingPacketWorkCost++;
+          continue;
+        }
+
+        node.updateState = NODE_DELETING;
+        pendingOperation = OPERATION_DISPOSE;
+        pendingOperationNode = node;
+        pendingOperationParentId = parentId;
+        continue;
+      }
+
+      if (workQueue.isEmpty()) {
+        break;
+      }
+
+      let node = workQueue.poll();
+      pendingPacketWorkCost++;
+
+      if (
+        node.updateState === NODE_EXPIRED ||
+        node.updateState === NODE_DELETING
+      ) {
+        continue;
+      }
+
+      if (node.id % 2 === 0) {
+        _removeEffectStates(node.id);
+      }
+
+      pendingOperation = OPERATION_CLEAN;
+      pendingOperationNode = node;
     }
 
-    let deletedNodeCountBefore = schedulerOutputCommand.deletedNodeIds.length;
-    cleanNode(node);
-    workCost += schedulerOutputCommand.deletedNodeIds.length -
-      deletedNodeCountBefore;
+    if (
+      (disposeList.length || !workQueue.isEmpty()) &&
+      windowMap.get(window.slot) === window
+    ) {
+      activateWindow(window);
+    }
 
-    schedulerOutputCommand.nodeIds.push(node.id);
+    pendingPacketPhase = PACKET_FORWARD;
+    return true;
+  } finally {
+    ActiveWindow = null;
   }
+}
 
-  // run internal clean ups of the deleted nodes
-  _deletedNodeCleanup();
-
-  if (disposeList.length || !workQueue.isEmpty()) {
-    activateWindow(window);
-  }
-
-  schedulerOutputCommand.workCost = workCost;
-  ActiveWindow = null;
-  return schedulerOutputCommand;
+function clearPendingPacket() {
+  pendingWindow = null;
+  pendingOperation = OPERATION_NONE;
+  pendingOperationNode = null;
+  pendingForwardNodeCount = 0;
+  pendingForwardNodeIndex = 0;
+  pendingPacketStarted = false;
 }
 
 function writeOutputPacketHeader(
@@ -542,34 +603,12 @@ function writeOutputPacketHeader(
   buffer.writeUInt8(flags, offset);
   buffer.writeUInt8(0, offset + 1);
   buffer.writeUInt16LE(0, offset + 2);
-  buffer.writeUInt32LE(schedulerOutputCommand.slot, offset + 4);
-  buffer.writeUInt32LE(schedulerOutputCommand.generation, offset + 8);
-  buffer.writeUInt32LE(schedulerOutputCommand.packetId, offset + 12);
+  buffer.writeUInt32LE(pendingWindow.slot, offset + 4);
+  buffer.writeUInt32LE(pendingWindow.generation, offset + 8);
+  buffer.writeUInt32LE(pendingPacketId, offset + 12);
   buffer.writeUInt32LE(deletedNodeCount, offset + 16);
   buffer.writeUInt32LE(nodeCount, offset + 20);
-  buffer.writeUInt32LE(schedulerOutputCommand.workCost, offset + 24);
-}
-
-function preparePendingOutput() {
-  while (!pendingOutputPacket) {
-    if (!peekActiveWindow()) {
-      return false;
-    }
-
-    scheduler_calculateWorkBatch();
-    pendingDeletedNodeIndex = schedulerOutputCommand.deletedNodeIds.length - 1;
-    pendingNodeIndex = 0;
-
-    if (
-      pendingDeletedNodeIndex >= 0 ||
-      schedulerOutputCommand.nodeIds.length > 0
-    ) {
-      pendingOutputPacket = true;
-      pendingOutputPacketStarted = false;
-    }
-  }
-
-  return true;
+  buffer.writeUInt32LE(pendingPacketWorkCost, offset + 24);
 }
 
 export function scheduler_drainWork(buffer, workBudget = Infinity) {
@@ -584,61 +623,62 @@ export function scheduler_drainWork(buffer, workBudget = Infinity) {
     buffer.length - writeOffset >=
     OUTPUT_PACKET_HEADER_SIZE + 4
   ) {
-    if (!pendingOutputPacket && drainedWorkCost >= workBudget) {
+    if (pendingWindow === null && drainedWorkCost >= workBudget) {
       break;
     }
 
-    if (!preparePendingOutput()) {
+    if (pendingWindow === null && !startPendingPacket()) {
       break;
     }
 
     let headerOffset = writeOffset;
-    let flags = pendingOutputPacketStarted ? 0 : SCHEDULER_PACKET_START;
-    let availableNodeCount = Math.floor(
-      (buffer.length - writeOffset - OUTPUT_PACKET_HEADER_SIZE) / 4
-    );
-    let deletedNodeCount = Math.min(
-      availableNodeCount,
-      pendingDeletedNodeIndex + 1
-    );
-    let nodeCount;
-
     writeOffset += OUTPUT_PACKET_HEADER_SIZE;
+    ActiveOutputBuffer = buffer;
+    ActiveOutputOffset = writeOffset;
+    ActiveOutputEnd = buffer.length;
+    ActiveOutputDeletedNodeCount = 0;
 
-    for (let i = 0; i < deletedNodeCount; i++) {
-      buffer.writeUInt32LE(
-        schedulerOutputCommand.deletedNodeIds[pendingDeletedNodeIndex--],
-        writeOffset
-      );
-      writeOffset += 4;
+    if (pendingPacketPhase === PACKET_CALCULATE) {
+      calculatePendingPacket();
     }
 
-    availableNodeCount -= deletedNodeCount;
-    nodeCount = Math.min(
-      availableNodeCount,
-      schedulerOutputCommand.nodeIds.length - pendingNodeIndex
-    );
+    let nodeCount = 0;
 
-    for (let i = 0; i < nodeCount; i++) {
-      buffer.writeUInt32LE(
-        schedulerOutputCommand.nodeIds[pendingNodeIndex++],
-        writeOffset
-      );
-      writeOffset += 4;
+    if (pendingPacketPhase === PACKET_FORWARD) {
+      while (
+        pendingForwardNodeIndex < pendingForwardNodeCount &&
+        ActiveOutputOffset + 4 <= ActiveOutputEnd
+      ) {
+        buffer.writeUInt32LE(
+          pendingForwardNodeIds[pendingForwardNodeIndex++],
+          ActiveOutputOffset
+        );
+        ActiveOutputOffset += 4;
+        nodeCount++;
+      }
     }
 
-    pendingOutputPacketStarted = true;
+    writeOffset = ActiveOutputOffset;
+    let deletedNodeCount = ActiveOutputDeletedNodeCount;
+    let packetComplete = pendingPacketPhase === PACKET_FORWARD &&
+      pendingForwardNodeIndex === pendingForwardNodeCount;
 
-    if (
-      pendingDeletedNodeIndex < 0 &&
-      pendingNodeIndex === schedulerOutputCommand.nodeIds.length
-    ) {
+    if (deletedNodeCount === 0 && nodeCount === 0) {
+      writeOffset = headerOffset;
+
+      if (packetComplete) {
+        drainedWorkCost += pendingPacketWorkCost;
+        clearPendingPacket();
+        continue;
+      }
+
+      throw new Error('Scheduler output packet made no progress');
+    }
+
+    let flags = pendingPacketStarted ? 0 : SCHEDULER_PACKET_START;
+
+    if (packetComplete) {
       flags |= SCHEDULER_PACKET_END;
-      schedulerOutputCommand.deletedNodeIds = [];
-      schedulerOutputCommand.nodeIds = [];
-      pendingOutputPacket = false;
-      pendingOutputPacketStarted = false;
-      drainedWorkCost += schedulerOutputCommand.workCost;
     }
 
     writeOutputPacketHeader(
@@ -648,34 +688,44 @@ export function scheduler_drainWork(buffer, workBudget = Infinity) {
       deletedNodeCount,
       nodeCount
     );
+
+    if (packetComplete) {
+      drainedWorkCost += pendingPacketWorkCost;
+      clearPendingPacket();
+    } else {
+      pendingPacketStarted = true;
+    }
   }
 
+  ActiveOutputBuffer = null;
   return writeOffset;
 }
 
-function _deletedNodeCleanup() {
+function _writeDeletedNode(nodeId) {
+  ActiveOutputBuffer.writeUInt32LE(nodeId, ActiveOutputOffset);
+  ActiveOutputOffset += 4;
+  ActiveOutputDeletedNodeCount++;
+  pendingPacketWorkCost++;
+}
 
-  let schedulerDeletedNodeCount = schedulerOutputCommand.deletedNodeIds.length;
+function _deletedNodeCleanup(node) {
+  let nodeId = node.id;
+  let isEffect = nodeId % 2 == 0;
 
-  for (let i = 0; i < schedulerDeletedNodeCount; i++) {
-    let childNodeId = schedulerOutputCommand.deletedNodeIds[i];
-    let isEffect = childNodeId % 2 == 0;
+  if (isEffect) {
+    _removeEffectStates(nodeId);
+  }
 
-    if (isEffect) {
-      _removeEffectStates(childNodeId);
-    }
+  _removeNodeFromSources(nodeId);
 
-    _removeNodeFromSources(childNodeId);
+  ActiveWindow.nodeMap.delete(nodeId);
+  ActiveWindow.sourcesMap.delete(nodeId);
 
-    ActiveWindow.nodeMap.delete(childNodeId);
-    ActiveWindow.sourcesMap.delete(childNodeId);
-
-    if (isEffect) {
-      ActiveWindow.childrenListMap.delete(childNodeId);
-      ActiveWindow.effectStatesMap.delete(childNodeId);
-    } else {
-      ActiveWindow.observersMap.delete(childNodeId);
-    }
+  if (isEffect) {
+    ActiveWindow.childrenListMap.delete(nodeId);
+    ActiveWindow.effectStatesMap.delete(nodeId);
+  } else {
+    ActiveWindow.observersMap.delete(nodeId);
   }
 }
 
