@@ -1,6 +1,8 @@
 # Changing Pages
 
-Changing pages are the bread and butter of any web application. Seniman provides a few functions that you can use to change the page, and also to react to page URL changes.
+Seniman deliberately keeps routing simple. Its core API provides links, history updates, and reactive URL state; an application can use normal JavaScript conditions to decide which page component to render.
+
+This is the same approach used by the [`routing-basic`](https://github.com/senimanjs/seniman/tree/main/examples/routing-basic) example. Applications that need route ranking, nested routes, or other routing policies can build those policies on top of the same primitives.
 
 
 ### Making anchor links

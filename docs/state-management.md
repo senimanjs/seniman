@@ -1,196 +1,243 @@
-# State Management
-State management in Seniman is built on a few core functions:
+# Managing Reactive State
 
-- [`useState`](#usestate)
-- [`useEffect`](#useeffect)
-- [`useMemo`](#usememo)
-- [`useContext`](#usecontext)
+State gives a Seniman component memory and connects that memory to the parts of the interface that display it. The central idea is simple: state is read through a getter, and Seniman tracks where that getter is called.
 
-Below, we'll go over each of these functions and how they can be used to manage state in your application.
+When the value changes, Seniman reruns those subscribed scopes. It does not rerun the entire application or rebuild unrelated DOM.
 
-## useState
+This guide covers the usual progression from local state to derived values, effects, and shared context. For exact signatures and edge cases, see the [Reactivity reference](/docs/references/reactivity) and [Context & Lifecycle reference](/docs/references/context-lifecycle).
 
-`useState` is a function that allows you to create a reactive value in your application. You can initialize `useState` with an initial value, and with the getter and the setter functions it returns, you can have your interface automatically update when the value changes.
+## Start with local state
 
-Here's how you'd initialize them in a component:
+Call `useState()` inside a component. It returns a getter and setter.
 
 ```js
-
 import { useState } from 'seniman';
 
-function MyComponent() {
-  const [getCounter, setCounter] = useState(0);
+function Counter() {
+  let [count, setCount] = useState(0);
 
-  ...
+  return <div>
+    <span>Count: {count()}</span>
+    <button onClick={() => setCount(value => value + 1)}>
+      Increment
+    </button>
+  </div>;
 }
 ```
 
-To get the current value of the state, you can call the getter function within your elements:
+`count()` reads the current value. `setCount()` replaces it and notifies scopes that read it.
+
+Use the updater form when the new value depends on the current one:
 
 ```js
-return (
-  <div>
-    <p>Current value of the state: {getCounter()}</p>
-  </div>
-);
+setCount(current => current + 1);
 ```
 
-When the value of the state changes, Seniman will make sure that the only the text node responsible for displaying the value of the state on the client-side will be updated. Other non-participating parts of the element tree will not be touched or in any way re-calculated. The component that houses the `useState` call will also not be re-executed.
+This is safer than calculating from an earlier captured value, especially when several updates can happen close together.
 
-You can also run the getter within an effect:
-  
+For objects and Arrays, create a replacement value rather than mutating in place:
+
 ```js
-useEffect(() => {
-  console.log(getCounter());
+setUser(current => ({
+  ...current,
+  name: 'Ada'
+}));
+```
+
+Seniman compares state by identity. Setting the same object reference again does not reveal which property was changed.
+
+## State reads define update boundaries
+
+The location of a getter call determines what reruns.
+
+```js
+function Profile() {
+  let [name, setName] = useState('Ada');
+
+  return <section>
+    <h1>Profile</h1>
+    <p>Name: {name()}</p>
+    <button onClick={() => setName('Grace')}>Rename</button>
+  </section>;
+}
+```
+
+Here, the getter is read by the text expression inside the paragraph. Changing `name` updates that expression; the static heading and button are left alone.
+
+This fine-grained behavior is why getters are functions rather than plain values. Calling a getter in a broader scope creates a broader dependency. Keep reads near the output or calculation that actually needs them.
+
+## Reactive scopes, not component rerenders
+
+In React, the component function is the render pass. Updating state runs that function again with a new state snapshot, then React reconciles its returned tree.
+
+In Seniman, the component function creates a persistent server-side component instance. Within it, Seniman creates reactive scopes for dynamic JSX expressions, memos, and effects.
+
+A reactive scope is the unit of both dependency tracking and rerendering. While a scope runs, Seniman records every state or memo getter it calls. When one of those values changes, Seniman reruns that same scope—not the surrounding component—and streams the scope's resulting DOM changes to the browser.
+
+```js
+function Counter() {
+  let [count, setCount] = useState(0);
+
+  console.log('Counter instance created');
+
+  return <section>
+    <h1>Counter</h1>
+    <button onClick={() => setCount(value => value + 1)}>
+      Count: {count()}
+    </button>
+  </section>;
+}
+```
+
+The `Count: {count()}` expression has a reactive scope. Its first run calls `count()`, so that scope subscribes to the state. Clicking the button changes the value, causing the same expression scope to run again and update its text. It does not run `Counter()` again, recreate the static heading, or print the log again. The component function runs again only if its owning scope replaces that component with a new instance.
+
+This is also why Seniman state is returned as a getter rather than a plain render-time value. Calling `count()` reads the current value and subscribes whichever scope is currently running. Memos and effects use the same tracking-and-rerunning mechanism, so they track synchronous getter reads instead of dependency arrays.
+
+## Derive values with `useMemo`
+
+Use a memo when a value is calculated from other reactive values and is read in more than one place, or when downstream code should subscribe to the calculation as one unit.
+
+```js
+import { useMemo, useState, withValue } from 'seniman';
+
+function NameEditor() {
+  let [firstName, setFirstName] = useState('Ada');
+  let [lastName, setLastName] = useState('Lovelace');
+
+  let fullName = useMemo(() =>
+    `${firstName()} ${lastName()}`
+  );
+
+  return <div>
+    <input value={firstName()} onChange={withValue(setFirstName)} />
+    <input value={lastName()} onChange={withValue(setLastName)} />
+    <h1>{fullName()}</h1>
+  </div>;
+}
+```
+
+The memo records the getters read during its calculation. It recalculates when either name changes and notifies scopes reading `fullName()` only when the memo result changes.
+
+Do not use a memo merely to rename a state getter or perform a trivial calculation used once. A direct JSX expression is usually clearer.
+
+## Use effects for work, not rendering
+
+An effect runs server-side work in response to reactive dependencies. Getters read synchronously inside the effect become dependencies.
+
+```js
+import { onDispose, useEffect, useState } from 'seniman';
+
+function SearchResults(props) {
+  let [results, setResults] = useState([]);
+  let [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let query = props.query;
+    let controller = new AbortController();
+    let active = true;
+
+    onDispose(() => {
+      active = false;
+      controller.abort();
+    });
+    setLoading(true);
+
+    search(query, { signal: controller.signal })
+      .then(nextResults => {
+        if (active) setResults(nextResults);
+      })
+      .catch(error => {
+        if (active && error.name !== 'AbortError') {
+          console.error(error);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+  });
+
+  return loading()
+    ? <p>Loading…</p>
+    : <ResultList results={results()} />;
+}
+```
+
+When `props.query` changes, Seniman cleans up the previous run before starting the next one. The abort prevents an obsolete request from racing with the current request.
+
+An async effect may also be written with `async`, but only getter reads before the first `await` are tracked. Resolve dependencies at the beginning:
+
+```js
+useEffect(async () => {
+  let query = props.query;
+  let results = await search(query);
+  setResults(results);
 });
 ```
 
-When the value of the state changes, the effect will be re-run.
+Effects are appropriate for database or API calls, subscriptions, timers, logging, and synchronization with systems outside rendering. If code only calculates display output, use JSX or a memo instead.
 
-Next, let's start changing the value of the state. To set the value of the state, you can call the setter function -- for example:
+## Clean up owned resources
 
-```js
-return (
-  <div>
-    <button onClick={() => setCounter(1)}>Set to 1</button>
-  </div>
-);
-```
-
-In this case, when the button is clicked, the state will be set to the new value of `1`. Effects and memoized values that depend on the state will promptly be re-evaluated.
-
-You can also pass a function to the setter function, which will be called with the current value of the state as its argument. For example:
+Timers, subscriptions, streams, and other resources should end with the scope that created them.
 
 ```js
-return (
-  <div>
-    <button onClick={() => setCounter(count => count + 1)}>Increment</button>
-  </div>
-);
-```
+import { onDispose, useState } from 'seniman';
 
-This method of calling the setter function is useful when you want to update the state based on its current value. In this case, the state will be incremented by `1` every time the button is clicked.
+function Clock() {
+  let [now, setNow] = useState(new Date());
+  let timer = setInterval(() => setNow(new Date()), 1000);
 
-## useEffect
+  onDispose(() => clearInterval(timer));
 
-`useEffect` provides you with a way to run a function in response to changes in the state of your application. It takes a single function to run as an argument. During the execution of the `useEffect` function, Seniman will track any calls to `state` or `memo` variables, and will re-run the effect when any of those values change.
-
-Example:
-
-```js
-import { useState, useEffect } from 'seniman';
-
-function ComponentA() {
-  const [firstName, setFirstName] = useState('John');
-
-  useEffect(() => {
-    console.log(firstName());
-  });
-
-  return ...
+  return <time>{now().toLocaleTimeString()}</time>;
 }
 ```
 
-One primary real-world use case of `useEffect` is also to load data from an API or a database. In that case, we can use an `async` function inside the `useEffect`, for example:
+Inside an effect, cleanup runs before the effect reruns and when it is removed. At component level, cleanup runs when that component scope is disposed.
+
+## Share state through context
+
+Props are the clearest way to pass values through nearby components. Context is useful when many descendants need the same service or reactive state and forwarding it through every intermediate component would add noise.
+
+Create the Context identity at module scope, then provide a value inside the component tree:
 
 ```js
+import { createContext, useContext, useState } from 'seniman';
 
-import { useState, useEffect } from 'seniman';
-
-function ComponentA() {
-  let [data, setData] = useState(null);
-  let [page, setPage] = useState(1);
-
-  useEffect(async () => {
-    let _page = page();
-    const response = await fetch('https://example.com/data?page=' + _page);
-    const data = await response.json();
-    setData(data);
-  });
-
-  return ...
-}
-```
-
-One caveat to async `useEffect` is that any state getter calls after the first `await` keyword will not be properly tracked -- so it is good practice to resolve all the state values upfront in the function before starting the async calls.
-
-## useMemo
-
-`useMemo` is a function that allows you to create a memoized value, usually based on the values of other state variables or even other memoized values. It takes a function as an argument, and will only re-run the function when the values of dependencies change.
-
-Example:
-
-```js
-import { useState, useEffect } from 'seniman';
-
-function ComponentA() {
-
-  const [firstName, setFirstName] = useState('John');
-  const [lastName, setLastName] = useState('Doe');
-
-  const fullName = useMemo(() => {
-    return firstName() + ' ' + lastName();
-  });
-
-  ...
-}
-```
-
-And to use it:
-
-```js
-return (
-  <div>
-    <p>Full name: {fullName()}</p>
-  </div>
-);
-```
-
-The `fullName` memo will only be re-computed when the value of either `firstName` or `lastName` changes.
-
-## useContext
-
-One way to share state between components, especially when they do not have a direct parent-child relationship, is to use the `useContext` function. Context allows you to share values easily deep within the component tree without having to pass props down manually at every level.
-
-To use it, the first step is to create a context object:
-
-```js
-
-import { createContext, useContext } from 'seniman';
-
-const MyContext = createContext();
+const ThemeContext = createContext();
 
 function App() {
-  ...
+  let [theme, setTheme] = useState('dark');
+  let themeService = { theme, setTheme };
+
+  return <ThemeContext.Provider value={themeService}>
+    <Toolbar />
+    <Page />
+  </ThemeContext.Provider>;
+}
+
+function ThemeButton() {
+  let { theme, setTheme } = useContext(ThemeContext);
+
+  return <button onClick={() => {
+    setTheme(current => current === 'dark' ? 'light' : 'dark');
+  }}>
+    Theme: {theme()}
+  </button>;
 }
 ```
 
-Then, in the highest level component of the tree in which you want to share the context, you can initialize a `MyContext.Provider` component:
+The Context read is not itself reactive. In this example, the provided state getter carries reactivity to the consumer.
 
-```js
-import { createContext, useContext } from 'seniman';
+## Choosing the right primitive
 
-const MyContext = createContext();
+| Need | Use |
+| --- | --- |
+| Store one reactive value | `useState()` |
+| Calculate a reusable reactive value | `useMemo()` |
+| Run work when dependencies change | `useEffect()` |
+| Release a component or effect resource | `onDispose()` |
+| Share values through a subtree | Context |
+| Maintain a changing ordered list | [Collection](/docs/collection) |
 
-function App() {
-  return (
-    <MyContext.Provider value={value}>
-      <ChildComponent />
-    </MyContext.Provider>
-  );
-}
-```
-
-Later on, deep down within the tree, you can use the `useContext` function to access the value of the context:
-
-```js
-function GrandChild() {
-  const value = useContext(MyContext);
-
-  return (
-    <div>
-      <p>Value of the context: {value}</p>
-    </div>
-  );
-}
-```
+Keep state close to the components that own it, place getter reads near their consumers, and use effects only at boundaries with work outside rendering. Those three habits preserve Seniman's small, predictable update scopes.

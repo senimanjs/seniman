@@ -1,6 +1,6 @@
 # Building a Counter
 
-In this tutorial, we will create a simple counter application using Seniman. The starting code for this tutorial is available [here](https://github.com/senimanjs/seniman/tree/main/examples/hello-world). 
+In this tutorial, we will create a simple counter application using Seniman. The completed code for this tutorial is available in the [`counter`](https://github.com/senimanjs/seniman/tree/main/examples/counter) example.
 
 You can download the app's code by running `npx clone-seniman-app` and choosing `counter` from the list of examples. This will create a new local folder with the app code downloaded into it.
 
@@ -97,7 +97,13 @@ function App() {
 }
 ```
 
-Next, let's create a state to represent the counter value:
+Next, import `useState` alongside `createRoot` at the top of the file:
+
+```js
+import { createRoot, useState } from 'seniman';
+```
+
+Then create a state to represent the counter value:
 
 ```js
 function Counter(props) {
@@ -181,4 +187,4 @@ function Counter(props) {
 
 And that's it, you've built your first counter application in Seniman. 
 
-You might be wondering if there is another front-end aspect to this that we need to set up. The answer is no. Seniman, and your application code, runs entirely on the server. The full component tree will be executed and maintained by the server, and Seniman will take care to send only the minimum amount of DOM manipulation commands to the browser through an efficient binary protocol running on WebSocket.
+You do not need to set up a separate browser application for this counter. Seniman maintains the component tree on the server, while its browser runtime receives the required DOM commands through a compact binary protocol over WebSocket. Browser-specific behavior can still be added explicitly with client functions when an application needs it.

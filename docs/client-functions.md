@@ -1,186 +1,251 @@
-# Client Functions
+# Running Code in the Browser
 
-Using Seniman, being a server-driven UI framework, means your interfaces are generated on the server, derived from values that already exist on the server. It is inevitable, however, that you will need to implement some client-side functionality. At the very least, you will need to know when a user clicks a button -- or when a user types something into a text field, and what they typed, and respond to that event. Seniman provides a way to implement client-side functionality, and it is called client functions.
+Seniman is server-first: components, state, effects, and ordinary event handlers run on the server. Client functions are the deliberate escape hatch for code that must use native events, DOM elements, browser APIs, or immediate browser timing.
 
-Client functions allows you to define functions which execute on the client-side, which can be used to implement event handlers, or any other kind of client-side logic. Let's go through the two different forms of using client functions: [event handlers](#event-handlers) and [`client.exec`](#clientexec).
+Two compiler markers define the boundary:
 
-### Event handlers
+- `$c(() => ...)` marks a function that runs in the browser.
+- `$s(value)` makes a server-supplied value available inside that client function.
 
-The most basic form of client functions are event handlers. Here is the most basic example of an event handler that logs a message to the browser console when the button is clicked:
+Neither marker is imported at runtime. The Seniman compiler recognizes them while building the application.
+
+For a guide to choosing event-handler patterns, start with [Understanding Events](/docs/event-system). For exact supported values and helper signatures, see the [Events reference](/docs/references/events) and [Client reference](/docs/references/client).
+
+## Stay server-side by default
+
+A plain function passed to an event prop is a server handler:
 
 ```js
-function MyComponent() {
-  return (
-    <button onClick={$c(() => console.log('Clicked!'))}>
-      Click me!
-    </button>
-  );
+function CounterButton(props) {
+  return <button onClick={() => {
+    props.increment();
+  }}>
+    Increment
+  </button>;
 }
 ```
 
-As you can see, the function is wrapped in a `$c` call. This is a special function that tells the Seniman compiler that the wrapped function is a client function. The function you write inside the `$c` call will be executed on the client-side, in this case, when the button is clicked.
+This is the shortest and clearest form when the browser only needs to report a discrete action. It keeps application logic, credentials, and service access on the server.
 
-#### Using the `$s` function
+Introduce `$c` only when the browser needs to do something before or instead of that server call.
 
-Logging messages are great, but the real fun is notifying the server when the button is clicked. To do that, you can use the `$s` syntax:
+## Use `$c` for native browser behavior
+
+A `$c` event handler receives the native browser event and can use browser globals.
 
 ```js
-
-import { createHandler } from 'seniman';
-
-function MyComponent() {
-
-  let onClick = createHandler(() => {
-    console.log('Server knows the click happened!');
-  });
-
-  return (
-    <button onClick={$c(() => $s(onClick)())}>
-      Click me!
-    </button>
-  );
+function ConfirmButton() {
+  return <button onClick={$c(event => {
+    event.currentTarget.disabled = true;
+    console.log('Disabled immediately in the browser');
+  })}>
+    Confirm
+  </button>;
 }
 ```
 
-As you can see, we can call a server-defined handler function (the `onClick`) right from the client by wrapping it in a `createHandler` -- marking the function as a client-callable server function -- and then wrapping it in a `$s` call within the `$c` function call.
+The function body is compiled and sent to the browser. It does not close over arbitrary server variables like a normal JavaScript closure. Values crossing that boundary must be marked with `$s`.
 
-The `$s` is also another special function that tells the Seniman compiler that the wrapped reference is a server-supplied variable. In this case, the `$s` function is wrapping a handler reference, which is the `onClick` function. When the `$s` function reference is called, the client runtime will send a message to the server, telling it to execute the referred server function.
+Use `event.currentTarget` for the element whose handler is running. Use `event.target` when the originating descendant matters.
 
-In Seniman, a `$c` event handler that calls a single `$s` handler without an argument can be rewritten for simplicity by just passing the server function directly, like so:
+## Send selected browser data to the server
+
+Create a server function in the component scope, then call it from `$c` through `$s`.
 
 ```js
-function MyComponent() {
-  let onClick = () => {
-    console.log('Server knows the click happened!');
-  }
+import { useState } from 'seniman';
 
-  return (
-    <button onClick={onClick}>
-      Click me!
-    </button>
-  );
+function CommandInput() {
+  let [lastCommand, setLastCommand] = useState('');
+
+  let submit = command => {
+    setLastCommand(command);
+    runCommand(command);
+  };
+
+  return <div>
+    <input onKeyDown={$c(event => {
+      if (event.key === 'Enter') {
+        $s(submit)(event.currentTarget.value);
+      }
+    })} />
+    <p>Last command: {lastCommand()}</p>
+  </div>;
 }
 ```
 
-Much simpler! You can even pass it as an inline function -- without the `$c` wrapper -- to the `onClick` prop, like so:
+The browser sends only the input string. The DOM element and `KeyboardEvent` remain in the browser.
 
-```js
-function MyComponent() {
-  return (
-    <button onClick={() => console.log('Clicked!')}>
-      Click me!
-    </button>
-  );
-}
-```
+Because the `$c` function is attached directly to an event prop, Seniman automatically gives the captured server function a lifecycle-owned handler reference.
 
-And we have a simple, server-executed event handler on our hands.
+Calls from the browser are asynchronous and fire-and-forget. A server handler's return value does not become a browser return value. Send a later browser command or channel value when a result must travel back.
 
-#### Passing arguments to the `$s` function
+## Capture server values with `$s`
 
-Next, let's start passing actual data to the server. Let's pick up a different example -- this time, an input:
-
-```js
-
-import { createHandler } from 'seniman';
-
-function MyComponent() {
-  ...
-
-  let handleNameChange = createHandler((name) => {
-    // do something with the name
-  });
-
-  return (
-    ...
-    <input onChange={$c(e => $s(handleNameChange)(e.target.value))} />
-    ...
-  );
-}
-```
-
-In this example, the `onChange` event handler will call the `handleNameChange` function on the server, passing the value of the input as an argument.
-
-
-#### Using `withValue` helper function
-
-As with the `onClick` handler, we can also simplify the handler declaration. For `$c` functions that passes the event's target value like this one -- which you'll find frequently -- you can use the `withValue` helper function:
-
-```js
-
-import { withValue } from 'seniman';
-
-function MyComponent() {
-  ...
-
-  let handleNameChange = (name) => {
-    // do something with the name
-  }
-
-  return (
-    ...
-    <input onChange={withValue(handleNameChange)} />
-    ...
-  );
-}
-```
-
-The `withValue` helper function takes a server function, and wraps it in a `$c` handler that calls the server function with the event's target value as an argument -- making the component code a bit more readable. It's a pretty small one, so here's the implementation of the `withValue` helper function:
-
-```js
-function withValue(fn) {
-
-  // ... verify if fn is a server handler
-
-  return $c(e => $s(fn)(e.target.value));
-}
-```
-
-### client.exec
-
-Another way to use client functions is by calling them directly from the server. 
-
-To do this, we can use the `client` object's `exec` function. This function takes a function as an argument, and executes it on the client-side. Let's start from a simple example that logs a message to the browser console:
+Ordinary values wrapped in `$s` are serialized snapshots.
 
 ```js
 import { useClient } from 'seniman';
 
-function MyComponent() {
+function AnnounceButton(props) {
   let client = useClient();
 
-  useEffect(() => {
-    client.exec($c(() => console.log('Hello from the server!')));
-  });
-
-  return (
-    <div>
-      ...
-    </div>
-  );
-}
-```
-
-A server handler is not the only type of server value that can be passed to the client function. You can also pass other types of server values such as strings, numbers, or boolean values. Let's try passing a string to the client function -- also by wrapping it in a `$s` call:
-
-```js
-
-function MyComponent() {
-  let client = useClient();
-
-  let onClick = () => {
-    let serverString = 'Hello from the server!';
+  return <button onClick={() => {
+    let message = props.message;
 
     client.exec($c(() => {
-      console.log("This is a server string: " + $s(serverString));
+      window.alert($s(message));
     }));
-  };
-
-  return (
-    <button onClick={onClick}>
-      Click me!
-    </button>
-  );
+  }}>
+    Announce
+  </button>;
 }
 ```
 
-When the user clicks the button, the server will tell the client to execute the client function, passing along the server string. The client function will then log the string to the browser console.
+Changing `message` on the server later does not mutate the copy already sent to the browser. Execute another client function or use a Channel to send another value.
+
+Strings, numbers, booleans, `null`, Arrays, plain objects, and binary buffers can cross as data. Functions, DOM objects, cyclic structures, and arbitrary class instances cannot. Handlers, refs, channels, and modules are special Seniman tokens rather than ordinary serialized objects.
+
+## Execute browser work from a server handler
+
+Event props are one entry point for client functions. `client.exec()` is the other: server code decides when a browser function should run.
+
+```js
+import { useClient } from 'seniman';
+
+function CopyButton(props) {
+  let client = useClient();
+
+  function copy() {
+    let text = props.text;
+
+    client.exec($c(() => {
+      navigator.clipboard.writeText($s(text));
+    }));
+  }
+
+  return <button onClick={copy}>Copy</button>;
+}
+```
+
+`exec()` is also fire-and-forget. Use it for focus, selection, clipboard access, measurements, browser library calls, and other operations that have no server equivalent.
+
+When browser work must report a result back to server state, create an explicit handler for that return path:
+
+```js
+import {
+  createHandler,
+  createRef,
+  useClient,
+  useState
+} from 'seniman';
+
+function PreviewPanel(props) {
+  let client = useClient();
+  let previewRef = createRef();
+  let [preview, setPreview] = useState('');
+  let [height, setHeight] = useState(null);
+
+  let reportHeight = createHandler(value => {
+    setHeight(Math.round(value));
+  });
+
+  async function generatePreview() {
+    let text = await props.renderPreview();
+    setPreview(text);
+
+    client.exec($c(() => {
+      requestAnimationFrame(() => {
+        let preview = $s(previewRef).get();
+        $s(reportHeight)(preview.getBoundingClientRect().height);
+      });
+    }));
+  }
+
+  return <div>
+    <button onClick={generatePreview}>Generate preview</button>
+    <pre ref={previewRef}>{preview()}</pre>
+    <p>Rendered height: {height() ?? 'not measured'}px</p>
+  </div>;
+}
+```
+
+The click starts asynchronous server work. Only after the generated preview is stored does `client.exec()` ask the browser to measure the newly rendered element. The lifecycle-owned handler then carries that measurement back to server state. A `$c` click handler cannot replace this flow because its browser code runs before the asynchronous server work and resulting DOM update have completed.
+
+Explicit `createHandler()` is necessary because this `$c` function is executed independently rather than attached directly to a JSX event or lifecycle prop.
+
+## Refer to a rendered element
+
+`createRef()` creates a server token that resolves to a DOM element inside client code.
+
+```js
+import { createRef } from 'seniman';
+
+function SearchBox() {
+  let inputRef = createRef();
+
+  return <div>
+    <input ref={inputRef} />
+    <button onClick={$c(() => {
+      $s(inputRef).get()?.focus();
+    })}>
+      Focus search
+    </button>
+  </div>;
+}
+```
+
+The ref token exists on the server; `.get()` exists on its browser representation and returns the mounted DOM element. Do not try to inspect the DOM element from server code.
+
+Prefer an element passed directly to a lifecycle function when the behavior belongs entirely to that element. Use a ref when another handler or later `client.exec()` call must find it.
+
+## Mount and clean up browser behavior
+
+`onMount` can install behavior when an element appears. A client function may return cleanup that runs when that element is removed.
+
+```js
+function EscapeListener(props) {
+  let cancel = () => props.cancel();
+
+  return <div onMount={$c(rootElement => {
+    let onKeyDown = event => {
+      if (event.key === 'Escape') {
+        $s(cancel)();
+      }
+    };
+
+    rootElement.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      rootElement.removeEventListener('keydown', onKeyDown);
+    };
+  })} tabindex="0">
+    {props.children}
+  </div>;
+}
+```
+
+Put mount logic on the element it owns. This guarantees the element exists when setup runs and gives the browser runtime the correct lifetime for cleanup.
+
+## Reuse and stream browser logic
+
+As browser behavior grows, two Client APIs avoid repeatedly reinstalling ad hoc functions:
+
+- `createModule()` defines reusable browser-side logic once per browser window.
+- `createChannel()` streams later server values to a browser-side receiver.
+
+These are useful for throttlers, editors, terminal input, media controllers, and other long-lived browser integrations. Their complete lifecycle and examples are in the [Client reference](/docs/references/client).
+
+## Keep the boundary narrow
+
+| Situation | Preferred form |
+| --- | --- |
+| Server only needs notification | Plain server event handler |
+| Server needs one input value | `withValue()` |
+| Browser must cancel default behavior | `preventDefault()` or `$c` |
+| Browser event fields are needed | `$c` calling `$s(handler)` |
+| Server initiates browser work | `client.exec($c(...))` |
+| Browser behavior follows one element's lifetime | `onMount={$c(...)}` |
+| Later code needs a DOM element | `createRef()` |
+
+Client functions are most maintainable when they translate browser details into small semantic server messages. Keep durable state and application decisions on the server; keep DOM mechanics and immediate browser behavior in `$c`.

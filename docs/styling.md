@@ -26,7 +26,7 @@ function Counter(props) {
   
   return (
     <div style={{ color: getCount() > 0 ? 'green' : 'red', background: 'white' }}>
-      {getCount}
+      {getCount()}
     </div>
   );
 }
@@ -48,7 +48,7 @@ function Counter(props) {
   
   return (
     <div style={generateStyle(getCount())}>
-      {getCount}
+      {getCount()}
     </div>
   );
 }
@@ -74,7 +74,7 @@ function Counter(props) {
 You can then define the CSS class using the built-in `<Style>` component, putting it wherever in your component tree:
 ```js
 
-import Style from 'seniman/head';
+import { Style } from 'seniman/head';
 
 function Root() {
   return <div>
@@ -101,7 +101,7 @@ function Counter(props) {
   
   return (
     <div class={`counter ${getCount() > 0 ? 'active' : 'inactive'}`}>
-      {getCount}
+      {getCount()}
     </div>
   );
 }
