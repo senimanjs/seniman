@@ -24,6 +24,7 @@ class Root {
     this.rootFn = rootFn;
 
     this.externalWindowIdMapping = new Map();
+    this.windowConnectionMap = new Map();
     this.config = null;
     this.rateLimitDisabled = false;
     this.messageLimiter = null;
@@ -191,25 +192,23 @@ class Root {
   initWindow(ws, pageParams, auxContext) {
 
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
-    let window = new Window(this, pageParams, auxContext, this.rootFn, buf => {
-      ws.send(buf);
-    });
+    let window = new Window(this, pageParams, auxContext, this.rootFn, () => {});
 
     this.externalWindowIdMapping.set(pageParams.windowId, window.id);
 
     registerWindow(window);
+    window.onBuffer(this._setupWsListeners(ws, window.id));
 
     window.start();
 
     window.onDestroy(() => {
       this.externalWindowIdMapping.delete(pageParams.windowId);
       deregisterWindow(window);
-      ws.close();
+      this._closeWindowConnection(window.id);
     });
 
     window.startPingLoop(false);
 
-    this._setupWsListeners(ws, window.id);
   }
 
   async getHtmlResponse({ url, headers, ipAddress, isSecure, auxContext = null }) {
@@ -322,12 +321,7 @@ class Root {
 
     return new Promise((resolve, reject) => {
       htmlRenderContext.onRenderComplete((html) => {
-        // only CF worker requires this for some timing reason -- this is a quick fix
-        // TODO: clean this up (hint: ExecWorkStartTimeout isn't being cleared in one of the last _scheduleExecWork's)
-        setTimeout(() => {
-          window.destroy();
-        }, 100);
-
+        window.destroy();
         resolve(html);
       });
 
@@ -352,23 +346,51 @@ class Root {
       return;
     }
 
-    // update the window's buffer push function to refer to the new websocket
-    window.onBuffer(buf => ws.send(buf));
-
-    this._setupWsListeners(ws, windowId);
+    // Only the newest websocket may publish to or disconnect this window.
+    window.onBuffer(this._setupWsListeners(ws, windowId));
 
     window.startPingLoop(true);
     window.reconnect(pageParams);
   }
 
   _setupWsListeners(ws, windowId) {
+    let previousConnection = this.windowConnectionMap.get(windowId);
+    let connection = { ws };
+    this.windowConnectionMap.set(windowId, connection);
+
+    if (previousConnection && previousConnection.ws !== ws) {
+      previousConnection.ws.close();
+    }
+
     ws.on('message', async (message) => {
+      if (this.windowConnectionMap.get(windowId) !== connection) {
+        return;
+      }
       this._enqueueMessage(windowId, message);
     });
 
     ws.on('close', () => {
+      if (this.windowConnectionMap.get(windowId) !== connection) {
+        return;
+      }
+      this.windowConnectionMap.delete(windowId);
       this.disconnectWindow(windowId);
     });
+
+    return buf => {
+      if (this.windowConnectionMap.get(windowId) === connection) {
+        ws.send(buf);
+      }
+    };
+  }
+
+  _closeWindowConnection(windowId) {
+    let connection = this.windowConnectionMap.get(windowId);
+
+    if (connection) {
+      this.windowConnectionMap.delete(windowId);
+      connection.ws.close();
+    }
   }
 
   disconnectWindow(windowId) {
