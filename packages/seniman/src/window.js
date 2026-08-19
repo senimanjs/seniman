@@ -240,6 +240,7 @@ const pingBuffer = Buffer.from([0]);
 const emptyBuffer = Buffer.alloc(0);
 const DELETE_BLOCK_BUFFER_SIZE = 2048;
 const MAX_BLOCK_ID = 0x7fff;
+const INITIAL_FREE_BLOCK_ID_CAPACITY = 16;
 
 function uvarintSize(value) {
   let size = 1;
@@ -330,7 +331,7 @@ export class Window {
     this._streamInitWindow();
 
     this.latestBlockId = 10;
-    this.freeBlockIds = new Uint16Array(MAX_BLOCK_ID + 1);
+    this.freeBlockIds = null;
     this.freeBlockIdCount = 0;
 
     // reuse the same buffer for all block delete commands
@@ -727,14 +728,65 @@ export class Window {
       if (blockId <= 10 || blockId > MAX_BLOCK_ID) {
         throw new Error(`Cannot recycle invalid Seniman block ID ${blockId}`);
       }
+    }
 
-      if (this.freeBlockIdCount >= this.freeBlockIds.length) {
-        throw new Error('Seniman block ID free pool overflow');
+    let requiredCapacity = this.freeBlockIdCount + count;
+
+    if (requiredCapacity > MAX_BLOCK_ID - 10) {
+      throw new Error('Seniman block ID free pool overflow');
+    }
+
+    if (!this.freeBlockIds || requiredCapacity > this.freeBlockIds.length) {
+      let nextCapacity = this.freeBlockIds
+        ? this.freeBlockIds.length
+        : INITIAL_FREE_BLOCK_ID_CAPACITY;
+
+      while (nextCapacity < requiredCapacity) {
+        nextCapacity = Math.min(nextCapacity * 2, MAX_BLOCK_ID + 1);
       }
+
+      let nextFreeBlockIds = new Uint16Array(nextCapacity);
+
+      if (this.freeBlockIds) {
+        nextFreeBlockIds.set(
+          this.freeBlockIds.subarray(0, this.freeBlockIdCount)
+        );
+      }
+
+      this.freeBlockIds = nextFreeBlockIds;
+    }
+
+    for (let index = 0; index < count; index++) {
+      let blockId = buffer.readUInt16BE(index * 2);
 
       this.freeBlockIds[this.freeBlockIdCount] = blockId;
       this.freeBlockIdCount++;
     }
+  }
+
+  _shrinkFreeBlockIds() {
+    let freeBlockIds = this.freeBlockIds;
+
+    if (
+      !freeBlockIds ||
+      freeBlockIds.length <= INITIAL_FREE_BLOCK_ID_CAPACITY ||
+      this.freeBlockIdCount > freeBlockIds.length / 4
+    ) {
+      return;
+    }
+
+    let nextCapacity = freeBlockIds.length;
+
+    while (
+      nextCapacity > INITIAL_FREE_BLOCK_ID_CAPACITY &&
+      this.freeBlockIdCount <= nextCapacity / 4
+    ) {
+      nextCapacity /= 2;
+    }
+
+    let nextFreeBlockIds = new Uint16Array(nextCapacity);
+    nextFreeBlockIds.set(freeBlockIds.subarray(0, this.freeBlockIdCount));
+    this.freeBlockIds = nextFreeBlockIds;
   }
 
   emergencyFlushBlockDeleteQueue() {
@@ -1224,7 +1276,9 @@ export class Window {
   _createBlockId() {
     if (this.freeBlockIdCount > 0) {
       this.freeBlockIdCount--;
-      return this.freeBlockIds[this.freeBlockIdCount];
+      let blockId = this.freeBlockIds[this.freeBlockIdCount];
+      this._shrinkFreeBlockIds();
+      return blockId;
     }
 
     if (this.latestBlockId >= MAX_BLOCK_ID) {
