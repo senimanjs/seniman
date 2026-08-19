@@ -636,23 +636,29 @@ class WorkQueue {
 
   constructor() {
     this.queue = [];
+    this.nextSequence = 0;
   }
 
   add(item) {
-    // looping from the end of the list, find the first item that has the similar or less depth,
-    // if so, insert after it. otherwise, insert at the beginning
-    let i = this.queue.length - 1;
-    while (i >= 0) {
+    let queue = this.queue;
+    let index = queue.length;
 
-      if (this.queue[i].depth <= item.depth) {
-        this.queue.splice(i + 1, 0, item);
-        return;
+    item.queueSequence = this.nextSequence++;
+    queue.push(item);
+
+    while (index > 0) {
+      let parentIndex = (index - 1) >> 1;
+      let parent = queue[parentIndex];
+
+      if (!comesBefore(item, parent)) {
+        break;
       }
 
-      i--;
+      queue[index] = parent;
+      index = parentIndex;
     }
 
-    this.queue.unshift(item);
+    queue[index] = item;
   }
 
   isEmpty() {
@@ -660,6 +666,46 @@ class WorkQueue {
   }
 
   poll() {
-    return this.queue.shift();
+    let queue = this.queue;
+    let first = queue[0];
+    let last = queue.pop();
+
+    if (queue.length === 0) {
+      this.nextSequence = 0;
+      return first;
+    }
+
+    let index = 0;
+    let halfLength = queue.length >> 1;
+
+    while (index < halfLength) {
+      let leftIndex = index * 2 + 1;
+      let rightIndex = leftIndex + 1;
+      let childIndex = leftIndex;
+
+      if (
+        rightIndex < queue.length &&
+        comesBefore(queue[rightIndex], queue[leftIndex])
+      ) {
+        childIndex = rightIndex;
+      }
+
+      let child = queue[childIndex];
+
+      if (!comesBefore(child, last)) {
+        break;
+      }
+
+      queue[index] = child;
+      index = childIndex;
+    }
+
+    queue[index] = last;
+    return first;
   }
+}
+
+function comesBefore(a, b) {
+  return a.depth < b.depth ||
+    (a.depth === b.depth && a.queueSequence < b.queueSequence);
 }
