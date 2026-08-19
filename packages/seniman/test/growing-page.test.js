@@ -160,7 +160,11 @@ test('large initial templates are not limited by page size', async () => {
   let root = createRoot(() =>
     _createBlock(templateId, null, null, null, null, null)
   );
-  root.configure({ SENIMAN_ENABLE_CRAWLER_RENDERER: '1' });
+  root.configure({
+    SENIMAN_ENABLE_CRAWLER_RENDERER: '1',
+    SENIMAN_MAX_UNACKNOWLEDGED_OUTPUT_BYTES: '1',
+    SENIMAN_MAX_RETAINED_OUTPUT_BYTES: '1'
+  });
 
   let response = await root.getHtmlResponse({
     url: '/',
