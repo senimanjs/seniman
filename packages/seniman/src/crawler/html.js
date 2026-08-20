@@ -401,6 +401,16 @@ export class HtmlRenderingContext {
       return value;
     }
 
+    let getUvarint = () => {
+      let value = 0, multiplier = 1, byte;
+      do {
+        byte = getUint8();
+        value += (byte & 0x7f) * multiplier;
+        multiplier *= 0x80;
+      } while (byte & 0x80);
+      return value;
+    }
+
     let getInt16 = () => {
       let value = buffer.readInt16BE(processOffset);
       processOffset += 2;
@@ -595,7 +605,7 @@ export class HtmlRenderingContext {
         case UPDATE_MODE_STYLEPROP:
         case UPDATE_MODE_SET_ATTR:
           {
-            let mapIndex = getUint8();
+            let mapIndex = getUvarint();
             let propName = GlobalTokenList[mapIndex];
 
             let propValueLength = getUint16();
@@ -633,8 +643,8 @@ export class HtmlRenderingContext {
         */
         case UPDATE_MODE_REMOVE_ATTR:
           {
-            let mapIndex = getUint8();
-            let propName = this.GlobalTokenList[mapIndex];
+            let mapIndex = getUvarint();
+            let propName = GlobalTokenList[mapIndex];
 
             if (propName == 'checked') {
               //targetHandlerElement.checked = false;

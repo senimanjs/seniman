@@ -1,28 +1,61 @@
-const DEFAULT_PAGE_SIZE = 4096 * 4;
+export const STANDARD_PAGE_SIZE = 4096 * 2;
+export const MAX_RETAINED_STANDARD_PAGE_COUNT = 256;
 
-const pageSize = parseInt(process.env.SENIMAN_PAGE_SIZE) || DEFAULT_PAGE_SIZE;
+const DEFAULT_MAX_PAGE_SIZE = 4096 * 32;
+const configuredMaxPageSize = process.env.SENIMAN_MAX_PAGE_SIZE;
 
-if (pageSize != DEFAULT_PAGE_SIZE) {
-  console.log(`Setting custom page size to ${pageSize} bytes`);
+export const MAX_PAGE_SIZE = configuredMaxPageSize
+  ? Number(configuredMaxPageSize)
+  : DEFAULT_MAX_PAGE_SIZE;
+
+if (!Number.isSafeInteger(MAX_PAGE_SIZE) || MAX_PAGE_SIZE < STANDARD_PAGE_SIZE) {
+  throw new Error(`SENIMAN_MAX_PAGE_SIZE must be an integer of at least ${STANDARD_PAGE_SIZE} bytes`);
 }
 
-// Seniman page size in bytes
-export const PAGE_SIZE = pageSize;
+if (MAX_PAGE_SIZE != DEFAULT_MAX_PAGE_SIZE) {
+  console.log(`Setting maximum page size to ${MAX_PAGE_SIZE} bytes`);
+}
 
 const reuseBufferQueue = [];
 
+function getPageSize(commandSize) {
+  if (commandSize <= STANDARD_PAGE_SIZE) {
+    return STANDARD_PAGE_SIZE;
+  } else if (commandSize <= MAX_PAGE_SIZE) {
+    return commandSize;
+  }
+
+  throw new Error(
+    `Seniman command requires ${commandSize} bytes, exceeding SENIMAN_MAX_PAGE_SIZE=${MAX_PAGE_SIZE}. ` +
+    `Set SENIMAN_MAX_PAGE_SIZE=${commandSize} or higher, or preferably stagger large initial rendering ` +
+    `into smaller updates for a faster user-visible response.`
+  );
+}
+
 export const bufferPool = {
+  getPageSize,
 
-  alloc: () => {
+  get retainedCount() {
+    return reuseBufferQueue.length;
+  },
 
-    if (reuseBufferQueue.length > 0) {
-      return reuseBufferQueue.shift();
-    } else {
-      return Buffer.allocUnsafe(PAGE_SIZE);
-    }
+  alloc: (minimumSize = STANDARD_PAGE_SIZE) => {
+    let pageSize = getPageSize(minimumSize);
+
+    return pageSize == STANDARD_PAGE_SIZE && reuseBufferQueue.length > 0
+      ? reuseBufferQueue.pop()
+      : Buffer.allocUnsafe(pageSize);
   },
 
   returnBuffer: (buffer) => {
-    reuseBufferQueue.push(buffer);
+    if (
+      buffer.length == STANDARD_PAGE_SIZE &&
+      reuseBufferQueue.length < MAX_RETAINED_STANDARD_PAGE_COUNT
+    ) {
+      reuseBufferQueue.push(buffer);
+      return true;
+    }
+
+    return false;
   }
 }

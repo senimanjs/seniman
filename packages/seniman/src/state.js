@@ -7,7 +7,15 @@
 // ReactJS Github:
 // https://github.com/facebook/react
 
-import { scheduler_registerWindow, scheduler_deregisterWindow, scheduler_calculateWorkBatch } from "./scheduler.js";
+import {
+  scheduler_registerWindow,
+  scheduler_deregisterWindow,
+  scheduler_ingest,
+  scheduler_drainWork,
+  scheduler_hasWork,
+  SCHEDULER_PACKET_START,
+  SCHEDULER_PACKET_END
+} from "./scheduler.js";
 
 let ActiveNode = null;
 let ActiveWindow = null;
@@ -16,6 +24,7 @@ let UntrackActive = false;
 
 const windowMap = new Map();
 const windowNodeMap = new Map();
+const schedulerWindowMap = new Map();
 
 export function getWindow(windowId) {
   return windowMap.get(windowId);
@@ -25,14 +34,24 @@ export function registerWindow(window) {
   windowMap.set(window.id, window);
   windowNodeMap.set(window.id, new Map());
 
-  scheduler_registerWindow(window.id);
+  let schedulerHandle = scheduler_registerWindow(window.id);
+  window.schedulerSlot = schedulerHandle.slot;
+  window.schedulerGeneration = schedulerHandle.generation;
+  schedulerWindowMap.set(schedulerHandle.slot, window);
 }
 
 export function deregisterWindow(window) {
   windowMap.delete(window.id);
   windowNodeMap.delete(window.id);
 
-  scheduler_deregisterWindow(window.id);
+  if (schedulerWindowMap.get(window.schedulerSlot) === window) {
+    schedulerWindowMap.delete(window.schedulerSlot);
+  }
+
+  scheduler_deregisterWindow(
+    window.schedulerSlot,
+    window.schedulerGeneration
+  );
 }
 
 export function runInWindow(windowId, fn) {
@@ -112,6 +131,11 @@ function _runEffectDisposers(nodeId, isDeletion) {
 }
 
 export function enqueueWindowInput(windowId, inputBuffer) {
+  let window = windowMap.get(windowId);
+
+  if (!window || window.destroyed) {
+    return;
+  }
 
   _setActiveWindowId(windowId);
 
@@ -123,18 +147,14 @@ export function enqueueWindowInput(windowId, inputBuffer) {
     }
   });
 
+  if (ExecWorkStartTimeout) {
+    clearTimeout(ExecWorkStartTimeout);
+    ExecWorkStartTimeout = null;
+  }
   _execWork();
-  ExecWorkStartTimeout = null;
 
   _setActiveWindowId(null);
 }
-
-// let schedulerOutputBuffer = Buffer.alloc(2048 * 4);
-export let schedulerOutputCommand = {
-  windowId: -1,
-  nodeIds: [],
-  deletedNodeIds: []
-};
 
 let ExecWorkStartTimeout;
 
@@ -145,122 +165,217 @@ function _scheduleExecWork() {
   }
 
   ExecWorkStartTimeout = setTimeout(() => {
-    _execWork();
     ExecWorkStartTimeout = null;
+    _execWork();
   }, 0);
 }
 
 function _execWork() {
+  _flushSchedulerInput();
+  let packetContinues = false;
 
-  while (true) {
-    if (schedulerInputWriter.activeWindowCount == 0) {
+  do {
+    let outputLength = scheduler_drainWork(
+      schedulerOutputBuffer,
+      packetContinues ? 0 : SCHEDULER_TURN_WORK_BUDGET
+    );
+
+    if (outputLength === 0) {
       break;
     }
 
-    // schedulerOutputCommand will be filled with the work to be done
-    scheduler_calculateWorkBatch();
+    packetContinues = _executeSchedulerOutput(outputLength);
+    _flushSchedulerInput();
+  } while (packetContinues);
 
-    let availableSchedulerCommandCount = schedulerOutputCommand.nodeIds.length;
-    let deletedNodeIdsCount = schedulerOutputCommand.deletedNodeIds.length;
-    let batchWindowId = schedulerOutputCommand.windowId;
-
-    if (availableSchedulerCommandCount > 0 || deletedNodeIdsCount > 0) {
-      _setActiveWindowId(batchWindowId);
-
-      for (let i = deletedNodeIdsCount - 1; i >= 0; i--) {
-        let nodeId = schedulerOutputCommand.deletedNodeIds[i];
-
-        _runEffectDisposers(nodeId, true);
-        _deleteNode(nodeId);
-      }
-
-      for (let i = 0; i < availableSchedulerCommandCount; i++) {
-        let nodeId = schedulerOutputCommand.nodeIds[i];
-
-        _runEffectDisposers(nodeId, false);
-        _runNode(nodeId);
-      }
-
-      // if the window input entry has new input writes in this tick, 
-      // then continue the loop, skipping the window entry deletion below
-      let windowInputEntry = schedulerInputWriter.windowEntryMap.get(batchWindowId);
-
-      if (windowInputEntry.offset > 0) {
-        continue;
-      }
-    }
-
-    // free the window input entry for reuse
-
-    // remove the active window entry index & push into the free window indices so it can be reused
-    schedulerInputWriter.freeEntryIndices.push(schedulerInputWriter.activeWindowIndices.shift());
-
-    // reduce the active window count
-    schedulerInputWriter.activeWindowCount--;
-
-    // remove the entry from the map
-    schedulerInputWriter.windowEntryMap.delete(batchWindowId);
+  if (scheduler_hasWork()) {
+    _scheduleExecWork();
   }
+
+  _setActiveWindowId(null);
 }
 
 ////////////////////////////////////
 
+export const SCHEDULER_OUTPUT_PAGE_SIZE = 64 * 1024;
+export const SCHEDULER_INPUT_PAGE_SIZE = 64 * 1024;
+export const SCHEDULER_TURN_WORK_BUDGET = 1024;
+const SCHEDULER_INPUT_FRAME_HEADER_SIZE = 12;
+const SCHEDULER_OUTPUT_PACKET_HEADER_SIZE = 28;
+
+export const schedulerOutputBuffer = Buffer.allocUnsafe(
+  SCHEDULER_OUTPUT_PAGE_SIZE
+);
+
 export let schedulerInputWriter = {
-  windowEntryMap: new Map(), // mapping from windowId to bufferIndex
-  activeWindowIndices: [],
-  activeWindowCount: 0,
-  freeEntryIndices: [], // free buffer indices
-  windowInputEntries: [],
+  buffer: Buffer.allocUnsafe(SCHEDULER_INPUT_PAGE_SIZE),
+  offset: 0,
+  frameStart: -1,
+  frameSlot: 0,
+  frameGeneration: 0
 };
 
-// TODO: use buffer pool to allocate these on-demand
-for (let i = 0; i < 128; i++) {
-  schedulerInputWriter.windowInputEntries.push({
-    buffer: Buffer.allocUnsafe(4096),
-    offset: 0,
-    windowId: -1
-  });
+// Output packets contain deletion IDs followed by forward node IDs.
+function _executeSchedulerOutput(length) {
+  let readOffset = 0;
+  let packetContinues = false;
 
-  schedulerInputWriter.freeEntryIndices.push(i);
-}
-
-function _writeInputCommand(windowId, size) {
-  let windowInputEntry = schedulerInputWriter.windowEntryMap.get(windowId);
-
-  // acquire a new window input entry if needed
-  if (!windowInputEntry) {
-    // console.log("new window input entry for windowId", windowId);
-    let windowEntryIndex = schedulerInputWriter.freeEntryIndices.pop();
-
-    if (windowEntryIndex == null) {
-      throw new Error("no free buffer");
+  while (readOffset < length) {
+    if (length - readOffset < SCHEDULER_OUTPUT_PACKET_HEADER_SIZE) {
+      throw new Error('Invalid scheduler output packet');
     }
 
-    windowInputEntry = schedulerInputWriter.windowInputEntries[windowEntryIndex];
-    schedulerInputWriter.windowEntryMap.set(windowId, windowInputEntry);
+    let flags = schedulerOutputBuffer.readUInt8(readOffset);
+    let slot = schedulerOutputBuffer.readUInt32LE(readOffset + 4);
+    let generation = schedulerOutputBuffer.readUInt32LE(readOffset + 8);
+    let packetId = schedulerOutputBuffer.readUInt32LE(readOffset + 12);
+    let deletedNodeCount = schedulerOutputBuffer.readUInt32LE(readOffset + 16);
+    let nodeCount = schedulerOutputBuffer.readUInt32LE(readOffset + 20);
+    let recordEnd = readOffset +
+      SCHEDULER_OUTPUT_PACKET_HEADER_SIZE +
+      (deletedNodeCount + nodeCount) * 4;
 
-    schedulerInputWriter.activeWindowCount++;
-    schedulerInputWriter.activeWindowIndices.push(windowEntryIndex);
+    if (recordEnd > length) {
+      throw new Error('Invalid scheduler output packet length');
+    }
 
-    windowInputEntry.windowId = windowId;
-    windowInputEntry.offset = 0;
+    readOffset += SCHEDULER_OUTPUT_PACKET_HEADER_SIZE;
+
+    let window = schedulerWindowMap.get(slot);
+    let isCurrentWindow = window &&
+      window.schedulerGeneration === generation;
+
+    if (isCurrentWindow) {
+      _setActiveWindowId(window.id);
+
+      if (flags & SCHEDULER_PACKET_START) {
+        window.beginPublication(packetId);
+      } else if (!window.destroyed && (
+        !window.publicationOpen ||
+        window.publicationPacketId !== packetId
+      )) {
+        throw new Error('Scheduler output continued a different publication');
+      }
+    }
+
+    for (let i = 0; i < deletedNodeCount; i++) {
+      let nodeId = schedulerOutputBuffer.readUInt32LE(readOffset);
+      readOffset += 4;
+
+      if (isCurrentWindow) {
+        _runEffectDisposers(nodeId, true);
+        _deleteNode(nodeId);
+      }
+    }
+
+    for (let i = 0; i < nodeCount; i++) {
+      let nodeId = schedulerOutputBuffer.readUInt32LE(readOffset);
+      readOffset += 4;
+
+      if (isCurrentWindow && !window.destroyed) {
+        _runEffectDisposers(nodeId, false);
+        _runNode(nodeId);
+      }
+    }
+
+    if (readOffset !== recordEnd) {
+      throw new Error('Invalid scheduler output node count');
+    }
+
+    if (isCurrentWindow && (flags & SCHEDULER_PACKET_END)) {
+      window.commitPublication(packetId);
+    }
+
+    packetContinues = (flags & SCHEDULER_PACKET_END) === 0;
   }
 
-  let { buffer, offset } = windowInputEntry;
+  return packetContinues;
+}
 
-  if (offset + size > buffer.length) {
-    let nextBuffer = Buffer.allocUnsafe(
-      Math.max(buffer.length * 2, offset + size)
+function _closeSchedulerInputFrame() {
+  let frameStart = schedulerInputWriter.frameStart;
+
+  if (frameStart < 0) {
+    return;
+  }
+
+  let commandByteLength = schedulerInputWriter.offset -
+    frameStart -
+    SCHEDULER_INPUT_FRAME_HEADER_SIZE;
+
+  schedulerInputWriter.buffer.writeUInt32LE(
+    commandByteLength,
+    frameStart + 8
+  );
+  schedulerInputWriter.frameStart = -1;
+  schedulerInputWriter.frameSlot = 0;
+  schedulerInputWriter.frameGeneration = 0;
+}
+
+function _flushSchedulerInput() {
+  _closeSchedulerInputFrame();
+
+  if (schedulerInputWriter.offset > 0) {
+    scheduler_ingest(
+      schedulerInputWriter.buffer,
+      schedulerInputWriter.offset
     );
+    schedulerInputWriter.offset = 0;
+  }
+}
 
-    buffer.copy(nextBuffer, 0, 0, offset);
-    windowInputEntry.buffer = nextBuffer;
-    buffer = nextBuffer;
+function _startSchedulerInputFrame(slot, generation) {
+  let frameStart = schedulerInputWriter.offset;
+  let buffer = schedulerInputWriter.buffer;
+
+  buffer.writeUInt32LE(slot, frameStart);
+  buffer.writeUInt32LE(generation, frameStart + 4);
+  buffer.writeUInt32LE(0, frameStart + 8);
+
+  schedulerInputWriter.frameStart = frameStart;
+  schedulerInputWriter.frameSlot = slot;
+  schedulerInputWriter.frameGeneration = generation;
+  schedulerInputWriter.offset += SCHEDULER_INPUT_FRAME_HEADER_SIZE;
+}
+
+// Input frames are [slot, generation, command byte length, commands].
+function _writeInputCommand(windowId, size) {
+  if (size > SCHEDULER_INPUT_PAGE_SIZE - SCHEDULER_INPUT_FRAME_HEADER_SIZE) {
+    throw new Error('Scheduler input command exceeds the input page size');
   }
 
-  let commandBuffer = buffer.subarray(offset, offset + size);
+  let window = windowMap.get(windowId);
 
-  windowInputEntry.offset += size;
+  if (!window) {
+    throw new Error('Cannot write scheduler input for a deregistered window');
+  }
+
+  let slot = window.schedulerSlot;
+  let generation = window.schedulerGeneration;
+  let writer = schedulerInputWriter;
+  let isCurrentFrame = writer.frameStart >= 0 &&
+    writer.frameSlot === slot &&
+    writer.frameGeneration === generation;
+
+  if (!isCurrentFrame) {
+    _closeSchedulerInputFrame();
+
+    if (
+      writer.offset + SCHEDULER_INPUT_FRAME_HEADER_SIZE + size >
+      SCHEDULER_INPUT_PAGE_SIZE
+    ) {
+      _flushSchedulerInput();
+    }
+
+    _startSchedulerInputFrame(slot, generation);
+  } else if (writer.offset + size > SCHEDULER_INPUT_PAGE_SIZE) {
+    _flushSchedulerInput();
+    _startSchedulerInputFrame(slot, generation);
+  }
+
+  let offset = writer.offset;
+  let commandBuffer = writer.buffer.subarray(offset, offset + size);
+  writer.offset += size;
 
   return commandBuffer;
 }
@@ -308,6 +423,11 @@ function _registerMemo(windowId, parentNodeId, memoId) {
 }
 
 function _postStateWrite(windowId, stateId) {
+  let window = windowMap.get(windowId);
+
+  if (!window || window.destroyed) {
+    return;
+  }
 
   let buf = _writeInputCommand(windowId, 5);
   buf.writeUInt8(6, 0);
@@ -376,6 +496,11 @@ export function useState(initialValue, options = { equals }) {
   }
 
   function setState(newValue) {
+    let window = windowMap.get(ActiveWindowId);
+
+    if (!window || window.destroyed) {
+      return;
+    }
 
     if (newValue instanceof Function) {
       newValue = newValue(state.value);
@@ -486,6 +611,12 @@ export function useCallback(fn) {
   let _activeNode = ActiveNode;
 
   return (...args) => {
+    let window = windowMap.get(_activeWindowId);
+
+    if (!window || window.destroyed) {
+      return;
+    }
+
     let _prevNode = ActiveNode;
     let _prevWindowId = _activeWindowId;
 

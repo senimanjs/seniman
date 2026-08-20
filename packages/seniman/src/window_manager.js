@@ -24,6 +24,10 @@ class Root {
     this.rootFn = rootFn;
 
     this.externalWindowIdMapping = new Map();
+    this.windowConnectionMap = new Map();
+    this.retainedOutputBytes = 0;
+    this.outputProgressHead = null;
+    this.outputProgressTail = null;
     this.config = null;
     this.rateLimitDisabled = false;
     this.messageLimiter = null;
@@ -44,7 +48,8 @@ class Root {
   }
 
   hasWindow(windowId) {
-    return getWindow(windowId) != null;
+    let window = getWindow(windowId);
+    return window != null && !window.destroyed;
   }
 
   setRateLimit({ disabled }) {
@@ -80,6 +85,8 @@ class Root {
     this.config = config;
     this.crawlerRenderingEnabled = config.enableCrawlerRenderer;
     this.crawlerRenderer = this.crawlerRenderingEnabled ? (this.crawlerRenderer || new CrawlerRenderer()) : null;
+
+    this._cullRetainedOutputIfNeeded();
 
     if (rateLimitConfigChanged && !this.rateLimitDisabled) {
       this._configureRateLimiters();
@@ -190,25 +197,24 @@ class Root {
   initWindow(ws, pageParams, auxContext) {
 
     // TODO: pass request's ip address here, and rate limit window creation based on ip address
-    let window = new Window(this, pageParams, auxContext, this.rootFn, buf => {
-      ws.send(buf);
-    });
+    let window = new Window(this, pageParams, auxContext, this.rootFn, () => {});
 
     this.externalWindowIdMapping.set(pageParams.windowId, window.id);
 
     registerWindow(window);
+    window.onBuffer(this._setupWsListeners(ws, window.id));
+    window.enableOutputRetentionTracking();
 
     window.start();
 
     window.onDestroy(() => {
       this.externalWindowIdMapping.delete(pageParams.windowId);
       deregisterWindow(window);
-      ws.close();
+      this._closeWindowConnection(window.id);
     });
 
     window.startPingLoop(false);
 
-    this._setupWsListeners(ws, window.id);
   }
 
   async getHtmlResponse({ url, headers, ipAddress, isSecure, auxContext = null }) {
@@ -321,12 +327,7 @@ class Root {
 
     return new Promise((resolve, reject) => {
       htmlRenderContext.onRenderComplete((html) => {
-        // only CF worker requires this for some timing reason -- this is a quick fix
-        // TODO: clean this up (hint: ExecWorkStartTimeout isn't being cleared in one of the last _scheduleExecWork's)
-        setTimeout(() => {
-          window.destroy();
-        }, 100);
-
+        window.destroy();
         resolve(html);
       });
 
@@ -346,23 +347,152 @@ class Root {
 
     let window = getWindow(windowId);
 
-    // update the window's buffer push function to refer to the new websocket
-    window.onBuffer(buf => ws.send(buf));
+    if (!window || window.destroyed) {
+      ws.close(3001);
+      return;
+    }
 
-    this._setupWsListeners(ws, windowId);
+    // Only the newest websocket may publish to or disconnect this window.
+    window.onBuffer(this._setupWsListeners(ws, windowId));
 
     window.startPingLoop(true);
     window.reconnect(pageParams);
   }
 
   _setupWsListeners(ws, windowId) {
+    let previousConnection = this.windowConnectionMap.get(windowId);
+    let connection = { ws };
+    this.windowConnectionMap.set(windowId, connection);
+
+    if (previousConnection && previousConnection.ws !== ws) {
+      previousConnection.ws.close();
+    }
+
     ws.on('message', async (message) => {
+      if (this.windowConnectionMap.get(windowId) !== connection) {
+        return;
+      }
       this._enqueueMessage(windowId, message);
     });
 
     ws.on('close', () => {
+      if (this.windowConnectionMap.get(windowId) !== connection) {
+        return;
+      }
+      this.windowConnectionMap.delete(windowId);
       this.disconnectWindow(windowId);
     });
+
+    return buf => {
+      if (this.windowConnectionMap.get(windowId) === connection) {
+        ws.send(buf);
+      }
+    };
+  }
+
+  _closeWindowConnection(windowId, code) {
+    let connection = this.windowConnectionMap.get(windowId);
+
+    if (connection) {
+      this.windowConnectionMap.delete(windowId);
+      connection.ws.close(code);
+    }
+  }
+
+  _unlinkOutputProgressWindow(window) {
+    if (!window.outputProgressListed) {
+      return;
+    }
+
+    let previous = window.outputProgressPrev;
+    let next = window.outputProgressNext;
+
+    if (previous) {
+      previous.outputProgressNext = next;
+    } else {
+      this.outputProgressHead = next;
+    }
+
+    if (next) {
+      next.outputProgressPrev = previous;
+    } else {
+      this.outputProgressTail = previous;
+    }
+
+    window.outputProgressPrev = null;
+    window.outputProgressNext = null;
+    window.outputProgressListed = false;
+  }
+
+  _appendOutputProgressWindow(window) {
+    window.outputProgressPrev = this.outputProgressTail;
+    window.outputProgressNext = null;
+    window.outputProgressListed = true;
+
+    if (this.outputProgressTail) {
+      this.outputProgressTail.outputProgressNext = window;
+    } else {
+      this.outputProgressHead = window;
+    }
+
+    this.outputProgressTail = window;
+  }
+
+  _updateWindowRetainedOutput(window, madeProgress = false) {
+    if (!window.outputRetentionTracking || window.destroyed) {
+      return;
+    }
+
+    let retainedBytes = window.global_publishOffset - window.global_readOffset;
+    this.retainedOutputBytes += retainedBytes - window.retainedOutputBytes;
+    window.retainedOutputBytes = retainedBytes;
+
+    if (retainedBytes === 0) {
+      this._unlinkOutputProgressWindow(window);
+    } else if (!window.outputProgressListed) {
+      this._appendOutputProgressWindow(window);
+    } else if (madeProgress && this.outputProgressTail !== window) {
+      this._unlinkOutputProgressWindow(window);
+      this._appendOutputProgressWindow(window);
+    }
+
+    this._cullRetainedOutputIfNeeded();
+  }
+
+  _releaseWindowRetainedOutput(window) {
+    this.retainedOutputBytes -= window.retainedOutputBytes;
+    window.retainedOutputBytes = 0;
+    this._unlinkOutputProgressWindow(window);
+  }
+
+  _expireWindowForOutputBacklog(window) {
+    if (window.destroyed) {
+      this._releaseWindowRetainedOutput(window);
+      return;
+    }
+
+    this._closeWindowConnection(window.id, 3002);
+    window.destroy();
+  }
+
+  _cullRetainedOutputIfNeeded() {
+    let maxRetainedBytes = this.config?.maxRetainedOutputBytes || 0;
+
+    if (
+      maxRetainedBytes === 0 ||
+      this.retainedOutputBytes <= maxRetainedBytes
+    ) {
+      return;
+    }
+
+    let lowWatermark = Math.floor(maxRetainedBytes * 0.75);
+
+    while (
+      this.retainedOutputBytes > lowWatermark &&
+      this.outputProgressHead
+    ) {
+      this._expireWindowForOutputBacklog(this.outputProgressHead);
+    }
   }
 
   disconnectWindow(windowId) {
