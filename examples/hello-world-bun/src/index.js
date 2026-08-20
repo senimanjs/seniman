@@ -5,7 +5,10 @@ function App() {
   return <div>Hello World</div>;
 }
 
+let entrypoint = createEntrypoint(createRoot(App));
+
 Bun.serve({
   port: 3002,
-  ...createEntrypoint(createRoot(App)),
+  fetch: entrypoint.fetch,
+  websocket: entrypoint.websocket,
 });

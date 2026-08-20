@@ -117,15 +117,18 @@ For a static folder, configure Cloudflare static assets. For a custom response s
 
 ## Bun
 
-Install `seniman-bun` and spread the returned Fetch and WebSocket handlers into `Bun.serve()`:
+Install `seniman-bun` and pass its Fetch and WebSocket handlers to `Bun.serve()`:
 
 ```js
 import { createRoot } from 'seniman';
 import { createEntrypoint } from 'seniman-bun';
 
+let entrypoint = createEntrypoint(createRoot(App));
+
 Bun.serve({
   port: 3002,
-  ...createEntrypoint(createRoot(App)),
+  fetch: entrypoint.fetch,
+  websocket: entrypoint.websocket,
 });
 ```
 
