@@ -71,6 +71,7 @@ export function scheduler_registerWindow(windowId) {
     generation,
     nextPacketId: 1,
     queued: false,
+    paused: false,
     childrenListMap: new Map(),
     sourcesMap: new Map(),
     observersMap: new Map(),
@@ -95,8 +96,24 @@ export function scheduler_deregisterWindow(slot, generation) {
   freeWindowSlots.push(slot);
 }
 
+export function scheduler_setWindowPaused(slot, generation, paused) {
+  let window = windowMap.get(slot);
+
+  if (!window || window.generation !== generation || window.paused === paused) {
+    return;
+  }
+
+  window.paused = paused;
+
+  if (paused) {
+    window.queued = false;
+  } else if (!window.workQueue.isEmpty() || window.disposeList.length) {
+    activateWindow(window);
+  }
+}
+
 function activateWindow(window) {
-  if (window.queued) {
+  if (window.queued || window.paused) {
     return;
   }
 
@@ -123,7 +140,7 @@ function peekActiveWindow() {
     let generation = activeWindowQueue[activeWindowQueueHead + 1];
     let window = windowMap.get(slot);
 
-    if (window?.queued && window.generation === generation) {
+    if (window?.queued && !window.paused && window.generation === generation) {
       return window;
     }
 

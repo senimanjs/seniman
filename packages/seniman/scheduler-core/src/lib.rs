@@ -34,6 +34,7 @@ struct Window {
     generation: u32,
     next_packet_id: u32,
     queued: bool,
+    paused: bool,
     nodes: NodeStore,
     dependency_edges: EdgeArena,
     work_queue: DepthQueue,
@@ -46,6 +47,7 @@ impl Window {
             generation,
             next_packet_id: 1,
             queued: false,
+            paused: false,
             nodes: NodeStore::new(),
             dependency_edges: EdgeArena::new(),
             work_queue: DepthQueue::new(),
@@ -202,7 +204,7 @@ impl Scheduler {
         let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) else {
             return;
         };
-        if window.queued {
+        if window.queued || window.paused {
             return;
         }
         window.queued = true;
@@ -214,7 +216,7 @@ impl Scheduler {
             let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) else {
                 continue;
             };
-            if window.queued && window.generation == generation {
+            if window.queued && !window.paused && window.generation == generation {
                 window.queued = false;
                 return Some((slot, generation));
             }
@@ -228,8 +230,29 @@ impl Scheduler {
                 self.windows
                     .get(*slot as usize)
                     .and_then(Option::as_ref)
-                    .is_some_and(|window| window.queued && window.generation == *generation)
+                    .is_some_and(|window| {
+                        window.queued && !window.paused && window.generation == *generation
+                    })
             })
+    }
+
+    fn set_window_paused(&mut self, slot: u32, generation: u32, paused: bool) {
+        let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) else {
+            return;
+        };
+        if window.generation != generation || window.paused == paused {
+            return;
+        }
+
+        window.paused = paused;
+        if paused {
+            window.queued = false;
+            return;
+        }
+
+        if !window.work_queue.is_empty() || !window.dispose_list.is_empty() {
+            self.activate_window(slot);
+        }
     }
 
     fn ingest(&mut self, length: usize) -> Result<(), ()> {
@@ -913,6 +936,14 @@ pub extern "C" fn scheduler_window_generation(slot: u32) -> u32 {
 #[no_mangle]
 pub extern "C" fn scheduler_deregister_window(slot: u32, generation: u32) {
     SCHEDULER.with(|scheduler| scheduler.borrow_mut().deregister_window(slot, generation));
+}
+#[no_mangle]
+pub extern "C" fn scheduler_set_window_paused(slot: u32, generation: u32, paused: u32) {
+    SCHEDULER.with(|scheduler| {
+        scheduler
+            .borrow_mut()
+            .set_window_paused(slot, generation, paused != 0);
+    });
 }
 #[no_mangle]
 pub extern "C" fn scheduler_input_ptr() -> *mut u8 {

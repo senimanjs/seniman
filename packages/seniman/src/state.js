@@ -10,6 +10,7 @@
 import {
   scheduler_registerWindow,
   scheduler_deregisterWindow,
+  scheduler_setWindowPaused,
   scheduler_ingest,
   scheduler_drainWork,
   scheduler_hasWork,
@@ -61,6 +62,22 @@ export function deregisterWindow(window) {
     window.schedulerSlot,
     window.schedulerGeneration
   );
+}
+
+export function setWindowSchedulerPaused(window, paused) {
+  if (!window || window.schedulerSlot == null) {
+    return;
+  }
+
+  scheduler_setWindowPaused(
+    window.schedulerSlot,
+    window.schedulerGeneration,
+    paused
+  );
+
+  if (!paused && scheduler_hasWork()) {
+    _scheduleExecWork();
+  }
 }
 
 export function runInWindow(windowId, fn) {
