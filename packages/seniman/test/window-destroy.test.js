@@ -97,3 +97,47 @@ test('destroy runs cleanup but ignores late state writes and callbacks', async (
   assert.equal(output.length, outputCountAfterDestroy);
   assert.equal(getWindow(window.id), undefined);
 });
+
+test('mass destroy waits for every root disposal before deregistration', { timeout: 10000 }, async () => {
+  let windowCount = 300;
+  let effectsPerWindow = 50;
+  let cleanupCount = 0;
+  let effectRunCount = 0;
+  let windows = [];
+
+  function App() {
+    for (let i = 0; i < effectsPerWindow; i++) {
+      useEffect(() => effectRunCount++);
+    }
+
+    onDispose(() => cleanupCount++);
+    return null;
+  }
+
+  for (let i = 0; i < windowCount; i++) {
+    let window = new Window(
+      { lowMemoryMode: false },
+      { ...pageParams, windowId: String(i).padStart(21, '0') },
+      null,
+      App,
+      () => {}
+    );
+
+    registerWindow(window);
+    window.onDestroy(() => deregisterWindow(window));
+    window.start();
+    windows.push(window);
+  }
+
+  while (effectRunCount < windowCount * effectsPerWindow) {
+    await wait(0);
+  }
+
+  windows.forEach(window => window.destroy());
+
+  while (windows.some(window => getWindow(window.id))) {
+    await wait(0);
+  }
+
+  assert.equal(cleanupCount, windowCount);
+});

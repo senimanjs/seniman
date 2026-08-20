@@ -71,8 +71,38 @@ export default {
   await fs.promises.writeFile(targetDirectory + '/_htmlBuffers.js', templateBuffersString);
 }
 
+async function buildSchedulerCore(targetDirectory) {
+  let schedulerCoreDirectory = process.env.SENIMAN_SCHEDULER_CORE_DIR ||
+    process.cwd() + '/scheduler-core';
+
+  await execa('cargo', [
+    'build',
+    '--release',
+    '--target',
+    'wasm32-unknown-unknown'
+  ], {
+    cwd: schedulerCoreDirectory,
+    stdio: 'inherit'
+  });
+
+  let wasmPath = schedulerCoreDirectory +
+    '/target/wasm32-unknown-unknown/release/seniman_scheduler_core.wasm';
+  let wasmBuffer = await fs.promises.readFile(wasmPath);
+
+  await fs.promises.copyFile(
+    wasmPath,
+    targetDirectory + '/scheduler-core.wasm'
+  );
+  await fs.promises.writeFile(
+    targetDirectory + '/scheduler-core.node.js',
+    `const schedulerCoreModule = new WebAssembly.Module(Buffer.from("${wasmBuffer.toString('base64')}", "base64"));\n\nexport default new WebAssembly.Instance(schedulerCoreModule, {}).exports;\n`
+  );
+}
+
 // mkdir dist if it doesn't exist
 await fs.promises.mkdir(process.cwd() + '/dist', { recursive: true });
+
+await buildSchedulerCore(process.cwd() + '/dist');
 
 // copy babel plugin folder to dist
 let babelFolderPath = process.cwd() + '/babel';

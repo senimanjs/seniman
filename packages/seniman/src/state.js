@@ -13,8 +13,16 @@ import {
   scheduler_ingest,
   scheduler_drainWork,
   scheduler_hasWork,
+  scheduler_getInputBuffer,
   SCHEDULER_PACKET_START,
-  SCHEDULER_PACKET_END
+  SCHEDULER_PACKET_END,
+  SCHEDULER_INPUT_PAGE_SIZE,
+  SCHEDULER_OUTPUT_PAGE_SIZE
+} from "./scheduler.js";
+
+export {
+  SCHEDULER_INPUT_PAGE_SIZE,
+  SCHEDULER_OUTPUT_PAGE_SIZE
 } from "./scheduler.js";
 
 let ActiveNode = null;
@@ -31,6 +39,7 @@ export function getWindow(windowId) {
 }
 
 export function registerWindow(window) {
+  _flushSchedulerInput();
   windowMap.set(window.id, window);
   windowNodeMap.set(window.id, new Map());
 
@@ -93,6 +102,7 @@ function _runNode(nodeId) {
     ActiveNode = node;
 
     let prevValue = node.value;
+
     node.value = node.fn(prevValue);
 
     // if memo, check if value has changed, if so, update observers
@@ -108,7 +118,10 @@ function _runNode(nodeId) {
 }
 
 function _deleteNode(nodeId) {
+  let node = ActiveNodeMap.get(nodeId);
+
   ActiveNodeMap.delete(nodeId);
+  return node?.deletionCompleteFns;
 }
 
 function _runEffectDisposers(nodeId, isDeletion) {
@@ -197,8 +210,6 @@ function _execWork() {
 
 ////////////////////////////////////
 
-export const SCHEDULER_OUTPUT_PAGE_SIZE = 64 * 1024;
-export const SCHEDULER_INPUT_PAGE_SIZE = 64 * 1024;
 export const SCHEDULER_TURN_WORK_BUDGET = 1024;
 const SCHEDULER_INPUT_FRAME_HEADER_SIZE = 12;
 const SCHEDULER_OUTPUT_PACKET_HEADER_SIZE = 28;
@@ -208,7 +219,7 @@ export const schedulerOutputBuffer = Buffer.allocUnsafe(
 );
 
 export let schedulerInputWriter = {
-  buffer: Buffer.allocUnsafe(SCHEDULER_INPUT_PAGE_SIZE),
+  buffer: scheduler_getInputBuffer(),
   offset: 0,
   frameStart: -1,
   frameSlot: 0,
@@ -219,6 +230,7 @@ export let schedulerInputWriter = {
 function _executeSchedulerOutput(length) {
   let readOffset = 0;
   let packetContinues = false;
+  let deletionCompleteFns = null;
 
   while (readOffset < length) {
     if (length - readOffset < SCHEDULER_OUTPUT_PACKET_HEADER_SIZE) {
@@ -264,7 +276,12 @@ function _executeSchedulerOutput(length) {
 
       if (isCurrentWindow) {
         _runEffectDisposers(nodeId, true);
-        _deleteNode(nodeId);
+        let nodeDeletionCompleteFns = _deleteNode(nodeId);
+
+        if (nodeDeletionCompleteFns) {
+          deletionCompleteFns ??= [];
+          deletionCompleteFns.push(...nodeDeletionCompleteFns);
+        }
       }
     }
 
@@ -287,6 +304,12 @@ function _executeSchedulerOutput(length) {
     }
 
     packetContinues = (flags & SCHEDULER_PACKET_END) === 0;
+  }
+
+  if (deletionCompleteFns) {
+    for (let fn of deletionCompleteFns) {
+      fn();
+    }
   }
 
   return packetContinues;
@@ -326,7 +349,9 @@ function _flushSchedulerInput() {
 
 function _startSchedulerInputFrame(slot, generation) {
   let frameStart = schedulerInputWriter.offset;
-  let buffer = schedulerInputWriter.buffer;
+  let buffer = scheduler_getInputBuffer();
+
+  schedulerInputWriter.buffer = buffer;
 
   buffer.writeUInt32LE(slot, frameStart);
   buffer.writeUInt32LE(generation, frameStart + 4);
@@ -353,6 +378,7 @@ function _writeInputCommand(windowId, size) {
   let slot = window.schedulerSlot;
   let generation = window.schedulerGeneration;
   let writer = schedulerInputWriter;
+  writer.buffer = scheduler_getInputBuffer();
   let isCurrentFrame = writer.frameStart >= 0 &&
     writer.frameSlot === slot &&
     writer.frameGeneration === generation;
@@ -535,7 +561,9 @@ function createEffect(windowId, id, fn, value) {
     value,
     fn,
     context,
-    disposeFns: null
+    disposeFns: null,
+    deletionCompleteFns: null,
+    disposalRequested: false
   };
 
   ActiveNodeMap.set(id, effect);
@@ -558,7 +586,29 @@ export function useDisposableEffect(fn, value) {
 
   createEffect(ActiveWindowId, id, fn, value);
 
-  return () => _disposeEffect(ActiveWindowId, parentNodeId, id);
+  return (onComplete) => {
+    let node = windowNodeMap.get(ActiveWindowId)?.get(id);
+
+    if (!node) {
+      onComplete?.();
+      return;
+    }
+
+    if (onComplete) {
+      if (node.deletionCompleteFns === null) {
+        node.deletionCompleteFns = [onComplete];
+      } else {
+        node.deletionCompleteFns.push(onComplete);
+      }
+    }
+
+    if (node.disposalRequested) {
+      return;
+    }
+
+    node.disposalRequested = true;
+    _disposeEffect(ActiveWindowId, parentNodeId, id);
+  };
 }
 
 export function untrack(fn) {

@@ -320,7 +320,7 @@ export class Window {
     this.connected = true;
     this.destroyed = false;
     this.rootFn = rootFn;
-    this.rootDisposer = () => {};
+    this.rootDisposer = onComplete => onComplete?.();
 
     this.pages = [];
     this.global_readOffset = 0;
@@ -1118,14 +1118,11 @@ export class Window {
 
     clearTimeout(this.deleteBlockFlushTimer);
     this.deleteBlockFlushTimer = null;
-    this.rootDisposer();
-
-    // give time for the root disposer tree to complete run
-    setTimeout(() => {
+    this.rootDisposer(() => {
       let destroyFnCallback = this.destroyFnCallback;
       this.destroyFnCallback = null;
       destroyFnCallback?.();
-    }, 10);
+    });
 
     clearTimeout(this.postScriptTimeout);
 
