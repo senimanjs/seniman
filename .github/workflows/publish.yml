@@ -35,6 +35,10 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
       - name: Verify unpublished version
         run: |
           PACKAGE_VERSION="$(node --print "require('./package.json').version")"

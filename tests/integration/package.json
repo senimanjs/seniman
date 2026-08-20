@@ -1,0 +1,13 @@
+{
+  "name": "seniman-integration-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node capacity/build-fixtures.mjs",
+    "test": "npm run build && node --test capacity/capacity.smoke.test.mjs capacity/output-storm.test.mjs",
+    "test:storm": "npm run build && node --test capacity/output-storm.test.mjs",
+    "capacity": "npm run build && node capacity/run-capacity.mjs",
+    "capacity:1k": "npm run capacity -- --steps 1000",
+    "capacity:10k": "npm run capacity -- --steps 1000,10000"
+  }
+}

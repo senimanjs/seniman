@@ -4,6 +4,12 @@
   "description": "",
   "main": "./dist/index.js",
   "type": "module",
+  "imports": {
+    "#seniman-scheduler-core": {
+      "workerd": "./dist/scheduler-core.workerd.js",
+      "default": "./dist/scheduler-core.node.js"
+    }
+  },
   "extensions": [
     ".js"
   ],
