@@ -48,5 +48,9 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+      - name: Stage package documentation
+        run: |
+          cp ../../README.md README.md
+          cp ../../LICENSE LICENSE
       - run: npm pack --dry-run
       - run: npm publish
