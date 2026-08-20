@@ -1,5 +1,5 @@
 import { useState, useClient, useMemo, useEffect, onDispose, Anchor, createRoot } from 'seniman';
-import { serve } from 'seniman/server';
+import { serve } from 'seniman/node';
 import { Style } from 'seniman/head';
 
 const cssText = `

@@ -6,7 +6,7 @@ You write the interface with JSX:
 
 ```js
 import { createRoot, useState } from 'seniman';
-import { serve } from 'seniman/server';
+import { serve } from 'seniman/node';
 
 function App() {
   let [count, setCount] = useState(0);

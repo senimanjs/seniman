@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, untrack, createRoot } from "seniman";
-import { serve } from "seniman/server";
+import { serve } from 'seniman/node';
 import { Style, Link as HeadLink } from "seniman/head";
 import { getTweet } from "./data.js";
 import { createRouting, RouterRoot, useRouter } from './router.js';

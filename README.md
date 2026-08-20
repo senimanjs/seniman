@@ -14,7 +14,7 @@ Here's an example of a simple counter app built with Seniman:
 
 ```js
 import { createRoot, useState } from "seniman";
-import { serve } from "seniman/server";
+import { serve } from "seniman/node";
 
 function Counter(props) {
   let [getCount, setCount] = useState(0);
@@ -107,7 +107,7 @@ To start off simple, let's create a simple counter component. Create a new file 
 
 ```js
 import { createRoot, useState } from "seniman";
-import { serve } from "seniman/server";
+import { serve } from "seniman/node";
 
 function App(props) {
   let [getCount, setCount] = useState(0);
@@ -152,9 +152,9 @@ Open up your browser and navigate to `http://localhost:3002`, and you should see
 WebSocket compression is opt-in for the Node server and Express adapters. Enable it through the top-level server options:
 
 ```js
-import { createServer } from "seniman/server";
+import { serve } from "seniman/node";
 
-let server = createServer(root, {
+let server = serve(root, 3002, {
   perMessageDeflate: true,
 });
 ```

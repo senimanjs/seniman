@@ -99,6 +99,11 @@ async function buildSchedulerCore(targetDirectory) {
   );
 }
 
+await fs.promises.rm(process.cwd() + '/dist', {
+  recursive: true,
+  force: true,
+});
+
 // mkdir dist if it doesn't exist
 await fs.promises.mkdir(process.cwd() + '/dist', { recursive: true });
 

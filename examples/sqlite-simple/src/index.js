@@ -1,5 +1,5 @@
 import { createRoot, useState, withValue } from 'seniman';
-import { serve } from 'seniman/server';
+import { serve } from 'seniman/node';
 import { Database } from 'sqlite-async';
 
 let db;

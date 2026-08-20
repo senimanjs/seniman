@@ -1,8 +1,7 @@
 import { createRoot, useState, useClient, onDispose, Anchor, useMemo, useEffect } from 'seniman';
 import { Style, Title } from "seniman/head";
 import express from "express";
-import { wrapExpress } from "seniman/express";
-//import { createServer } from "seniman/workers";
+import { createEntrypoint } from "seniman/node";
 
 import { ProductCollectionCard } from './product.js';
 import ProductPage from './product.js';
@@ -135,10 +134,10 @@ function Root() {
 }
 
 let root = createRoot(Root);
+let entrypoint = createEntrypoint(root);
 
 let app = express();
-wrapExpress(app, root);
+app.use(entrypoint.request);
 
-app.listen(parseInt(process.env.PORT) || 3007, "0.0.0.0");
-
-// export default createServer(root);
+let server = app.listen(parseInt(process.env.PORT) || 3007, "0.0.0.0");
+server.on('upgrade', entrypoint.upgrade);

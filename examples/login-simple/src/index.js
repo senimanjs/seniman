@@ -1,5 +1,5 @@
 import { useClient, Anchor, withValue, useMemo, useState, createRoot } from 'seniman';
-import { serve } from 'seniman/server';
+import { serve } from 'seniman/node';
 import { useSession, SessionProvider } from './session.js';
 
 // Replace this with your own authentication logic

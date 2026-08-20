@@ -1,6 +1,6 @@
 # express-basic
 
-In this example, we'll show a simple usage example of the `seniman/express` package, which allows you to embed Seniman in an existing Express app.
+In this example, Seniman's Node entrypoint is mounted as an Express fallback while the returned HTTP server owns WebSocket upgrades.
 
 ## Prerequisites
 - Node.js 16+

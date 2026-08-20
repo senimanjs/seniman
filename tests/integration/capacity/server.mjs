@@ -8,7 +8,8 @@ const senimanDirectory = process.env.SENIMAN_CAPACITY_PACKAGE_DIR
   ? path.resolve(process.env.SENIMAN_CAPACITY_PACKAGE_DIR)
   : path.resolve(capacityDirectory, '../../../packages/seniman');
 const senimanDistUrl = pathToFileURL(path.join(senimanDirectory, 'dist/')).href;
-const { createServer } = await import(`${senimanDistUrl}server/index.js`);
+const { createServer } = await import('node:http');
+const { createEntrypoint } = await import(`${senimanDistUrl}entrypoint.node.js`);
 const schedulerModule = await import(`${senimanDistUrl}scheduler.js`);
 const scheduler_getMemorySize = schedulerModule.scheduler_getMemorySize || (() => 0);
 const scheduler_getMemoryGrowthCount = schedulerModule.scheduler_getMemoryGrowthCount || (() => 0);
@@ -21,10 +22,12 @@ const fixture = fixtureModule.createFixture({ counterCount, outputBytes });
 const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
 eventLoopDelay.enable();
 
-const server = createServer(fixture.root, {
+const entrypoint = createEntrypoint(fixture.root, {
   allowedOrigins: ['127.0.0.1'],
   perMessageDeflate: false,
 });
+const server = createServer(entrypoint.request);
+server.on('upgrade', entrypoint.upgrade);
 
 server.listen(0, '127.0.0.1', () => {
   process.send?.({

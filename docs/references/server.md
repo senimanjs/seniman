@@ -1,143 +1,91 @@
 # Server API Reference
 
-Seniman provides a standalone Node HTTP server and an Express adapter. Both serve the initial HTML and upgrade Seniman's WebSocket connection on the same server.
+Seniman exposes a root separately from the server that hosts it. `serve` is the short path for a standalone Node app; runtime entrypoints provide explicit HTTP and WebSocket integration for custom servers.
 
-The server examples on this page belong in application entry modules, not inside components. Only `useEnv()` is a component-scope API.
-
-## Standalone server
-
-```js
-import { createServer, serve } from 'seniman/server';
-```
-
-### `serve(root, port)`
-
-Starts a standalone server on `port` using default options.
+## Node
 
 ```js
 import { createRoot } from 'seniman';
-import { serve } from 'seniman/server';
+import { serve } from 'seniman/node';
 
 serve(createRoot(App), 3002);
 ```
 
-Use `createServer()` when you need host selection, server events, or WebSocket options.
+`serve(root, port, options?)` creates and starts the Node server. It returns the server so the application can configure timeouts, listen for events, or close it.
 
-**Parameters:** `root` is the value returned by `createRoot()`. `port` is passed to Node's HTTP server.
-
-`serve()` starts listening immediately, logs the selected port, and returns `undefined`. It uses Node's default listen host and does not accept Seniman server options.
-
-### `createServer(root, options?)`
-
-Creates and returns a Node `http.Server` without listening.
+Use `createEntrypoint` when the application owns the server:
 
 ```js
-let server = createServer(createRoot(App), {
-  allowedOrigins: ['localhost', 'app.example.com'],
-  perMessageDeflate: true
-});
+import { createServer } from 'node:http';
+import { createRoot } from 'seniman';
+import { createEntrypoint } from 'seniman/node';
 
-server.listen(3002, '0.0.0.0');
+let entrypoint = createEntrypoint(createRoot(App));
+let server = createServer(entrypoint.request);
+server.on('upgrade', entrypoint.upgrade);
+server.listen(3002);
 ```
 
-The returned object is a normal Node server. Use its `listen()`, `close()`, timeout settings, TLS termination arrangement, and event APIs as needed. Seniman handles ordinary GET requests, the initial HTML document, and WebSocket upgrades on that server.
+`createEntrypoint(root, options?)` returns three handlers:
 
-The adapter derives the client IP from `X-Forwarded-For` when present, otherwise from the socket. It treats a request as secure when `X-Forwarded-Proto` equals `https`; configure those headers correctly when deploying behind a trusted reverse proxy.
+- `request(req, res)` handles Node HTTP requests.
+- `upgrade(req, socket, head)` handles Node WebSocket upgrades.
+- `fetch(request)` handles standard Fetch requests, which is useful with Fetch-based Node routers.
+
+The server remains an ordinary Node server. Your application owns listening, shutdown, TLS, middleware and static-file serving.
+
+### Express
+
+Register application routes and static files before the Seniman fallback, then attach the upgrade handler to Express's returned HTTP server.
+
+```js
+import express from 'express';
+import { createRoot } from 'seniman';
+import { createEntrypoint } from 'seniman/node';
+
+let app = express();
+let entrypoint = createEntrypoint(createRoot(App));
+
+app.use('/assets', express.static('public'));
+app.use(entrypoint.request);
+
+let server = app.listen(3002);
+server.on('upgrade', entrypoint.upgrade);
+```
 
 ## Options
 
 ### `allowedOrigins`
 
-An Array of hostnames allowed in WebSocket `Origin` headers.
+An array of hostnames allowed in WebSocket `Origin` headers.
 
 ```js
-{ allowedOrigins: ['localhost', 'app.example.com'] }
+serve(root, 3002, {
+  allowedOrigins: ['localhost', 'app.example.com']
+});
 ```
 
-Entries are hostnames only—do not include a protocol or port. An entry containing `*` is matched as a wildcard pattern. When omitted or empty, every origin is accepted.
-
-This is an origin check, not user authentication.
-
-The check applies to WebSocket upgrades. A disallowed origin receives `401 Unauthorized`; the initial HTML GET is not an authentication boundary. Use an authenticating reverse proxy or application-level access control for sensitive apps.
+Entries are hostnames only. An entry containing `*` is matched as a wildcard. When omitted or empty, every origin is accepted.
 
 ### `perMessageDeflate`
 
-Set to `true` to enable WebSocket per-message deflate using Seniman's configured compression settings. It is disabled by default.
-
-```js
-{ perMessageDeflate: true }
-```
-
-Seniman enables no-context-takeover in both directions, a 1024-byte threshold, compression level 3, memory level 7, and a concurrency limit of 10. These settings are currently fixed; passing a custom per-message-deflate object is not supported.
-
-## Express
-
-```js
-import { wrapExpress } from 'seniman/express';
-```
-
-### `wrapExpress(app, root, options?)`
-
-Adds Seniman's catch-all GET route and WebSocket upgrade handling to an Express application. It also wraps `app.listen()` so both protocols use the returned HTTP server.
-
-```js
-import express from 'express';
-import { createRoot } from 'seniman';
-import { wrapExpress } from 'seniman/express';
-
-let app = express();
-wrapExpress(app, createRoot(App), {
-  allowedOrigins: ['app.example.com'],
-  perMessageDeflate: true
-});
-
-app.listen(3002);
-```
-
-The options have the same meaning as `createServer()`.
-
-Call `wrapExpress()` after registering application routes that should take precedence over Seniman's catch-all GET route, and before calling `app.listen()`. It mutates the Express app's `listen` method and returns `undefined`.
+Both `serve` and `createEntrypoint` accept `perMessageDeflate: true`. It is disabled by default. Cloudflare and Bun control WebSocket compression through their runtimes.
 
 ## Cloudflare Workers
 
-```js
-import { createServer, useEnv } from 'seniman/workers';
-```
-
-### `createServer(root, options?)`
-
-Returns a module-worker object with a `fetch(request, env)` method.
+Install `seniman-cloudflare`, then export its entrypoint directly:
 
 ```js
 import { createRoot } from 'seniman';
-import { createServer } from 'seniman/workers';
+import { createEntrypoint } from 'seniman-cloudflare';
 
-export default createServer(createRoot(App), {
-  allowedOrigins: ['app.example.com']
-});
+export default createEntrypoint(createRoot(App));
 ```
 
-The Workers adapter uses `WebSocketPair`, disables Seniman's built-in rate limiters, and sends uncompressed initial HTML so the platform can manage transfer encoding. Its supported option is `allowedOrigins`; per-message deflate is not configurable through the Workers WebSocket API.
-
-### `serve(root, options?)`
-
-Registers a `fetch` event listener for legacy Service Worker-format deployments.
+The returned `fetch(request, env, ctx)` method receives the native Worker arguments. `useEnv()` exposes the current Worker's bindings within a component:
 
 ```js
-import { createRoot } from 'seniman';
-import { serve } from 'seniman/workers';
-
-serve(createRoot(App));
-```
-
-Prefer module-worker `createServer()` for new projects.
-
-### `useEnv()`
-
-Returns the Cloudflare `env` object associated with the current request/window through Seniman context.
-
-```js
-import { useEnv } from 'seniman/workers';
+import { useEnv } from 'seniman-cloudflare';
 
 function App() {
   let env = useEnv();
@@ -145,31 +93,53 @@ function App() {
 }
 ```
 
-The available fields are determined by the bindings configured for the Worker.
+### Hono on Workers
 
-## Hono on Workers
-
-```js
-import { wrapHono } from 'seniman/hono/workers';
-```
-
-### `wrapHono(app, root, options?)`
-
-Adds Seniman's catch-all GET/WebSocket route to an existing Hono app.
+Hono owns routing. Place the Seniman handler last so custom routes take precedence.
 
 ```js
 import { Hono } from 'hono';
 import { createRoot } from 'seniman';
-import { wrapHono } from 'seniman/hono/workers';
+import { createEntrypoint } from 'seniman-cloudflare';
 
 let app = new Hono();
+let entrypoint = createEntrypoint(createRoot(App));
 
-app.get('/api/health', context => context.text('ok'));
-wrapHono(app, createRoot(App), {
-  allowedOrigins: ['app.example.com']
-});
+app.get('/api/health', c => c.text('ok'));
+app.all('*', c =>
+  entrypoint.fetch(c.req.raw, c.env, c.executionCtx)
+);
 
 export default app;
 ```
 
-Register specific Hono routes before calling `wrapHono()`, because it adds `app.get('*', ...)`. The adapter passes `context.env` to `useEnv()`, disables framework rate limiting and precompressed HTML, and returns `undefined`.
+For a static folder, configure Cloudflare static assets. For a custom response such as `robots.txt`, add another Hono route before `app.all('*', ...)`.
+
+## Bun
+
+Install `seniman-bun` and pass its Fetch and WebSocket handlers to `Bun.serve()`:
+
+```js
+import { createRoot } from 'seniman';
+import { createEntrypoint } from 'seniman-bun';
+
+let entrypoint = createEntrypoint(createRoot(App));
+
+Bun.serve({
+  port: 3002,
+  fetch: entrypoint.fetch,
+  websocket: entrypoint.websocket,
+});
+```
+
+## Runtime adapter API
+
+Runtime integrations can build an entrypoint on Seniman's shared host-facing operations:
+
+```js
+import { createCoreEntrypoint } from 'seniman/entrypoint';
+
+let core = createCoreEntrypoint(root, options);
+```
+
+The returned object provides `render()` for a neutral HTTP response, `fetch()` for a standard Fetch response, `accepts()` for WebSocket origin validation, and `connect()` for handing an upgraded socket to the root. Applications normally use `seniman/node`, `seniman-cloudflare`, or `seniman-bun` instead.

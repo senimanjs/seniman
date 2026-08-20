@@ -1,5 +1,5 @@
 import { useState, createRoot } from "seniman";
-import { serve } from "seniman/server";
+import { serve } from 'seniman/node';
 import { Style } from 'seniman/head';
 import fs from "fs";
 import { css, getCssText } from "./stitches.config.js";

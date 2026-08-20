@@ -1,95 +1,21 @@
-import { createRoot } from '../window_manager.js';
-import { createContext, useContext } from '../state.js';
-import { buildOriginCheckerFunction } from '../helpers.js';
+import { throwLegacyEntrypointError } from '../legacy-entrypoint.js';
 
-const EnvContext = createContext();
+function removed() {
+  throwLegacyEntrypointError('seniman/workers', 'seniman-cloudflare');
+}
 
 export function useEnv() {
-  return useContext(EnvContext);
+  removed();
 }
 
-export async function runFetch(req, env, root, allowedOriginChecker) {
-  const upgradeHeader = req.headers.get("Upgrade");
-  const url = req.url;
-  const headers = req.headers;
-  const ipAddress = headers.get('x-forwarded-for') || headers.get('CF-Connecting-IP');
-  const auxContext = !!env ? { [EnvContext.id]: env } : null;
-
-  root.configure(env);
-
-  if (upgradeHeader == "websocket") {
-    if (!allowedOriginChecker(headers.get("Origin"))) {
-      return new Response("Unauthorized", { status: 401 });
-    }
-
-    const [client, websocket] = Object.values(new WebSocketPair())
-
-    websocket.accept();
-
-    const ws = {
-      send: (data) => {
-        websocket.send(data);
-      },
-      close: (code) => {
-        websocket.close(code);
-      },
-      on: (event, callback) => {
-        if (event === "message") {
-          websocket.addEventListener(event, (e) => {
-            callback(e.data);
-          });
-        } else if (event === "close") {
-          websocket.addEventListener(event, callback);
-        }
-      }
-    };
-
-    root.applyNewConnection(ws, { url, headers, ipAddress }, auxContext);
-
-    return new Response(null, { status: 101, webSocket: client })
-  } else {
-    // TODO: have the logic be configurable?
-    const isSecure = req.headers.get('x-forwarded-proto') == 'https';
-    const response = await root.getHtmlResponse({ url, headers, ipAddress, isSecure, auxContext });
-
-    return new Response(response.body, { status: response.statusCode, headers: response.headers })
-  }
+export function runFetch() {
+  removed();
 }
 
-export function serve(root, options = {}) {
-
-  root.setRateLimit({ disabled: true });
-  root.setDisableHtmlCompression();
-
-  let allowedOriginChecker = buildOriginCheckerFunction(options.allowedOrigins);
-
-  addEventListener('fetch', (event) => {
-    event.respondWith(runFetch(event.request, null, root, allowedOriginChecker));
-  });
+export function serve() {
+  removed();
 }
 
-export function createServer(root, options = {}) {
-
-  // check if root is the old { Body } parameter
-  // if yes, then ask to wrap it in createRoot before passing it in
-  if (typeof root == "object" && root.Body) {
-    console.log(`
-    Calling createServer({ Body }) is deprecated in seniman@0.0.133. 
-    Please wrap your Body component in createRoot(Body) from the \`seniman\` package before passing it to createServer(root).
-    We've wrapped it internally for you in this version.
-    `);
-
-    root = createRoot(root.Body);
-  }
-
-  root.setRateLimit({ disabled: true });
-  root.setDisableHtmlCompression();
-
-  let allowedOriginChecker = buildOriginCheckerFunction(options.allowedOrigins);
-
-  return {
-    fetch: async (req, env) => {
-      return runFetch(req, env, root, allowedOriginChecker);
-    }
-  }
+export function createServer() {
+  removed();
 }

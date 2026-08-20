@@ -4,7 +4,7 @@ After [installation](/docs/install), let's start building a simple app. This is 
 
 ```js
 import { createRoot } from "seniman";
-import { serve } from "seniman/server";
+import { serve } from "seniman/node";
 
 function App() {
   return <div>Hello World</div>;
