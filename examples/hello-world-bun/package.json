@@ -1,0 +1,19 @@
+{
+  "name": "seniman-hello-world-bun",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "babel src --out-dir dist",
+    "dev": "npm run build && bun --watch dist/index.js",
+    "start": "bun dist/index.js"
+  },
+  "dependencies": {
+    "seniman": "^0.0.182",
+    "seniman-bun": "^0.0.182"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.29.7",
+    "@babel/plugin-syntax-jsx": "^7.29.7"
+  }
+}

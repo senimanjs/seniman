@@ -1,0 +1,20 @@
+{
+  "name": "seniman-hello-world-cloudflare-workers",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "babel src --out-dir dist",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "seniman": "^0.0.182",
+    "seniman-cloudflare": "^0.0.182"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.29.7",
+    "@babel/plugin-syntax-jsx": "^7.29.7",
+    "wrangler": "^4.124.0"
+  }
+}

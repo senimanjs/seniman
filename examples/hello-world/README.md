@@ -15,13 +15,7 @@ npm install
 
 ## Development
 
-Run the following command to compile the app:
+Run the app:
 ```bash
-npx babel src --out-dir dist
-```
-
-And then the following command to start the development server:
-
-```bash
-npx nodemon dist/index.js
+npm run dev
 ```

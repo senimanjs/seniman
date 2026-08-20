@@ -1,4 +1,4 @@
-import { serve } from 'seniman/server';
+import { serve } from 'seniman/node';
 import { createRoot, useState, useClient, createHandler, createCollection, onDispose } from 'seniman';
 import { Link, Style } from 'seniman/head';
 import { throttle } from 'throttle-debounce';

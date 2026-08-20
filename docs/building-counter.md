@@ -29,7 +29,7 @@ Let's start by understanding the existing code, then start building our counter 
 
 ```js
 import { createRoot } from "seniman";
-import { serve } from "seniman/server";
+import { serve } from "seniman/node";
 
 function App() {
   return <div>Hello World</div>;
@@ -51,14 +51,10 @@ As a start, we use one core functions from the `seniman` package: `createRoot`.
 
 
 ```js
-import { serve } from "seniman/server";
+import { serve } from "seniman/node";
 ```
 
-The `serve` function is used to initialize and start a server that will serve our Seniman application. A server for a Seniman app has two main required functions: serving the main HTML page which contains the client runtime on the browser, and a WebSocket server serving as communication channel between the client runtime and the server. 
-
-Seniman has a few built-in server implementations that you can use, but in this tutorial, we will use one from the `seniman/server` package, which is a thin layer above Node's `http` server with a small WebSocket handler.
-
-There are other built-in networking options you can use such as `seniman/express` and `seniman/workers` for CloudFlare Workers, but let's go with the simplest `seniman/server` for this tutorial.
+`serve` creates a Node HTTP server, attaches Seniman's WebSocket handler, and starts listening. Applications that need custom routes or middleware can use `createEntrypoint` from the same module instead.
 
 Now, let's take a look at the main component of our application:
 
@@ -77,7 +73,7 @@ let root = createRoot(App);
 serve(root, 3002);
 ```
 
-As mentioned, the `createRoot` function is used to wrap the application in a `Root` object for the underlying networking stack to interact with. The `serve` function is used to start the networking stack, specifically a HTTP server with a WebSocket connection handler. The `serve` function also takes a port number as its second argument, which is the port number that the server will listen to.
+As mentioned, `createRoot` wraps the application in a Root object. `serve(root, 3002)` connects it to Node and opens the port.
 
 This should be all that's required to start serving a Seniman application. Now, let's start building our counter.
 

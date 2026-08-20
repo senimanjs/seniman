@@ -7,7 +7,7 @@ Let's start with the `src/index.js` file from the Hello World tutorial:
 
 ```js
 import { createRoot } from "seniman";
-import { serve } from "seniman/server";
+import { serve } from "seniman/node";
 
 function App() {
   return <div>Hello World</div>;

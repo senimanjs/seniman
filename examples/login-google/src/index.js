@@ -1,5 +1,5 @@
 import { createRoot, createRef, createHandler } from 'seniman';
-import { serve } from 'seniman/server';
+import { serve } from 'seniman/node';
 import { Script } from 'seniman/head';
 import { useSession, SessionProvider } from './session.js';
 import jsonwebtoken from 'jsonwebtoken';

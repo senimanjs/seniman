@@ -1,5 +1,5 @@
 import { createRoot, useState } from 'seniman';
-import { createServer } from 'seniman/workers';
+import { createEntrypoint } from 'seniman-cloudflare';
 
 function App(props) {
   let [data, setData] = useState({ loading: false, value: null });
@@ -29,4 +29,4 @@ function App(props) {
 let root = createRoot(App);
 
 // Runs the root on Cloudflare Workers (in ES modules mode)
-export default createServer(root);
+export default createEntrypoint(root);

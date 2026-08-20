@@ -197,6 +197,6 @@ let root = createRoot(Root);
 serve(root, 3002);
 ```
 
-Here, we wrap our `Root` component using the `createRoot` function, which we then pass to the `serve` function to start the server. The `serve` function also takes a port number as its second argument, which is the port number that the server will listen to. When you open the browser, you should see the todo list application running at [http://localhost:3002](http://localhost:3002). 
+Here, we wrap our `Root` component using `createRoot` and serve it on port 3002. When you open the browser, you should see the todo list application running at [http://localhost:3002](http://localhost:3002).
 
 We've now reached the end of the tutorial. With just one UI component, we've built a todo list application that stores data in an in-memory SQLite database --  tightly integrating user interaction, UI state, and database operations all within the component code, greatly simplifying the application stack.

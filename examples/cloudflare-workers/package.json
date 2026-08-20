@@ -9,6 +9,7 @@
   },
   "type": "module",
   "dependencies": {
-    "seniman": "^0.0.178"
+    "seniman": "^0.0.182",
+    "seniman-cloudflare": "^0.0.182"
   }
 }

@@ -1,5 +1,5 @@
 import { createRoot, useState, useMemo, preventDefault, createRef, createHandler, useClient, createContext, useContext, useEffect, createCollection, untrack } from "seniman";
-import { createServer } from "seniman/workers";
+import { createEntrypoint } from "seniman-cloudflare";
 import { Style, Title } from "seniman/head";
 
 // import tailwind css from .txt extension so we can read it as a string @ cloudflare worker
@@ -390,4 +390,4 @@ function EditIcon() {
 let root = createRoot(Board);
 
 // run cloudflare worker on ES mode
-export default createServer(root);
+export default createEntrypoint(root);

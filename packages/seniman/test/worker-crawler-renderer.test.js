@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { runFetch } from '../dist/workers/index.js';
+import { createCoreEntrypoint } from '../dist/entrypoint.js';
 
 function createRootStub() {
   return {
     env: null,
+    setDisableHtmlCompression() {},
     configure(env) {
       this.env = env;
     },
@@ -22,11 +23,9 @@ test('module worker env is passed to root configuration', async () => {
   let root = createRootStub();
   let env = { SENIMAN_ENABLE_CRAWLER_RENDERER: '1' };
 
-  await runFetch(
+  await createCoreEntrypoint(root).fetch(
     new Request('https://example.test/docs/install'),
-    env,
-    root,
-    () => true
+    { env }
   );
 
   assert.equal(root.env, env);

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { createHandler, useState, withValue, createRoot } from "seniman";
-import { serve } from "seniman/server";
+import { serve } from 'seniman/node';
 import { Style } from "seniman/head";
 import TrieSearch from 'trie-search';
 

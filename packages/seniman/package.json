@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "0.0.181",
+  "version": "0.0.182",
   "description": "",
   "main": "./dist/index.js",
   "type": "module",
@@ -15,11 +15,9 @@
   ],
   "exports": {
     ".": "./dist/index.js",
+    "./node": "./dist/entrypoint.node.js",
     "./router": "./dist/router/index.js",
-    "./express": "./dist/express/index.js",
-    "./server": "./dist/server/index.js",
-    "./workers": "./dist/workers/index.js",
-    "./hono/workers": "./dist/hono/workers/index.js",
+    "./entrypoint": "./dist/entrypoint.js",
     "./head": "./dist/head.js",
     "./html": "./dist/html.js",
     "./_autogen/v1": "./dist/autogen-v1/index.js",

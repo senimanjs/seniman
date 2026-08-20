@@ -16,7 +16,7 @@ Creates the root object consumed by a Seniman server adapter.
 
 ```js
 import { createRoot } from 'seniman';
-import { serve } from 'seniman/server';
+import { serve } from 'seniman/node';
 
 function App() {
   return <main>Hello</main>;

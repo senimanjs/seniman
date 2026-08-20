@@ -1,5 +1,5 @@
 import { onDispose, createHandler, useState, useMemo, createRoot } from 'seniman';
-import { serve } from 'seniman/server';
+import { serve } from 'seniman/node';
 import { Style, Title } from 'seniman/head';
 import produce from 'immer';
 

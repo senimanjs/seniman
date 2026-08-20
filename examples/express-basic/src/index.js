@@ -1,6 +1,6 @@
 import express from 'express';
 import { createRoot } from 'seniman';
-import { wrapExpress } from 'seniman/express';
+import { createEntrypoint } from 'seniman/node';
 
 let app = express();
 
@@ -9,9 +9,11 @@ function App() {
 }
 
 let root = createRoot(App);
-wrapExpress(app, root);
+let entrypoint = createEntrypoint(root);
+app.use(entrypoint.request);
 
 let port = process.env.PORT || 3002;
-app.listen(port);
+let server = app.listen(port);
+server.on('upgrade', entrypoint.upgrade);
 
 console.log('Listening on port', port);

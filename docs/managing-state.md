@@ -6,7 +6,7 @@ Let's start with the `src/index.js` file from the Event Handling tutorial:
 
 ```js
 import { createRoot } from 'seniman';
-import { serve } from "seniman/server";
+import { serve } from 'seniman/node';
 
 function App() {
 
@@ -27,7 +27,6 @@ Let's now add a state variable to the `App` component, after importing the `useS
 
 ```js
 import { createRoot, useState } from 'seniman';
-import { serve } from 'seniman/server';
 
 function App() {
   let [getCount, setCount] = useState(0);

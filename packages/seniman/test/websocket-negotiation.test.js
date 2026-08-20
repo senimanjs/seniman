@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer as createHttpServer } from 'node:http';
 import test from 'node:test';
 import { WebSocket } from 'ws';
-import { wrapExpress } from '../dist/express/index.js';
-import { createServer } from '../dist/server/index.js';
+import { createEntrypoint, serve } from '../dist/entrypoint.node.js';
 
 function createRootStub() {
   return {
@@ -15,15 +14,6 @@ function createRootStub() {
       };
     },
     applyNewConnection() {},
-  };
-}
-
-function createExpressStub() {
-  return {
-    get() {},
-    listen(port, host, backlog, callback) {
-      return createHttpServer().listen(port, host, backlog, callback);
-    },
   };
 }
 
@@ -66,25 +56,16 @@ async function getNegotiatedExtensions(server) {
 }
 
 function createStandaloneAdapter(options) {
-  const server = createServer(createRootStub(), options);
+  const entrypoint = createEntrypoint(createRootStub(), options);
+  const server = createHttpServer(entrypoint.request);
+  server.on('upgrade', entrypoint.upgrade);
   server.listen(0, '127.0.0.1');
 
   return server;
 }
 
-function createExpressAdapter(options) {
-  const app = createExpressStub();
-  wrapExpress(app, createRootStub(), options);
-
-  return app.listen(0, '127.0.0.1');
-}
-
-for (const [adapterName, createAdapter] of [
-  ['Node server', createStandaloneAdapter],
-  ['Express', createExpressAdapter],
-]) {
-  test(`${adapterName} negotiates permessage-deflate when enabled`, async () => {
-    const server = createAdapter({ perMessageDeflate: true });
+test('Node entrypoint negotiates permessage-deflate when enabled', async () => {
+    const server = createStandaloneAdapter({ perMessageDeflate: true });
     await waitForListening(server);
 
     try {
@@ -92,10 +73,10 @@ for (const [adapterName, createAdapter] of [
     } finally {
       await close(server);
     }
-  });
+});
 
-  test(`${adapterName} does not negotiate extensions by default`, async () => {
-    const server = createAdapter();
+test('Node entrypoint does not negotiate extensions by default', async () => {
+    const server = createStandaloneAdapter();
     await waitForListening(server);
 
     try {
@@ -103,5 +84,16 @@ for (const [adapterName, createAdapter] of [
     } finally {
       await close(server);
     }
-  });
-}
+});
+
+test('serve starts and returns a Node server', async () => {
+  const server = serve(createRootStub(), 0);
+  await waitForListening(server);
+
+  try {
+    assert.equal(server.listening, true);
+    assert.equal(await getNegotiatedExtensions(server), '');
+  } finally {
+    await close(server);
+  }
+});

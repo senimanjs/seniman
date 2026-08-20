@@ -1,5 +1,5 @@
 import { createRoot, useState } from "seniman";
-import { serve } from "seniman/server";
+import { serve } from 'seniman/node';
 
 function App(props) {
   let [getCount, setCount] = useState(0);

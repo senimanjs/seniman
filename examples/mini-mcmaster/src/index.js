@@ -1,5 +1,5 @@
 import { useState, useClient, useMemo, createRef, createHandler, useEffect, onDispose, Anchor, createRoot, createContext, useContext } from 'seniman';
-import { createServer, useEnv } from 'seniman/workers';
+import { createEntrypoint, useEnv } from 'seniman-cloudflare';
 import { Style } from 'seniman/head';
 import {
   products,
@@ -608,4 +608,4 @@ function App() {
 
 let root = createRoot(App);
 
-export default createServer(root);
+export default createEntrypoint(root);

@@ -1,5 +1,5 @@
 import { createRoot, useState } from 'seniman';
-import { createServer, useEnv } from 'seniman/workers';
+import { createEntrypoint, useEnv } from 'seniman-cloudflare';
 
 
 function App(props) {
@@ -24,7 +24,4 @@ function App(props) {
 let root = createRoot(() => <App name={"Eka"} />);
 
 // Runs the root on Cloudflare Workers (in ES modules mode)
-export default createServer(root);
-
-// use import { serve } from 'seniman/workers' to run on service worker mode
-// serve(root);
+export default createEntrypoint(root);
