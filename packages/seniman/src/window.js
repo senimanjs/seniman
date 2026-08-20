@@ -336,6 +336,14 @@ export class Window {
     this.outputProgressPrev = null;
     this.outputProgressNext = null;
     this.outputProgressListed = false;
+    this.outputBackpressurePaused = false;
+    this.globalOutputBackpressurePaused = false;
+    this.schedulerOutputPaused = false;
+    this.outputProgressProbeOutstanding = false;
+    this.outputProgressProbeReadOffset = 0;
+    this.outputProgressProbeSentAt = 0;
+    this.outputLastProgressAt = Date.now();
+    this.outputStallTimer = null;
 
     this.bufferFn = bufferFn;
 
@@ -707,7 +715,7 @@ export class Window {
     }
 
     this.outputRetentionTracking = true;
-    this.windowManager._updateWindowRetainedOutput(this);
+    this.windowManager._enableWindowOutputRetention(this);
   }
 
   flushCommandBuffer() {
@@ -1021,6 +1029,7 @@ export class Window {
 
     if (this.outputRetentionTracking) {
       this.windowManager._updateWindowRetainedOutput(this, madeProgress);
+      this.windowManager._afterWindowOutputProgress(this, madeProgress);
     }
   }
 
@@ -1115,6 +1124,8 @@ export class Window {
     this.destroyed = true;
     this.connected = false;
     this.reconnectionId = 0;
+
+    this.windowManager._prepareWindowForDestroy?.(this);
 
     clearTimeout(this.deleteBlockFlushTimer);
     this.deleteBlockFlushTimer = null;
@@ -1230,23 +1241,6 @@ export class Window {
       return;
     }
 
-    if (this.outputRetentionTracking) {
-      let config = this.windowManager.config;
-      let maxBytes = config.maxUnacknowledgedOutputBytes;
-      let maxPublications = config.maxUnacknowledgedPublications;
-      let publicationCount = this.publications
-        ? (this.publications.length - this.publicationHead) / 2
-        : 0;
-
-      if (
-        (maxBytes > 0 && endOffset - this.global_readOffset > maxBytes) ||
-        (maxPublications > 0 && publicationCount + 1 > maxPublications)
-      ) {
-        this.windowManager._expireWindowForOutputBacklog(this);
-        return;
-      }
-    }
-
     if (!this.publications) {
       this.publications = [];
     }
@@ -1264,6 +1258,10 @@ export class Window {
 
     if (this.connected) {
       this.bufferFn(this._readOutputRange(startOffset, endOffset));
+    }
+
+    if (this.outputRetentionTracking) {
+      this.windowManager._afterWindowOutputPublished(this);
     }
   }
 

@@ -50,6 +50,7 @@ test('output pressure culls stalled clients and preserves healthy clients', {
       SENIMAN_MAX_UNACKNOWLEDGED_OUTPUT_BYTES: String(64 * 1024),
       SENIMAN_MAX_UNACKNOWLEDGED_PUBLICATIONS: '256',
       SENIMAN_MAX_RETAINED_OUTPUT_BYTES: String(globalLimit),
+      SENIMAN_OUTPUT_PRESSURE_GRACE_MS: '1000',
     });
 
     const stalled = clients.slice(0, stalledCount);
@@ -60,17 +61,43 @@ test('output pressure culls stalled clients and preserves healthy clients', {
     }
 
     // Let the next ping establish that the stalled clients are the oldest windows
-    // without read progress. Healthy clients acknowledge and leave the list.
+    // without read progress. Healthy clients acknowledge normally.
     await wait(2700);
 
-    for (let round = 0; round < 5; round++) {
-      await Promise.allSettled(stalled.map(client =>
-        client.click(client.randomHandlerId(), 1500)
-      ));
+    // The first wave approaches the limit. The second crosses it, then some of
+    // its clicks remain pending because scheduler amplification is paused.
+    await Promise.all(stalled.map(client =>
+      client.click(client.randomHandlerId(), 1500)
+    ));
+    const pressureClicks = Promise.allSettled(stalled.map(client =>
+      client.click(client.randomHandlerId(), 1500)
+    ));
+
+    let pausedSample;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await wait(10);
+      pausedSample = await server.sample();
+      if (pausedSample.fixture.outputBackpressurePaused) {
+        break;
+      }
     }
 
-    await wait(100);
-    let pressureSample = await server.sample();
+    assert.equal(pausedSample.fixture.outputBackpressurePaused, true);
+    assert.equal(stalled.filter(client => client.closeCode === 3002).length, 0);
+
+    await pressureClicks;
+
+    let pressureSample;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await wait(1100);
+      pressureSample = await server.sample();
+      if (
+        !pressureSample.fixture.outputBackpressurePaused &&
+        pressureSample.fixture.retainedOutputBytes <= globalLimit
+      ) {
+        break;
+      }
+    }
     let evicted = stalled.filter(client => client.closeCode === 3002);
     let evictedHealthy = healthy.filter(client => client.closeCode != null);
 

@@ -7,7 +7,7 @@ import { CrawlerRenderer } from './crawler/index.js';
 import htmlBuffers from "./_htmlBuffers.js";
 
 import { createConfig } from './config.js';
-import { enqueueWindowInput, getWindow, registerWindow, deregisterWindow } from './state.js';
+import { enqueueWindowInput, getWindow, registerWindow, deregisterWindow, setWindowSchedulerPaused } from './state.js';
 
 export function createRoot(rootFn) {
   let root = new Root(rootFn);
@@ -25,9 +25,13 @@ class Root {
 
     this.externalWindowIdMapping = new Map();
     this.windowConnectionMap = new Map();
+    this.windows = new Set();
     this.retainedOutputBytes = 0;
     this.outputProgressHead = null;
     this.outputProgressTail = null;
+    this.globalOutputBackpressurePaused = false;
+    this.outputPressureTimer = null;
+    this.outputPressureChecking = false;
     this.config = null;
     this.rateLimitDisabled = false;
     this.messageLimiter = null;
@@ -86,7 +90,12 @@ class Root {
     this.crawlerRenderingEnabled = config.enableCrawlerRenderer;
     this.crawlerRenderer = this.crawlerRenderingEnabled ? (this.crawlerRenderer || new CrawlerRenderer()) : null;
 
-    this._cullRetainedOutputIfNeeded();
+    for (let window of this.windows) {
+      if (window.outputRetentionTracking) {
+        this._evaluateWindowOutputFlowControl(window);
+      }
+    }
+    this._evaluateGlobalOutputFlowControl();
 
     if (rateLimitConfigChanged && !this.rateLimitDisabled) {
       this._configureRateLimiters();
@@ -202,6 +211,7 @@ class Root {
     this.externalWindowIdMapping.set(pageParams.windowId, window.id);
 
     registerWindow(window);
+    this._trackWindow(window);
     window.onBuffer(this._setupWsListeners(ws, window.id));
     window.enableOutputRetentionTracking();
 
@@ -209,6 +219,7 @@ class Root {
 
     window.onDestroy(() => {
       this.externalWindowIdMapping.delete(pageParams.windowId);
+      this._untrackWindow(window);
       deregisterWindow(window);
       this._closeWindowConnection(window.id);
     });
@@ -318,10 +329,12 @@ class Root {
     });
 
     registerWindow(window);
+    this._trackWindow(window);
 
     window.start();
 
     window.onDestroy(() => {
+      this._untrackWindow(window);
       deregisterWindow(window);
     });
 
@@ -399,6 +412,233 @@ class Root {
     }
   }
 
+  _trackWindow(window) {
+    this.windows.add(window);
+  }
+
+  _untrackWindow(window) {
+    this._prepareWindowForDestroy(window);
+    this.windows.delete(window);
+  }
+
+  _prepareWindowForDestroy(window) {
+    clearTimeout(window.outputStallTimer);
+    window.outputStallTimer = null;
+    window.outputBackpressurePaused = false;
+    window.globalOutputBackpressurePaused = false;
+    window.outputProgressProbeOutstanding = false;
+    this._syncWindowSchedulerPause(window);
+  }
+
+  _syncWindowSchedulerPause(window) {
+    let paused = !window.destroyed && (
+      window.outputBackpressurePaused ||
+      window.globalOutputBackpressurePaused
+    );
+
+    if (window.schedulerOutputPaused === paused) {
+      return;
+    }
+
+    window.schedulerOutputPaused = paused;
+    setWindowSchedulerPaused(window, paused);
+  }
+
+  _getWindowPublicationCount(window) {
+    return window.publications
+      ? (window.publications.length - window.publicationHead) / 2
+      : 0;
+  }
+
+  _enableWindowOutputRetention(window) {
+    window.globalOutputBackpressurePaused =
+      this.globalOutputBackpressurePaused;
+    this._syncWindowSchedulerPause(window);
+    this._updateWindowRetainedOutput(window);
+    this._evaluateWindowOutputFlowControl(window);
+    this._evaluateGlobalOutputFlowControl();
+  }
+
+  _getSoftOutputLimit(limit) {
+    return limit > 0 ? Math.max(1, Math.floor(limit / 2)) : 0;
+  }
+
+  _isWindowAtSoftOutputLimit(window) {
+    let config = this.config;
+    let softBytes = this._getSoftOutputLimit(
+      config.maxUnacknowledgedOutputBytes
+    );
+    let softPublications = this._getSoftOutputLimit(
+      config.maxUnacknowledgedPublications
+    );
+
+    return (
+      softBytes > 0 && window.retainedOutputBytes >= softBytes
+    ) || (
+      softPublications > 0 &&
+      this._getWindowPublicationCount(window) >= softPublications
+    );
+  }
+
+  _isWindowAtHardOutputLimit(window) {
+    let config = this.config;
+    let maxBytes = config.maxUnacknowledgedOutputBytes;
+    let maxPublications = config.maxUnacknowledgedPublications;
+
+    return (
+      maxBytes > 0 && window.retainedOutputBytes >= maxBytes
+    ) || (
+      maxPublications > 0 &&
+      this._getWindowPublicationCount(window) >= maxPublications
+    );
+  }
+
+  _isWindowBelowResumeLimit(window) {
+    let config = this.config;
+    let softBytes = this._getSoftOutputLimit(
+      config.maxUnacknowledgedOutputBytes
+    );
+    let softPublications = this._getSoftOutputLimit(
+      config.maxUnacknowledgedPublications
+    );
+    let belowBytes = softBytes === 0 || window.retainedOutputBytes < softBytes;
+    let belowPublications = softPublications === 0 ||
+      this._getWindowPublicationCount(window) < softPublications;
+
+    return belowBytes && belowPublications;
+  }
+
+  _requestWindowOutputProgress(window) {
+    if (
+      window.destroyed ||
+      !window.connected ||
+      !window.bufferFn ||
+      window.outputProgressProbeOutstanding
+    ) {
+      return;
+    }
+
+    let now = Date.now();
+    let probeCooldown = Math.min(
+      2500,
+      Math.max(1, this.config.outputPressureGraceMs)
+    );
+
+    if (
+      window.outputProgressProbeSentAt > 0 &&
+      now - window.outputProgressProbeSentAt < probeCooldown
+    ) {
+      return;
+    }
+
+    window.outputProgressProbeOutstanding = true;
+    window.outputProgressProbeReadOffset = window.global_readOffset;
+    window.outputProgressProbeSentAt = now;
+    window.sendPing();
+  }
+
+  _scheduleWindowStallCheck(window) {
+    clearTimeout(window.outputStallTimer);
+    window.outputStallTimer = null;
+
+    let timeout = this.config.outputStallTimeoutMs;
+    if (!window.outputBackpressurePaused || timeout <= 0) {
+      return;
+    }
+
+    let elapsed = Date.now() - window.outputLastProgressAt;
+    window.outputStallTimer = setTimeout(() => {
+      window.outputStallTimer = null;
+      this._checkWindowOutputStall(window);
+    }, Math.max(1, timeout - elapsed));
+    window.outputStallTimer.unref?.();
+  }
+
+  _checkWindowOutputStall(window) {
+    if (window.destroyed || !window.outputBackpressurePaused) {
+      return;
+    }
+
+    let timeout = this.config.outputStallTimeoutMs;
+    if (timeout <= 0) {
+      return;
+    }
+
+    if (Date.now() - window.outputLastProgressAt < timeout) {
+      this._scheduleWindowStallCheck(window);
+      return;
+    }
+
+    this._expireWindowForOutputBacklog(window, 'window-stalled');
+  }
+
+  _setWindowOutputPaused(window, paused) {
+    if (window.outputBackpressurePaused === paused) {
+      return;
+    }
+
+    window.outputBackpressurePaused = paused;
+
+    if (paused) {
+      window.outputLastProgressAt = Date.now();
+      this._scheduleWindowStallCheck(window);
+    } else {
+      clearTimeout(window.outputStallTimer);
+      window.outputStallTimer = null;
+    }
+
+    this._syncWindowSchedulerPause(window);
+  }
+
+  _evaluateWindowOutputFlowControl(window) {
+    if (!window.outputRetentionTracking || window.destroyed) {
+      return;
+    }
+
+    if (this._isWindowAtHardOutputLimit(window)) {
+      this._setWindowOutputPaused(window, true);
+    } else if (
+      window.outputBackpressurePaused &&
+      this._isWindowBelowResumeLimit(window)
+    ) {
+      this._setWindowOutputPaused(window, false);
+    }
+
+    if (this._isWindowAtSoftOutputLimit(window)) {
+      this._requestWindowOutputProgress(window);
+    }
+  }
+
+  _afterWindowOutputPublished(window) {
+    this._evaluateWindowOutputFlowControl(window);
+    this._evaluateGlobalOutputFlowControl();
+  }
+
+  _afterWindowOutputProgress(window, madeProgress) {
+    if (madeProgress) {
+      window.outputLastProgressAt = Date.now();
+
+      if (
+        window.outputProgressProbeOutstanding &&
+        window.global_readOffset > window.outputProgressProbeReadOffset
+      ) {
+        window.outputProgressProbeOutstanding = false;
+      }
+
+      if (
+        window.outputBackpressurePaused &&
+        this._isWindowBelowResumeLimit(window)
+      ) {
+        this._setWindowOutputPaused(window, false);
+      } else if (window.outputBackpressurePaused) {
+        this._scheduleWindowStallCheck(window);
+      }
+    }
+
+    this._evaluateWindowOutputFlowControl(window);
+    this._evaluateGlobalOutputFlowControl();
+  }
+
   _unlinkOutputProgressWindow(window) {
     if (!window.outputProgressListed) {
       return;
@@ -456,43 +696,173 @@ class Root {
       this._appendOutputProgressWindow(window);
     }
 
-    this._cullRetainedOutputIfNeeded();
   }
 
   _releaseWindowRetainedOutput(window) {
     this.retainedOutputBytes -= window.retainedOutputBytes;
     window.retainedOutputBytes = 0;
     this._unlinkOutputProgressWindow(window);
+    this._evaluateGlobalOutputFlowControl();
   }
 
-  _expireWindowForOutputBacklog(window) {
+  _expireWindowForOutputBacklog(window, reason = 'unknown') {
     if (window.destroyed) {
       this._releaseWindowRetainedOutput(window);
       return;
     }
 
+    window.outputBacklogCloseReason = reason;
     this._closeWindowConnection(window.id, 3002);
     window.destroy();
   }
 
-  _cullRetainedOutputIfNeeded() {
-    let maxRetainedBytes = this.config?.maxRetainedOutputBytes || 0;
-
-    if (
-      maxRetainedBytes === 0 ||
-      this.retainedOutputBytes <= maxRetainedBytes
-    ) {
+  _setGlobalOutputPaused(paused) {
+    if (this.globalOutputBackpressurePaused === paused) {
       return;
     }
 
-    let lowWatermark = Math.floor(maxRetainedBytes * 0.75);
+    this.globalOutputBackpressurePaused = paused;
 
-    while (
-      this.retainedOutputBytes > lowWatermark &&
-      this.outputProgressHead
-    ) {
-      this._expireWindowForOutputBacklog(this.outputProgressHead);
+    for (let window of this.windows) {
+      if (!window.outputRetentionTracking) {
+        continue;
+      }
+
+      window.globalOutputBackpressurePaused = paused;
+      this._syncWindowSchedulerPause(window);
     }
+  }
+
+  _probeRetainedOutputWindows() {
+    let window = this.outputProgressHead;
+
+    while (window) {
+      let next = window.outputProgressNext;
+      this._requestWindowOutputProgress(window);
+      window = next;
+    }
+  }
+
+  _scheduleGlobalPressureCheck() {
+    if (this.outputPressureTimer) {
+      return;
+    }
+
+    let grace = this.config.outputPressureGraceMs;
+    if (grace <= 0) {
+      grace = 1;
+    }
+
+    this.outputPressureTimer = setTimeout(() => {
+      this.outputPressureTimer = null;
+      this._checkGlobalOutputPressure();
+    }, grace);
+    this.outputPressureTimer.unref?.();
+  }
+
+  _isWindowEligibleForPressureCull(window, now) {
+    let grace = Math.max(1, this.config.outputPressureGraceMs);
+
+    if (!window.connected) {
+      return now - window.lastPongTime >= grace;
+    }
+
+    return window.outputProgressProbeOutstanding &&
+      window.global_readOffset <= window.outputProgressProbeReadOffset &&
+      now - window.outputProgressProbeSentAt >= grace;
+  }
+
+  _checkGlobalOutputPressure() {
+    let maxRetainedBytes = this.config?.maxRetainedOutputBytes || 0;
+
+    if (maxRetainedBytes === 0 || !this.globalOutputBackpressurePaused) {
+      return;
+    }
+
+    let recoveryTarget = Math.floor(maxRetainedBytes * 0.75);
+    let now = Date.now();
+    let window = this.outputProgressHead;
+
+    this.outputPressureChecking = true;
+
+    try {
+      while (window && this.retainedOutputBytes > recoveryTarget) {
+        let next = window.outputProgressNext;
+
+        if (this._isWindowEligibleForPressureCull(window, now)) {
+          this._expireWindowForOutputBacklog(window, 'global-output-pressure');
+        }
+
+        window = next;
+      }
+
+      if (this.retainedOutputBytes > recoveryTarget) {
+        this._probeRetainedOutputWindows();
+      }
+    } finally {
+      this.outputPressureChecking = false;
+    }
+
+    this._evaluateGlobalOutputFlowControl();
+  }
+
+  _evaluateGlobalOutputFlowControl() {
+    if (this.outputPressureChecking || !this.config) {
+      return;
+    }
+
+    let maxRetainedBytes = this.config.maxRetainedOutputBytes;
+
+    if (maxRetainedBytes <= 0) {
+      clearTimeout(this.outputPressureTimer);
+      this.outputPressureTimer = null;
+      this._setGlobalOutputPaused(false);
+      return;
+    }
+
+    this.outputPressureChecking = true;
+
+    try {
+      let softLimit = this._getSoftOutputLimit(maxRetainedBytes);
+
+      if (this.retainedOutputBytes >= softLimit) {
+        this._probeRetainedOutputWindows();
+      }
+
+      let emergencyLimit = maxRetainedBytes * 2;
+
+      while (
+        this.retainedOutputBytes > emergencyLimit &&
+        this.outputProgressHead
+      ) {
+        this._expireWindowForOutputBacklog(
+          this.outputProgressHead,
+          'global-output-emergency'
+        );
+      }
+
+      if (this.retainedOutputBytes >= maxRetainedBytes) {
+        this._setGlobalOutputPaused(true);
+        this._scheduleGlobalPressureCheck();
+      } else if (
+        this.globalOutputBackpressurePaused &&
+        this.retainedOutputBytes <= Math.floor(maxRetainedBytes * 0.75)
+      ) {
+        clearTimeout(this.outputPressureTimer);
+        this.outputPressureTimer = null;
+        this._setGlobalOutputPaused(false);
+      }
+    } finally {
+      this.outputPressureChecking = false;
+    }
+
+    if (this.globalOutputBackpressurePaused) {
+      this._scheduleGlobalPressureCheck();
+    }
+  }
+
+  _cullRetainedOutputIfNeeded() {
+    this._evaluateGlobalOutputFlowControl();
   }
 
   disconnectWindow(windowId) {

@@ -19,10 +19,27 @@ import {
   scheduler_hasWork,
   scheduler_ingest,
   scheduler_registerWindow,
+  scheduler_setWindowPaused,
   SCHEDULER_PACKET_END,
   SCHEDULER_PACKET_START,
   SCHEDULER_WINDOW_WORK_QUANTUM
 } from '../dist/scheduler.js';
+
+test('paused scheduler windows retain work until resumed', () => {
+  let handle = scheduler_registerWindow(9001);
+
+  ingestSchedulerCommands(handle, [[3, 0, 4]]);
+  scheduler_setWindowPaused(handle.slot, handle.generation, true);
+
+  assert.equal(scheduler_hasWork(), false);
+  assert.deepEqual(drainSchedulerNodeIds(), []);
+
+  scheduler_setWindowPaused(handle.slot, handle.generation, false);
+
+  assert.equal(scheduler_hasWork(), true);
+  assert.deepEqual(drainSchedulerNodeIds(), [4]);
+  scheduler_deregisterWindow(handle.slot, handle.generation);
+});
 
 async function waitForScheduler() {
   do {

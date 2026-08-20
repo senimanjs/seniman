@@ -102,6 +102,7 @@ export function createFixture(options = {}) {
       return {
         ...metrics,
         retainedOutputBytes: root.retainedOutputBytes,
+        outputBackpressurePaused: root.globalOutputBackpressurePaused,
       };
     },
   };
