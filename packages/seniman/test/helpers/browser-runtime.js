@@ -1,159 +1,32 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import {
+  Element,
+  Node,
+  Text
+} from '../../src/crawler/dom.js';
+
+export { Element, Node, Text };
 
 const browserSource = readFile(
   new URL('../../frontend/browser.js', import.meta.url),
   'utf8'
 );
 
-export class FakeNode {
-  constructor() {
-    this.parentNode = null;
-  }
-
-  get parentElement() {
-    return this.parentNode instanceof FakeElement ? this.parentNode : null;
-  }
-
-  get nextSibling() {
-    if (!this.parentNode) {
-      return null;
-    }
-
-    let index = this.parentNode.childNodes.indexOf(this);
-    return this.parentNode.childNodes[index + 1] || null;
-  }
-
-  remove() {
-    if (!this.parentNode) {
-      return;
-    }
-
-    let index = this.parentNode.childNodes.indexOf(this);
-    if (index >= 0) {
-      this.parentNode.childNodes.splice(index, 1);
-    }
-    this.parentNode = null;
-  }
-}
-
-export class FakeText extends FakeNode {
-  constructor(data) {
-    super();
-    this.data = data;
-    this.nodeName = '#text';
-  }
-
-  cloneNode() {
-    return new FakeText(this.data);
-  }
-
-  get textContent() {
-    return this.data;
-  }
-}
-
-export class FakeElement extends FakeNode {
-  constructor(tagName) {
-    super();
-    this.tagName = tagName.toLowerCase();
-    this.nodeName = tagName.toUpperCase();
-    this.childNodes = [];
-    this.listeners = new Map();
-    this.attributeMap = new Map();
-    this.style = {
-      cssText: '',
-      setProperty: (name, value) => {
-        this.style[name] = value;
-      }
-    };
-  }
-
-  appendChild(node) {
-    this.insertBefore(node, null);
-    return node;
-  }
-
-  insertBefore(node, marker) {
-    if (node.parentNode) {
-      node.remove();
-    }
-
-    let index = marker == null
-      ? this.childNodes.length
-      : this.childNodes.indexOf(marker);
-
-    if (index < 0) {
-      throw new Error('Insertion marker is not a child of this element');
-    }
-
-    this.childNodes.splice(index, 0, node);
-    node.parentNode = this;
-    return node;
-  }
-
-  cloneNode(deep = false) {
-    let clone = new FakeElement(this.tagName);
-    for (let [name, value] of this.attributeMap) {
-      clone.setAttribute(name, value);
-    }
-
-    if (deep) {
-      for (let child of this.childNodes) {
-        clone.appendChild(child.cloneNode(true));
-      }
-    }
-    return clone;
-  }
-
-  setAttribute(name, value) {
-    this.attributeMap.set(name, String(value));
-  }
-
-  removeAttribute(name) {
-    this.attributeMap.delete(name);
-  }
-
-  addEventListener(type, fn) {
-    let listeners = this.listeners.get(type);
-    if (listeners) {
-      listeners.push(fn);
-    } else {
-      this.listeners.set(type, [fn]);
-    }
-  }
-
-  get attributes() {
-    return Array.from(this.attributeMap, ([name, value]) => ({ name, value }));
-  }
-
-  get children() {
-    return this.childNodes.filter(node => node instanceof FakeElement);
-  }
-
-  get firstChild() {
-    return this.childNodes[0] || null;
-  }
-
-  get textContent() {
-    return this.childNodes.map(node => node.textContent).join('');
-  }
-}
-
 export class FakeDocument {
   constructor() {
-    this.head = new FakeElement('head');
-    this.body = new FakeElement('body');
+    this.head = new Element('head');
+    this.body = new Element('body');
     this.listeners = new Map();
   }
 
   createElement(tagName) {
-    return new FakeElement(tagName);
+    return new Element(tagName);
   }
 
   createTextNode(data) {
-    return new FakeText(data);
+    return new Text(data);
   }
 
   addEventListener(type, fn) {
@@ -208,7 +81,7 @@ export async function createBrowserRuntime(options = {}) {
     DataView,
     Map,
     Set,
-    Text: FakeText,
+    Text,
     TextDecoder,
     TextEncoder,
     Uint8Array,
