@@ -8,14 +8,20 @@ import {
   schedulerOutputBuffer,
   SCHEDULER_INPUT_PAGE_SIZE,
   SCHEDULER_OUTPUT_PAGE_SIZE,
-  SCHEDULER_TURN_WORK_BUDGET,
+  BASE_WORK_QUANTUM,
+  GLOBAL_TURN_TARGET_MS,
+  WINDOW_SLICE_MAX_WORK_QUANTA,
+  WINDOW_SLICE_TARGET_MS,
   onDispose,
   useState,
   useEffect
 } from '../dist/state.js';
 import {
   scheduler_deregisterWindow,
+  scheduler_acquireWindow,
+  scheduler_releaseWindow,
   scheduler_drainWork,
+  scheduler_drainWindow,
   scheduler_hasWork,
   scheduler_ingest,
   scheduler_registerWindow,
@@ -53,6 +59,9 @@ function createWindow(id) {
     destroyed: false,
     publicationOpen: false,
     publicationPacketId: 0,
+    global_writeOffset: 0,
+    global_publishOffset: 0,
+    flushCount: 0,
     lastReadableId: 1,
     lastEffectId: 2,
     beginPublication(packetId) {
@@ -62,6 +71,9 @@ function createWindow(id) {
     commitPublication() {
       this.publicationOpen = false;
       this.publicationPacketId = 0;
+    },
+    flushCommandBuffer() {
+      this.flushCount++;
     }
   };
 }
@@ -202,26 +214,136 @@ test('scheduler input rolls over without growing its shared page', async () => {
   deregisterWindow(window);
 });
 
-test('scheduler yields after the per-turn work budget', async () => {
-  let window = createWindow(25000);
-  let effectRunCount = 0;
-  let effectCount = SCHEDULER_TURN_WORK_BUDGET + 10;
+test('host scheduling constants match the configured window slices', () => {
+  assert.equal(WINDOW_SLICE_TARGET_MS, 0.5);
+  assert.equal(GLOBAL_TURN_TARGET_MS, 2.0);
+  assert.equal(BASE_WORK_QUANTUM, SCHEDULER_WINDOW_WORK_QUANTUM);
+  assert.equal(BASE_WORK_QUANTUM, 1024);
+  assert.equal(WINDOW_SLICE_MAX_WORK_QUANTA, 8);
+});
 
-  registerWindow(window);
-  runInWindow(window.id, () => {
-    for (let i = 0; i < effectCount; i++) {
-      useEffect(() => effectRunCount++);
+test('host releases a busy window within the per-window quantum ceiling', async () => {
+  let busyWindow = createWindow(25000);
+  let smallWindow = createWindow(25001);
+  let maximumFirstSliceWork = BASE_WORK_QUANTUM *
+    WINDOW_SLICE_MAX_WORK_QUANTA;
+  let busyEffectCount = maximumFirstSliceWork + 10;
+  let runOrder = [];
+
+  registerWindow(busyWindow);
+  registerWindow(smallWindow);
+  runInWindow(busyWindow.id, () => {
+    for (let i = 0; i < busyEffectCount; i++) {
+      useEffect(() => runOrder.push('busy'));
     }
   });
-
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(effectRunCount, SCHEDULER_TURN_WORK_BUDGET);
-  assert.equal(scheduler_hasWork(), true);
+  runInWindow(smallWindow.id, () => {
+    useEffect(() => runOrder.push('small'));
+  });
 
   await waitForScheduler();
-  assert.equal(effectRunCount, effectCount);
+  let smallWindowRunIndex = runOrder.indexOf('small');
 
-  deregisterWindow(window);
+  assert.ok(smallWindowRunIndex > 0);
+  assert.ok(smallWindowRunIndex <= maximumFirstSliceWork);
+  assert.equal(
+    runOrder.filter(window => window === 'busy').length,
+    busyEffectCount
+  );
+
+  deregisterWindow(busyWindow);
+  deregisterWindow(smallWindow);
+});
+
+test('a leased window keeps consecutive quanta until release', () => {
+  let busyHandle = scheduler_registerWindow(26000);
+  let smallHandle = scheduler_registerWindow(26001);
+  let busyNodeCount = SCHEDULER_WINDOW_WORK_QUANTUM * 2 + 10;
+  let busyCommands = [];
+
+  for (let i = 0; i < busyNodeCount; i++) {
+    busyCommands.push([3, 0, 4 + i * 2]);
+  }
+
+  ingestSchedulerCommands(busyHandle, busyCommands);
+  ingestSchedulerCommands(smallHandle, [[3, 0, 4]]);
+
+  let output = Buffer.alloc(SCHEDULER_OUTPUT_PAGE_SIZE);
+  let lease = scheduler_acquireWindow();
+
+  assert.deepEqual(lease, busyHandle);
+
+  let firstLength = scheduler_drainWindow(
+    output,
+    lease.slot,
+    lease.generation
+  );
+  assert.equal(output.readUInt32LE(20), SCHEDULER_WINDOW_WORK_QUANTUM);
+  assert.ok(firstLength > 0);
+
+  let secondLength = scheduler_drainWindow(
+    output,
+    lease.slot,
+    lease.generation
+  );
+  assert.equal(output.readUInt32LE(20), SCHEDULER_WINDOW_WORK_QUANTUM);
+  assert.ok(secondLength > 0);
+
+  scheduler_releaseWindow(lease.slot, lease.generation);
+
+  lease = scheduler_acquireWindow();
+  assert.deepEqual(lease, smallHandle);
+  assert.ok(scheduler_drainWindow(output, lease.slot, lease.generation) > 0);
+  assert.equal(output.readUInt32LE(20), 1);
+  scheduler_releaseWindow(lease.slot, lease.generation);
+
+  lease = scheduler_acquireWindow();
+  assert.deepEqual(lease, busyHandle);
+  assert.ok(scheduler_drainWindow(output, lease.slot, lease.generation) > 0);
+  assert.equal(output.readUInt32LE(20), 10);
+  scheduler_releaseWindow(lease.slot, lease.generation);
+
+  assert.equal(scheduler_acquireWindow(), null);
+  assert.equal(scheduler_hasWork(), false);
+
+  scheduler_deregisterWindow(busyHandle.slot, busyHandle.generation);
+  scheduler_deregisterWindow(smallHandle.slot, smallHandle.generation);
+});
+
+test('pausing a leased window retains its unfinished work until resume', () => {
+  let handle = scheduler_registerWindow(27000);
+  let commands = [];
+
+  for (let i = 0; i < SCHEDULER_WINDOW_WORK_QUANTUM + 1; i++) {
+    commands.push([3, 0, 4 + i * 2]);
+  }
+
+  ingestSchedulerCommands(handle, commands);
+
+  let lease = scheduler_acquireWindow();
+  let output = Buffer.alloc(SCHEDULER_OUTPUT_PAGE_SIZE);
+
+  assert.deepEqual(lease, handle);
+  assert.ok(scheduler_drainWindow(output, lease.slot, lease.generation) > 0);
+  assert.equal(output.readUInt32LE(20), SCHEDULER_WINDOW_WORK_QUANTUM);
+
+  scheduler_setWindowPaused(handle.slot, handle.generation, true);
+  scheduler_releaseWindow(lease.slot, lease.generation);
+
+  assert.equal(scheduler_hasWork(), false);
+  assert.equal(scheduler_acquireWindow(), null);
+
+  scheduler_setWindowPaused(handle.slot, handle.generation, false);
+  assert.equal(scheduler_hasWork(), true);
+
+  lease = scheduler_acquireWindow();
+  assert.deepEqual(lease, handle);
+  assert.ok(scheduler_drainWindow(output, lease.slot, lease.generation) > 0);
+  assert.equal(output.readUInt32LE(20), 1);
+  scheduler_releaseWindow(lease.slot, lease.generation);
+
+  assert.equal(scheduler_hasWork(), false);
+  scheduler_deregisterWindow(handle.slot, handle.generation);
 });
 
 test('stale buffered input cannot target a recycled scheduler slot', async () => {

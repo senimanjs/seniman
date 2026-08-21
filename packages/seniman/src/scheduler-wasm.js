@@ -5,7 +5,7 @@ const MAX_U32 = 0xffffffff;
 
 export const SCHEDULER_PACKET_START = 1;
 export const SCHEDULER_PACKET_END = 2;
-export const SCHEDULER_WINDOW_WORK_QUANTUM = 256;
+export const SCHEDULER_WINDOW_WORK_QUANTUM = 1024;
 export const SCHEDULER_INPUT_PAGE_SIZE = 64 * 1024;
 export const SCHEDULER_OUTPUT_PAGE_SIZE = 64 * 1024;
 
@@ -75,6 +75,27 @@ export function scheduler_setWindowPaused(slot, generation, paused) {
   schedulerCore.scheduler_set_window_paused(slot, generation, paused ? 1 : 0);
 }
 
+export function scheduler_acquireWindow() {
+  let slot = schedulerCore.scheduler_acquire_window();
+
+  if (slot === 0) {
+    return null;
+  }
+
+  return {
+    slot,
+    generation: schedulerCore.scheduler_window_generation(slot)
+  };
+}
+
+export function scheduler_releaseWindow(slot, generation) {
+  let released = schedulerCore.scheduler_release_window(slot, generation);
+
+  if (released === 0) {
+    throw new Error('Cannot release a scheduler window with a continued packet');
+  }
+}
+
 export function scheduler_ingest(buffer, length) {
   if (length > buffer.length || length > SCHEDULER_INPUT_PAGE_SIZE) {
     throw new Error('Scheduler input length exceeds its buffer');
@@ -108,6 +129,29 @@ export function scheduler_drainWork(buffer, workBudget = Infinity) {
   let length = schedulerCore.scheduler_drain_work(
     capacity,
     normalizedBudget
+  );
+
+  refreshMemoryViews();
+
+  if (buffer !== outputBuffer && length > 0) {
+    outputBuffer.copy(buffer, 0, 0, length);
+  }
+
+  return length;
+}
+
+export function scheduler_drainWindow(buffer, slot, generation) {
+  if (buffer.length < OUTPUT_PACKET_HEADER_SIZE + 4) {
+    throw new Error('Scheduler output buffer is too small');
+  }
+
+  refreshMemoryViews();
+
+  let capacity = Math.min(buffer.length, SCHEDULER_OUTPUT_PAGE_SIZE);
+  let length = schedulerCore.scheduler_drain_window(
+    capacity,
+    slot,
+    generation
   );
 
   refreshMemoryViews();

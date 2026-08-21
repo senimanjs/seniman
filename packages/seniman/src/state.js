@@ -11,15 +11,19 @@ import {
   scheduler_registerWindow,
   scheduler_deregisterWindow,
   scheduler_setWindowPaused,
+  scheduler_acquireWindow,
+  scheduler_releaseWindow,
   scheduler_ingest,
-  scheduler_drainWork,
+  scheduler_drainWindow,
   scheduler_hasWork,
   scheduler_getInputBuffer,
   SCHEDULER_PACKET_START,
   SCHEDULER_PACKET_END,
+  SCHEDULER_WINDOW_WORK_QUANTUM,
   SCHEDULER_INPUT_PAGE_SIZE,
   SCHEDULER_OUTPUT_PAGE_SIZE
 } from "./scheduler.js";
+import { STANDARD_PAGE_SIZE } from './buffer-pool.js';
 
 export {
   SCHEDULER_INPUT_PAGE_SIZE,
@@ -202,21 +206,84 @@ function _scheduleExecWork() {
 
 function _execWork() {
   _flushSchedulerInput();
-  let packetContinues = false;
+  let globalDeadline = schedulerNow() + GLOBAL_TURN_TARGET_MS;
 
-  do {
-    let outputLength = scheduler_drainWork(
-      schedulerOutputBuffer,
-      packetContinues ? 0 : SCHEDULER_TURN_WORK_BUDGET
-    );
+  while (true) {
+    let handle = scheduler_acquireWindow();
 
-    if (outputLength === 0) {
+    if (!handle) {
       break;
     }
 
-    packetContinues = _executeSchedulerOutput(outputLength);
-    _flushSchedulerInput();
-  } while (packetContinues);
+    let sliceDeadline = Math.min(
+      globalDeadline,
+      schedulerNow() + WINDOW_SLICE_TARGET_MS
+    );
+    let quantumCount = 0;
+    let packetContinues = false;
+    let checkedTime = 0;
+
+    try {
+      while (quantumCount < WINDOW_SLICE_MAX_WORK_QUANTA) {
+        let outputLength = scheduler_drainWindow(
+          schedulerOutputBuffer,
+          handle.slot,
+          handle.generation
+        );
+
+        if (outputLength === 0) {
+          break;
+        }
+
+        packetContinues = _executeSchedulerOutput(outputLength);
+        _flushSchedulerInput();
+
+        if (packetContinues) {
+          continue;
+        }
+
+        quantumCount++;
+
+        let window = schedulerWindowMap.get(handle.slot);
+
+        if (
+          !window ||
+          window.schedulerGeneration !== handle.generation ||
+          window.destroyed
+        ) {
+          break;
+        }
+
+        let pendingBytes = window.global_writeOffset -
+          window.global_publishOffset;
+        checkedTime = schedulerNow();
+
+        if (
+          pendingBytes >= TARGET_WINDOW_PUBLICATION_BYTES ||
+          checkedTime >= sliceDeadline
+        ) {
+          break;
+        }
+      }
+    } finally {
+      let window = schedulerWindowMap.get(handle.slot);
+
+      if (
+        window &&
+        window.schedulerGeneration === handle.generation &&
+        !window.destroyed &&
+        !window.publicationOpen
+      ) {
+        window.flushCommandBuffer();
+      }
+
+      scheduler_releaseWindow(handle.slot, handle.generation);
+    }
+
+    if (schedulerNow() >= globalDeadline) {
+      break;
+    }
+  }
 
   if (scheduler_hasWork()) {
     _scheduleExecWork();
@@ -227,7 +294,19 @@ function _execWork() {
 
 ////////////////////////////////////
 
-export const SCHEDULER_TURN_WORK_BUDGET = 1024;
+const schedulerNow = globalThis.performance?.now
+  ? globalThis.performance.now.bind(globalThis.performance)
+  : Date.now;
+
+export const WINDOW_SLICE_TARGET_MS = 0.5;
+export const GLOBAL_TURN_TARGET_MS = 2.0;
+export const BASE_WORK_QUANTUM = SCHEDULER_WINDOW_WORK_QUANTUM;
+export const WINDOW_SLICE_MAX_WORK_QUANTA = 8;
+export const TARGET_WINDOW_PUBLICATION_BYTES = STANDARD_PAGE_SIZE;
+
+if (BASE_WORK_QUANTUM !== 1024) {
+  throw new Error('The host and scheduler work quantum must match');
+}
 const SCHEDULER_INPUT_FRAME_HEADER_SIZE = 12;
 const SCHEDULER_OUTPUT_PACKET_HEADER_SIZE = 28;
 
@@ -317,7 +396,7 @@ function _executeSchedulerOutput(length) {
     }
 
     if (isCurrentWindow && (flags & SCHEDULER_PACKET_END)) {
-      window.commitPublication(packetId);
+      window.commitPublication(packetId, false);
     }
 
     packetContinues = (flags & SCHEDULER_PACKET_END) === 0;

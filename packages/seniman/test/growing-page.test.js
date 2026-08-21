@@ -116,6 +116,34 @@ test('window publication commits rollover pages as one replayable packet', () =>
   assert.deepEqual(output, [committedPacket]);
 });
 
+test('deferred scheduler publications flush as one window message', () => {
+  let output = [];
+  let window = new Window(
+    { lowMemoryMode: false },
+    { windowId: '123456789012345678901' },
+    null,
+    null,
+    buffer => output.push(Buffer.from(buffer))
+  );
+
+  window.flushCommandBuffer();
+  output = [];
+
+  window.beginPublication(1);
+  window._allocCommandBuffer(100).fill(1);
+  window.commitPublication(1, false);
+  window.beginPublication(2);
+  window._allocCommandBuffer(200).fill(2);
+  window.commitPublication(2, false);
+
+  assert.deepEqual(output, []);
+
+  window.flushCommandBuffer();
+
+  assert.equal(output.length, 1);
+  assert.equal(output[0].length, 300);
+});
+
 test('ping participates in the published and acknowledged byte stream', () => {
   let output = [];
   let window = new Window(

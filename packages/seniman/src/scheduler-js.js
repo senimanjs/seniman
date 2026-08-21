@@ -11,7 +11,7 @@ const OUTPUT_PACKET_HEADER_SIZE = 28;
 
 export const SCHEDULER_PACKET_START = 1;
 export const SCHEDULER_PACKET_END = 2;
-export const SCHEDULER_WINDOW_WORK_QUANTUM = 256;
+export const SCHEDULER_WINDOW_WORK_QUANTUM = 1024;
 
 const windowMap = new Map();
 const freeWindowSlots = [];
@@ -20,6 +20,7 @@ const windowSlotGenerations = [];
 let nextWindowSlot = 1;
 let activeWindowQueue = [];
 let activeWindowQueueHead = 0;
+let leasedWindow = null;
 
 const OPERATION_NONE = 0;
 const OPERATION_DISPOSE = 1;
@@ -71,6 +72,7 @@ export function scheduler_registerWindow(windowId) {
     generation,
     nextPacketId: 1,
     queued: false,
+    leased: false,
     paused: false,
     childrenListMap: new Map(),
     sourcesMap: new Map(),
@@ -92,6 +94,15 @@ export function scheduler_deregisterWindow(slot, generation) {
   }
 
   window.queued = false;
+
+  if (leasedWindow === window) {
+    leasedWindow = null;
+  }
+
+  if (pendingWindow === window) {
+    clearPendingPacket();
+  }
+
   windowMap.delete(slot);
   freeWindowSlots.push(slot);
 }
@@ -113,7 +124,7 @@ export function scheduler_setWindowPaused(slot, generation, paused) {
 }
 
 function activateWindow(window) {
-  if (window.queued || window.paused) {
+  if (window.queued || window.leased || window.paused) {
     return;
   }
 
@@ -140,7 +151,12 @@ function peekActiveWindow() {
     let generation = activeWindowQueue[activeWindowQueueHead + 1];
     let window = windowMap.get(slot);
 
-    if (window?.queued && !window.paused && window.generation === generation) {
+    if (
+      window?.queued &&
+      !window.leased &&
+      !window.paused &&
+      window.generation === generation
+    ) {
       return window;
     }
 
@@ -164,7 +180,54 @@ function takeActiveWindow() {
 }
 
 export function scheduler_hasWork() {
-  return pendingWindow !== null || peekActiveWindow() !== null;
+  return pendingWindow !== null ||
+    hasWindowWork(leasedWindow) ||
+    peekActiveWindow() !== null;
+}
+
+function hasWindowWork(window) {
+  return !!window && !window.paused && (
+    !window.workQueue.isEmpty() || window.disposeList.length > 0
+  );
+}
+
+export function scheduler_acquireWindow() {
+  if (leasedWindow || pendingWindow) {
+    throw new Error('Cannot acquire a scheduler window while one is leased');
+  }
+
+  let window = takeActiveWindow();
+
+  if (!window) {
+    return null;
+  }
+
+  window.leased = true;
+  leasedWindow = window;
+  return { slot: window.slot, generation: window.generation };
+}
+
+export function scheduler_releaseWindow(slot, generation) {
+  let window = leasedWindow;
+
+  if (
+    !window ||
+    window.slot !== slot ||
+    window.generation !== generation
+  ) {
+    return;
+  }
+
+  if (pendingWindow === window) {
+    throw new Error('Cannot release a scheduler window with a continued packet');
+  }
+
+  leasedWindow = null;
+  window.leased = false;
+
+  if (windowMap.get(slot) === window && hasWindowWork(window)) {
+    activateWindow(window);
+  }
 }
 
 function postStateWrite(stateId) {
@@ -453,10 +516,9 @@ export function scheduler_ingest(buffer, length) {
   ActiveWindow = null;
 }
 
-function startPendingPacket() {
-  let window = takeActiveWindow();
+function startPendingPacket(window = takeActiveWindow()) {
 
-  if (!window) {
+  if (!hasWindowWork(window)) {
     return false;
   }
 
@@ -590,7 +652,8 @@ function calculatePendingPacket() {
 
     if (
       (disposeList.length || !workQueue.isEmpty()) &&
-      windowMap.get(window.slot) === window
+      windowMap.get(window.slot) === window &&
+      !window.leased
     ) {
       activateWindow(window);
     }
@@ -629,23 +692,33 @@ function writeOutputPacketHeader(
   buffer.writeUInt32LE(pendingPacketWorkCost, offset + 24);
 }
 
-export function scheduler_drainWork(buffer, workBudget = Infinity) {
+function drainWork(buffer, workBudget, requestedWindow, packetLimit) {
   if (buffer.length < OUTPUT_PACKET_HEADER_SIZE + 4) {
     throw new Error('Scheduler output buffer is too small');
   }
 
   let writeOffset = 0;
   let drainedWorkCost = 0;
+  let completedPacketCount = 0;
 
   while (
     buffer.length - writeOffset >=
     OUTPUT_PACKET_HEADER_SIZE + 4
   ) {
-    if (pendingWindow === null && drainedWorkCost >= workBudget) {
+    if (
+      pendingWindow === null &&
+      (
+        drainedWorkCost >= workBudget ||
+        completedPacketCount >= packetLimit
+      )
+    ) {
       break;
     }
 
-    if (pendingWindow === null && !startPendingPacket()) {
+    if (
+      pendingWindow === null &&
+      !startPendingPacket(requestedWindow || undefined)
+    ) {
       break;
     }
 
@@ -686,6 +759,7 @@ export function scheduler_drainWork(buffer, workBudget = Infinity) {
 
       if (packetComplete) {
         drainedWorkCost += pendingPacketWorkCost;
+        completedPacketCount++;
         clearPendingPacket();
         continue;
       }
@@ -709,6 +783,7 @@ export function scheduler_drainWork(buffer, workBudget = Infinity) {
 
     if (packetComplete) {
       drainedWorkCost += pendingPacketWorkCost;
+      completedPacketCount++;
       clearPendingPacket();
     } else {
       pendingPacketStarted = true;
@@ -717,6 +792,28 @@ export function scheduler_drainWork(buffer, workBudget = Infinity) {
 
   ActiveOutputBuffer = null;
   return writeOffset;
+}
+
+export function scheduler_drainWork(buffer, workBudget = Infinity) {
+  if (leasedWindow) {
+    throw new Error('Cannot drain global scheduler work while a window is leased');
+  }
+
+  return drainWork(buffer, workBudget, null, Infinity);
+}
+
+export function scheduler_drainWindow(buffer, slot, generation) {
+  let window = leasedWindow;
+
+  if (
+    !window ||
+    window.slot !== slot ||
+    window.generation !== generation
+  ) {
+    return 0;
+  }
+
+  return drainWork(buffer, Infinity, window, 1);
 }
 
 function _writeDeletedNode(nodeId) {
