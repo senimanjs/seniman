@@ -681,10 +681,6 @@
 
       let index = this._findItemIdIndex(itemId);
 
-      if (item instanceof Sequence) {
-        throw new Error('cannot attach sequence to sequence yet');
-      }
-
       let oldItem = this.items[index];
       this.items[index] = item;
 
@@ -699,10 +695,6 @@
     }
 
     _insertItem(index, item) {
-
-      if (item instanceof Sequence) {
-        throw new Error('cannot attach sequence to sequence yet');
-      }
 
       let isAppend = index == this.items.length;
 
@@ -735,6 +727,10 @@
   let getInsertionMarker = (item) => {
     if (item instanceof Text) {
       return item;
+    } else if (item instanceof Sequence) {
+      return item.items.length > 0
+        ? getInsertionMarker(item.items[0])
+        : item.endMarker;
     } else {
       return item.rootEl;
     }

@@ -30,7 +30,7 @@ The Sequence is owned by the scope in which it is created and can be rendered di
 
 **Returns:** an empty mutable Sequence. There is currently no public reactive length getter; keep any application-level count separately when the interface needs to display one.
 
-A Sequence may be rendered once as a child of an element or block. It is a rendering primitive, not a general-purpose data store: it keeps renderable nodes and their disposal owners rather than exposing Array-style reads.
+A Sequence may be rendered at one location at a time as a child of an element, block, or another Sequence. It is a rendering primitive, not a general-purpose data store: it keeps renderable nodes and their disposal owners rather than exposing Array-style reads.
 
 ## Mutations
 
@@ -99,11 +99,12 @@ function LogOutput(props) {
 
 When an external callback mutates a Sequence after the creating function has returned, bind it to the active Seniman scope with `useCallback()` unless the callback API is already invoked from a Seniman handler.
 
-A Sequence cannot currently be inserted as an item inside another Sequence. Wrap the child Sequence in an element or component instead.
+A Sequence may be inserted as an item inside another Sequence. The child remains independently mutable, and removing it from the parent removes its rendered browser nodes. The same child may be inserted again later while its owning scope remains active.
 
 ```js
 let child = createSequence();
 let parent = createSequence();
 
-parent.push(<span>{child}</span>);
+parent.push('before', child, 'after');
+child.push('nested content');
 ```
