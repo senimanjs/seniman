@@ -13,7 +13,7 @@ const INPUT_PAGE_SIZE: usize = 64 * 1024;
 const OUTPUT_PAGE_SIZE: usize = 64 * 1024;
 const INPUT_FRAME_HEADER_SIZE: usize = 12;
 const OUTPUT_PACKET_HEADER_SIZE: usize = 28;
-const WINDOW_WORK_QUANTUM: u32 = 256;
+const WINDOW_WORK_QUANTUM: u32 = 1024;
 
 const PACKET_START: u8 = 1;
 const PACKET_END: u8 = 2;
@@ -34,6 +34,7 @@ struct Window {
     generation: u32,
     next_packet_id: u32,
     queued: bool,
+    leased: bool,
     paused: bool,
     nodes: NodeStore,
     dependency_edges: EdgeArena,
@@ -47,6 +48,7 @@ impl Window {
             generation,
             next_packet_id: 1,
             queued: false,
+            leased: false,
             paused: false,
             nodes: NodeStore::new(),
             dependency_edges: EdgeArena::new(),
@@ -138,6 +140,7 @@ struct Scheduler {
     generations: Vec<u32>,
     free_slots: Vec<u32>,
     active_windows: VecDeque<(u32, u32)>,
+    leased: Option<(u32, u32)>,
     pending: Option<PendingPacket>,
     input: Box<[u8; INPUT_PAGE_SIZE]>,
     output: Box<[u8; OUTPUT_PAGE_SIZE]>,
@@ -150,6 +153,7 @@ impl Scheduler {
             generations: vec![0],
             free_slots: Vec::new(),
             active_windows: VecDeque::new(),
+            leased: None,
             pending: None,
             input: Box::new([0; INPUT_PAGE_SIZE]),
             output: Box::new([0; OUTPUT_PAGE_SIZE]),
@@ -189,6 +193,9 @@ impl Scheduler {
         {
             self.pending = None;
         }
+        if self.leased == Some((slot, generation)) {
+            self.leased = None;
+        }
         self.windows[index] = None;
         self.free_slots.push(slot);
     }
@@ -204,7 +211,7 @@ impl Scheduler {
         let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) else {
             return;
         };
-        if window.queued || window.paused {
+        if window.queued || window.leased || window.paused {
             return;
         }
         window.queued = true;
@@ -216,7 +223,8 @@ impl Scheduler {
             let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) else {
                 continue;
             };
-            if window.queued && !window.paused && window.generation == generation {
+            if window.queued && !window.leased && !window.paused && window.generation == generation
+            {
                 window.queued = false;
                 return Some((slot, generation));
             }
@@ -226,6 +234,16 @@ impl Scheduler {
 
     fn has_work(&self) -> bool {
         self.pending.is_some()
+            || self.leased.is_some_and(|(slot, generation)| {
+                self.windows
+                    .get(slot as usize)
+                    .and_then(Option::as_ref)
+                    .is_some_and(|window| {
+                        window.generation == generation
+                            && !window.paused
+                            && (!window.work_queue.is_empty() || !window.dispose_list.is_empty())
+                    })
+            })
             || self.active_windows.iter().any(|(slot, generation)| {
                 self.windows
                     .get(*slot as usize)
@@ -234,6 +252,48 @@ impl Scheduler {
                         window.queued && !window.paused && window.generation == *generation
                     })
             })
+    }
+
+    fn acquire_window(&mut self) -> u32 {
+        if self.leased.is_some() || self.pending.is_some() {
+            return 0;
+        }
+        let Some((slot, generation)) = self.take_active_window() else {
+            return 0;
+        };
+        let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) else {
+            return 0;
+        };
+        window.leased = true;
+        self.leased = Some((slot, generation));
+        slot
+    }
+
+    fn release_window(&mut self, slot: u32, generation: u32) -> bool {
+        if self.leased != Some((slot, generation)) {
+            return true;
+        }
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|pending| pending.slot == slot && pending.generation == generation)
+        {
+            return false;
+        }
+
+        self.leased = None;
+        let mut reactivate = false;
+        if let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) {
+            if window.generation == generation {
+                window.leased = false;
+                reactivate = !window.paused
+                    && (!window.work_queue.is_empty() || !window.dispose_list.is_empty());
+            }
+        }
+        if reactivate {
+            self.activate_window(slot);
+        }
+        true
     }
 
     fn set_window_paused(&mut self, slot: u32, generation: u32, paused: bool) {
@@ -490,10 +550,16 @@ impl Scheduler {
         Ok(())
     }
 
-    fn start_pending_packet(&mut self) -> bool {
-        let Some((slot, generation)) = self.take_active_window() else {
+    fn start_pending_packet_for(&mut self, slot: u32, generation: u32) -> bool {
+        let Some(window) = self.windows.get(slot as usize).and_then(Option::as_ref) else {
             return false;
         };
+        if window.generation != generation
+            || window.paused
+            || (window.work_queue.is_empty() && window.dispose_list.is_empty())
+        {
+            return false;
+        }
         let window = self.windows[slot as usize].as_mut().unwrap();
         let packet_id = window.next_packet_id;
         window.next_packet_id = window.next_packet_id.wrapping_add(1);
@@ -504,19 +570,42 @@ impl Scheduler {
         true
     }
 
-    fn drain(&mut self, requested_capacity: usize, work_budget: u32) -> usize {
+    fn start_pending_packet(&mut self) -> bool {
+        let Some((slot, generation)) = self.take_active_window() else {
+            return false;
+        };
+        self.start_pending_packet_for(slot, generation)
+    }
+
+    fn drain(
+        &mut self,
+        requested_capacity: usize,
+        work_budget: u32,
+        requested_window: Option<(u32, u32)>,
+        packet_limit: u32,
+    ) -> usize {
         let capacity = requested_capacity.min(OUTPUT_PAGE_SIZE);
         if capacity < OUTPUT_PACKET_HEADER_SIZE + 4 {
             return 0;
         }
         let mut write_offset = 0;
         let mut drained_work_cost = 0;
+        let mut completed_packet_count: u32 = 0;
         while capacity - write_offset >= OUTPUT_PACKET_HEADER_SIZE + 4 {
-            if self.pending.is_none() && drained_work_cost >= work_budget {
+            if self.pending.is_none()
+                && (drained_work_cost >= work_budget || completed_packet_count >= packet_limit)
+            {
                 break;
             }
-            if self.pending.is_none() && !self.start_pending_packet() {
-                break;
+            if self.pending.is_none() {
+                let started = if let Some((slot, generation)) = requested_window {
+                    self.start_pending_packet_for(slot, generation)
+                } else {
+                    self.start_pending_packet()
+                };
+                if !started {
+                    break;
+                }
             }
             let mut pending = self.pending.take().unwrap();
             let index = pending.slot as usize;
@@ -558,13 +647,18 @@ impl Scheduler {
             let complete =
                 pending.phase == PACKET_FORWARD && pending.forward_index == pending.forward_count;
             self.windows[index] = Some(window);
-            if requeue {
+            if requeue
+                && !self.windows[index]
+                    .as_ref()
+                    .is_some_and(|window| window.leased)
+            {
                 self.activate_window(pending.slot);
             }
             if deleted_count == 0 && node_count == 0 {
                 write_offset = header_offset;
                 if complete {
                     drained_work_cost = drained_work_cost.wrapping_add(pending.work_cost);
+                    completed_packet_count = completed_packet_count.wrapping_add(1);
                     continue;
                 }
                 self.pending = Some(pending);
@@ -584,12 +678,27 @@ impl Scheduler {
             );
             if complete {
                 drained_work_cost = drained_work_cost.wrapping_add(pending.work_cost);
+                completed_packet_count = completed_packet_count.wrapping_add(1);
             } else {
                 pending.started = true;
                 self.pending = Some(pending);
             }
         }
         write_offset
+    }
+
+    fn drain_work(&mut self, requested_capacity: usize, work_budget: u32) -> usize {
+        if self.leased.is_some() {
+            return 0;
+        }
+        self.drain(requested_capacity, work_budget, None, u32::MAX)
+    }
+
+    fn drain_window(&mut self, requested_capacity: usize, slot: u32, generation: u32) -> usize {
+        if self.leased != Some((slot, generation)) {
+            return 0;
+        }
+        self.drain(requested_capacity, u32::MAX, Some((slot, generation)), 1)
     }
 }
 
@@ -946,6 +1055,14 @@ pub extern "C" fn scheduler_set_window_paused(slot: u32, generation: u32, paused
     });
 }
 #[no_mangle]
+pub extern "C" fn scheduler_acquire_window() -> u32 {
+    SCHEDULER.with(|scheduler| scheduler.borrow_mut().acquire_window())
+}
+#[no_mangle]
+pub extern "C" fn scheduler_release_window(slot: u32, generation: u32) -> u32 {
+    SCHEDULER.with(|scheduler| scheduler.borrow_mut().release_window(slot, generation) as u32)
+}
+#[no_mangle]
 pub extern "C" fn scheduler_input_ptr() -> *mut u8 {
     SCHEDULER.with(|scheduler| scheduler.borrow_mut().input.as_mut_ptr())
 }
@@ -965,7 +1082,19 @@ pub extern "C" fn scheduler_ingest(length: u32) -> u32 {
 }
 #[no_mangle]
 pub extern "C" fn scheduler_drain_work(capacity: u32, work_budget: u32) -> u32 {
-    SCHEDULER.with(|scheduler| scheduler.borrow_mut().drain(capacity as usize, work_budget) as u32)
+    SCHEDULER.with(|scheduler| {
+        scheduler
+            .borrow_mut()
+            .drain_work(capacity as usize, work_budget) as u32
+    })
+}
+#[no_mangle]
+pub extern "C" fn scheduler_drain_window(capacity: u32, slot: u32, generation: u32) -> u32 {
+    SCHEDULER.with(|scheduler| {
+        scheduler
+            .borrow_mut()
+            .drain_window(capacity as usize, slot, generation) as u32
+    })
 }
 #[no_mangle]
 pub extern "C" fn scheduler_has_work() -> u32 {

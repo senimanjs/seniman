@@ -735,7 +735,7 @@ export class Window {
     this.publicationPacketId = packetId;
   }
 
-  commitPublication(packetId = this.publicationPacketId) {
+  commitPublication(packetId = this.publicationPacketId, flush = true) {
     if (this.destroyed) {
       this.publicationOpen = false;
       this.publicationPacketId = 0;
@@ -755,7 +755,10 @@ export class Window {
     this._flushPendingBlockDeletes();
     this.publicationOpen = false;
     this.publicationPacketId = 0;
-    this._flushMutationGroup();
+
+    if (flush) {
+      this._flushMutationGroup();
+    }
   }
 
   sendPing() {
