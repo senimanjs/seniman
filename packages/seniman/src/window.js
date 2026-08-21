@@ -2148,13 +2148,18 @@ export class Window {
             });
             break;
           }
-          case Array:
-            throw new Error('Sequence within a sequence is not supported yet');
-            //this._attachList_blockAnchor(blockId, anchorIndex, nodeResult);
+          case Array: {
+            // Arrays render as a child sequence owned by this item, just as
+            // component and function results are owned by their placeholders.
+            encodedItem = emptyBuffer;
+
+            disposeFn = useDisposableEffect(() => {
+              this._attachListV3(sequenceId, itemId, nodeResult);
+            });
             break;
+          }
           case Sequence:
-            throw new Error('Sequence within a sequence is not supported yet');
-            // this._attachSequence_blockAnchor(blockId, anchorIndex, nodeResult);
+            encodedItem = nodeResult.id | (1 << 15);
             break;
           default:
             console.error('Unknown nodeResult', nodeResult);

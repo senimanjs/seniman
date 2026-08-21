@@ -1,191 +1,7 @@
-let selfClosingTagSet = new Set(['br', 'hr', 'img', 'input', 'link', 'meta']);
+import { Text, createElement, selfClosingTagSet } from './dom.js';
 
 let magicSplitUint16 = (key) => {
   return [key & (1 << 15), key & 0x7FFF];
-}
-
-function escape(s) {
-  let lookup = {
-    '&': "&amp;",
-    '"': "&quot;",
-    '\'': "&apos;",
-    '<': "&lt;",
-    '>': "&gt;"
-  };
-  return s.replace(/[&"'<>]/g, c => lookup[c]);
-}
-
-class Text {
-
-  constructor(text) {
-    this.text = text == '<!>' ? '' : escape(text);
-    this.parentElement = null;
-  }
-
-  insertInto(parentEl, marker) {
-    parentEl.insertBefore(this, marker);
-  }
-
-  toString() {
-    return this.text;
-  }
-
-  cloneNode() {
-    return new Text(this.text);
-  }
-
-  after(child) {
-    if (this.parentElement) {
-      let index = this.parentElement.children.indexOf(this);
-
-      if (index == -1) {
-        this.parentElement.children.push(child);
-      } else {
-        this.parentElement.children.splice(index + 1, 0, child);
-      }
-
-      child.parentElement = this.parentElement;
-    } else {
-      throw new Error('Cannot call after() on a Text that is not attached to a parent');
-    }
-  }
-
-  remove() {
-    if (this.parentElement) {
-      let index = this.parentElement.children.indexOf(this);
-
-      if (index != -1) {
-        this.parentElement.children.splice(index, 1);
-        this.parentElement = null;
-      }
-    }
-  }
-
-  get nextSibling() {
-    if (this.parentElement) {
-      let index = this.parentElement.children.indexOf(this);
-      return this.parentElement.children[index + 1];
-    }
-  }
-}
-
-class Element {
-
-  constructor(tagName) {
-    this.tagName = tagName;
-    this.attributes = {};
-    this.styles = {};
-    this.children = [];
-    this.parentElement = null;
-
-    this.style = {
-      setProperty: (key, value) => {
-        this.styles[key] = value;
-      }
-    }
-  }
-
-  printAttributes() {
-    let str = '';
-
-    for (let key in this.attributes) {
-      str += ` ${key}="${this.attributes[key]}"`;
-    }
-
-    let styleKeys = Object.keys(this.styles);
-
-    if (styleKeys.length > 0) {
-      str += ` style="${styleKeys.map(key => `${key}: ${this.styles[key]}`).join('; ')}"`;
-    }
-
-    return str;
-  }
-
-  setAttribute(key, value) {
-    this.attributes[key] = value;
-  }
-
-  toString() {
-    if (selfClosingTagSet.has(this.tagName)) {
-      return `<${this.tagName}${this.printAttributes()}/>`;
-    } else {
-      return `<${this.tagName}${this.printAttributes()}>${this.children.map(child => child.toString()).join('')}</${this.tagName}>`;
-    }
-  }
-
-  remove() {
-    if (this.parentElement) {
-      let index = this.parentElement.children.indexOf(this);
-
-      if (index != -1) {
-        this.parentElement.children.splice(index, 1);
-        this.parentElement = null;
-      }
-    }
-  }
-
-  appendChild(child) {
-    this.children.push(child);
-    child.parentElement = this;
-  }
-
-  insertBefore(child, beforeChild) {
-    let index = this.children.indexOf(beforeChild);
-
-    if (index == -1) {
-      this.children.push(child);
-    } else {
-      this.children.splice(index, 0, child);
-    }
-
-    child.parentElement = this;
-  }
-
-  after(child) {
-    if (this.parentElement) {
-      let index = this.parentElement.children.indexOf(this);
-
-      if (index == -1) {
-        this.parentElement.children.push(child);
-      } else {
-        this.parentElement.children.splice(index + 1, 0, child);
-      }
-
-      child.parentElement = this.parentElement;
-
-    } else {
-      console.error('after() called on element without parentElement', this);
-    }
-  }
-
-  cloneNode() {
-    let newElement = createElement(this.tagName);
-    newElement.attributes = { ...this.attributes };
-    newElement.styles = { ...this.styles };
-
-    this.children.forEach(child => {
-      let newChild = child.cloneNode();
-      newElement.appendChild(newChild);
-    });
-
-    return newElement;
-  }
-
-  get firstChild() {
-    return this.children[0];
-  }
-
-  get nextSibling() {
-    if (this.parentElement) {
-      let index = this.parentElement.children.indexOf(this);
-      return this.parentElement.children[index + 1];
-    }
-  }
-}
-
-
-function createElement(tagName) {
-  return new Element(tagName);
 }
 
 export class HtmlRenderingContext {
@@ -265,10 +81,6 @@ export class HtmlRenderingContext {
 
         let index = this._findItemIdIndex(itemId);
 
-        if (item instanceof Sequence) {
-          throw new Error('cannot attach sequence to sequence yet');
-        }
-
         let oldItem = this.items[index];
         this.items[index] = item;
 
@@ -283,10 +95,6 @@ export class HtmlRenderingContext {
       }
 
       _insertItem(index, item) {
-
-        if (item instanceof Sequence) {
-          throw new Error('cannot attach sequence to sequence yet');
-        }
 
         let isAppend = index == this.items.length;
 
@@ -358,6 +166,10 @@ export class HtmlRenderingContext {
     let getInsertionMarker = (item) => {
       if (item instanceof Text) {
         return item;
+      } else if (item instanceof Sequence) {
+        return item.items.length > 0
+          ? getInsertionMarker(item.items[0])
+          : item.endMarker;
       } else {
         return item.rootEl;
       }
