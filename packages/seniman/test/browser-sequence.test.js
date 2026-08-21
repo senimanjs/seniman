@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import vm from 'node:vm';
 import {
   _createComponent,
   createSequence,
@@ -14,98 +12,10 @@ import {
   runInWindow
 } from '../dist/state.js';
 import { Window } from '../dist/window.js';
-
-const browserSource = readFile(
-  new URL('../frontend/browser.js', import.meta.url),
-  'utf8'
-);
-
-class FakeNode {
-  constructor() {
-    this.parentNode = null;
-  }
-
-  get parentElement() {
-    return this.parentNode instanceof FakeElement ? this.parentNode : null;
-  }
-
-  remove() {
-    if (!this.parentNode) {
-      return;
-    }
-
-    let index = this.parentNode.childNodes.indexOf(this);
-    if (index >= 0) {
-      this.parentNode.childNodes.splice(index, 1);
-    }
-    this.parentNode = null;
-  }
-}
-
-class FakeText extends FakeNode {
-  constructor(data) {
-    super();
-    this.data = data;
-  }
-
-  get textContent() {
-    return this.data;
-  }
-}
-
-class FakeElement extends FakeNode {
-  constructor(tagName) {
-    super();
-    this.tagName = tagName;
-    this.childNodes = [];
-    this.listeners = new Map();
-  }
-
-  insertBefore(node, marker) {
-    if (node.parentNode) {
-      node.remove();
-    }
-
-    let index = marker == null
-      ? this.childNodes.length
-      : this.childNodes.indexOf(marker);
-
-    if (index < 0) {
-      throw new Error('Insertion marker is not a child of this element');
-    }
-
-    this.childNodes.splice(index, 0, node);
-    node.parentNode = this;
-  }
-
-  addEventListener(type, fn) {
-    this.listeners.set(type, fn);
-  }
-
-  get textContent() {
-    return this.childNodes.map(node => node.textContent).join('');
-  }
-}
-
-class FakeDocument {
-  constructor() {
-    this.head = new FakeElement('head');
-    this.body = new FakeElement('body');
-    this.listeners = new Map();
-  }
-
-  createElement(tagName) {
-    return new FakeElement(tagName);
-  }
-
-  createTextNode(data) {
-    return new FakeText(data);
-  }
-
-  addEventListener(type, fn) {
-    this.listeners.set(type, fn);
-  }
-}
+import {
+  createBrowserRuntime,
+  waitForText
+} from './helpers/browser-runtime.js';
 
 function uint16(value) {
   let buffer = Buffer.alloc(2);
@@ -163,76 +73,6 @@ function remove(sequenceId, index, count) {
     uint16(index),
     uint16(count)
   ]);
-}
-
-async function createBrowserRuntime() {
-  let sockets = [];
-  let document = new FakeDocument();
-
-  class MockWebSocket {
-    constructor() {
-      sockets.push(this);
-    }
-
-    send() {}
-    close() {}
-  }
-
-  let browserWindow = {
-    origin: 'https://example.test',
-    innerWidth: 800,
-    innerHeight: 600,
-    addEventListener() {},
-  };
-
-  vm.runInNewContext(await browserSource, {
-    ArrayBuffer,
-    DataView,
-    Map,
-    Set,
-    Text: FakeText,
-    TextDecoder,
-    TextEncoder,
-    Uint8Array,
-    URL,
-    WeakMap,
-    WebSocket: MockWebSocket,
-    clearTimeout,
-    console,
-    document,
-    location: {
-      pathname: '/',
-      search: '',
-      reload() {},
-    },
-    setTimeout,
-    window: browserWindow,
-  });
-
-  let socket = sockets[0];
-  let send = (...commands) => {
-    let buffer = Buffer.concat(commands);
-    let arrayBuffer = buffer.buffer.slice(
-      buffer.byteOffset,
-      buffer.byteOffset + buffer.byteLength
-    );
-    socket.onmessage({ data: arrayBuffer });
-  };
-
-  return { document, send };
-}
-
-async function waitForText(document, expected) {
-  let deadline = Date.now() + 1000;
-
-  while (Date.now() < deadline) {
-    if (document.body.textContent === expected) {
-      return;
-    }
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
-
-  assert.equal(document.body.textContent, expected);
 }
 
 test('an empty nested sequence remains a valid insertion anchor as it grows', async () => {
