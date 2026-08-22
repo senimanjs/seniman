@@ -1,6 +1,6 @@
 # Building a Counter
 
-In this tutorial, we will create a simple counter application using Seniman. The completed code for this tutorial is available in the [`counter`](https://github.com/senimanjs/seniman/tree/main/examples/counter) example.
+In this tutorial, we will create a simple counter application using Seniman. The completed code for this tutorial is available in the [`hello-world`](https://github.com/senimanjs/seniman/tree/main/examples/hello-world) example.
 
 You can download the app's code by running `npx clone-seniman-app` and choosing `counter` from the list of examples. This will create a new local folder with the app code downloaded into it.
 

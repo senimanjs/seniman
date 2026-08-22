@@ -90,7 +90,7 @@ npm install seniman
 And the following for the Babel packages:
 
 ```sh
-npm install --save-dev @babel/cli @babel/plugin-syntax-jsx
+npm install --save-dev @babel/core@^7 @babel/cli@^7
 ```
 
 ##### Note: Seniman supports Node.JS v16 or above.
@@ -212,7 +212,12 @@ No, only the resulting DOM operations are sent to the client -- your component c
 While most UI patterns are entirely implementable server-side with Seniman, Seniman also supports running custom logic on the client. Things that naturally need to run on the client like Google Single Sign-On, or custom analytics can be implemented using the `$c` and `$s` syntax -- explained in [this](https://seniman.dev/docs/client-functions) docs page.
 
 ### TypeScript support?
-Some early users are using TypeScript to build with Seniman -- official support coming soon!
+The Seniman Babel plugin can compile TSX when it is combined with
+`@babel/preset-typescript`. The Seniman plugin handles framework syntax and
+erases types inside `$c` client functions; Babel's TypeScript preset erases
+types from the surrounding module. Seniman ships first-party declarations for
+its public APIs, JSX elements, `$c`, and `$s`; use `tsc --noEmit` separately for
+type checking because Babel only performs syntax transformation.
 
 ### How about SEO support?
 There is a separate HTML renderer that can be activated specifically when a request is coming from a search engine crawler. This will allow you to implement SEO support for your Seniman app. We're already using this for our docs site at [seniman.dev](https://seniman.dev) -- documentation will also be coming soon!

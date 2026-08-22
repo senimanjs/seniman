@@ -1,12 +1,12 @@
 import t from '@babel/types';
 
-export function createCompilerInternalImportsExpression(options) {
+export function createCompilerInternalImportsExpression(identifiers) {
   const specifiers = [
-    t.importSpecifier(t.identifier('_$createBlock'), t.identifier('_createBlock')),
-    t.importSpecifier(t.identifier('_$createComponent'), t.identifier('_createComponent')),
-    t.importSpecifier(t.identifier('_useMemo$'), t.identifier('useMemo')),
-    t.importSpecifier(t.identifier('_$declareBlock'), t.identifier('_declareBlock')),
-    t.importSpecifier(t.identifier('_$declareClientFunction'), t.identifier('_declareClientFunction'))
+    t.importSpecifier(t.cloneNode(identifiers.createBlock), t.identifier('_createBlock')),
+    t.importSpecifier(t.cloneNode(identifiers.createComponent), t.identifier('_createComponent')),
+    t.importSpecifier(t.cloneNode(identifiers.useMemo), t.identifier('useMemo')),
+    t.importSpecifier(t.cloneNode(identifiers.declareBlock), t.identifier('_declareBlock')),
+    t.importSpecifier(t.cloneNode(identifiers.declareClientFunction), t.identifier('_declareClientFunction'))
   ];
 
   return t.importDeclaration(
@@ -14,7 +14,7 @@ export function createCompilerInternalImportsExpression(options) {
     t.stringLiteral('seniman/_autogen/v1')
   );
 }
-export function createDeclareBlockExpression2(blockId, rootElement) {
+export function createDeclareBlockExpression2(block, identifiers) {
 
   /*
     _declareBlock({
@@ -34,9 +34,9 @@ export function createDeclareBlockExpression2(blockId, rootElement) {
 
   return t.variableDeclaration('const', [
     t.variableDeclarator(
-      t.identifier('_b$' + blockId.toString()),
+      t.cloneNode(block.identifier),
       t.callExpression(
-        t.identifier('_$declareBlock'),
+        t.cloneNode(identifiers.declareBlock),
         [
           t.objectExpression([
             t.objectProperty(
@@ -45,7 +45,7 @@ export function createDeclareBlockExpression2(blockId, rootElement) {
             ),
             t.objectProperty(
               t.identifier('root'),
-              _createElementExpression(rootElement) // Assuming _createElementExpression is defined elsewhere
+              _createElementExpression(block.rootElement)
             )
           ])
         ]
@@ -165,12 +165,12 @@ function _createElementExpression(element) {
   return exp;
 }
 
-export function createDeclareClientFunctionExpression(clientFunction) {
+export function createDeclareClientFunctionExpression(clientFunction, identifiers) {
   return t.variableDeclaration('const', [
     t.variableDeclarator(
-      t.identifier('_c$' + clientFunction.id.toString()),
+      t.cloneNode(clientFunction.identifier),
       t.callExpression(
-        t.identifier('_$declareClientFunction'),
+        t.cloneNode(identifiers.declareClientFunction),
         [
           t.objectExpression([
             t.objectProperty(

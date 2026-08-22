@@ -5,20 +5,25 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "babel src --out-dir dist --extensions .ts,.tsx",
+    "typecheck": "tsc --noEmit"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@babel/core": "^7.29.0",
     "@babel/cli": "^7.20.7",
-    "@babel/plugin-syntax-jsx": "^7.21.4"
+    "@babel/preset-typescript": "^7.29.0",
+    "@types/node": "^26.0.0",
+    "typescript": "^7.0.0"
   },
   "dependencies": {
     "eventsource-parser": "^1.1.1",
     "lowlight": "^2.8.1",
     "mistral-tokenizer-js": "^1.0.0",
     "prismjs": "^1.29.0",
-    "seniman": "^0.0.178",
+    "seniman": "^0.0.182",
     "throttle-debounce": "^5.0.0"
   }
 }

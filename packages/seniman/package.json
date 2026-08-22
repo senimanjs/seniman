@@ -1,8 +1,9 @@
 {
   "name": "seniman",
-  "version": "0.0.184",
+  "version": "0.0.185",
   "description": "",
   "main": "./dist/index.js",
+  "types": "./types/index.d.ts",
   "type": "module",
   "imports": {
     "#seniman-scheduler-core": {
@@ -14,22 +15,59 @@
     ".js"
   ],
   "exports": {
-    ".": "./dist/index.js",
-    "./node": "./dist/entrypoint.node.js",
-    "./router": "./dist/router/index.js",
-    "./entrypoint": "./dist/entrypoint.js",
-    "./express": "./dist/express/index.js",
-    "./server": "./dist/server/index.js",
-    "./workers": "./dist/workers/index.js",
-    "./hono/workers": "./dist/hono/workers/index.js",
-    "./head": "./dist/head.js",
-    "./html": "./dist/html.js",
-    "./_autogen/v1": "./dist/autogen-v1/index.js",
-    "./babel": "./dist/babel/index.js"
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./types/node.d.ts",
+      "default": "./dist/entrypoint.node.js"
+    },
+    "./router": {
+      "types": "./types/router.d.ts",
+      "default": "./dist/router/index.js"
+    },
+    "./entrypoint": {
+      "types": "./types/entrypoint.d.ts",
+      "default": "./dist/entrypoint.js"
+    },
+    "./express": {
+      "types": "./types/legacy.d.ts",
+      "default": "./dist/express/index.js"
+    },
+    "./server": {
+      "types": "./types/legacy.d.ts",
+      "default": "./dist/server/index.js"
+    },
+    "./workers": {
+      "types": "./types/legacy.d.ts",
+      "default": "./dist/workers/index.js"
+    },
+    "./hono/workers": {
+      "types": "./types/legacy.d.ts",
+      "default": "./dist/hono/workers/index.js"
+    },
+    "./head": {
+      "types": "./types/head.d.ts",
+      "default": "./dist/head.js"
+    },
+    "./html": {
+      "types": "./types/html.d.ts",
+      "default": "./dist/html.js"
+    },
+    "./_autogen/v1": {
+      "types": "./types/autogen-v1.d.ts",
+      "default": "./dist/autogen-v1/index.js"
+    },
+    "./babel": {
+      "types": "./types/babel.d.ts",
+      "default": "./dist/babel/index.js"
+    }
   },
   "scripts": {
     "pretest": "npm run build",
-    "test": "node --test test/*.test.js",
+    "test": "npm run test:types && node --test test/*.test.js",
+    "test:types": "tsc --project test/types/tsconfig.json",
     "build": "node scripts/build.js",
     "bump": "node scripts/build.js && npm version patch"
   },
@@ -40,6 +78,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@babel/generator": "^7.29.8",
+    "@babel/plugin-syntax-jsx": "^7.29.7",
+    "@babel/plugin-transform-typescript": "^7.29.7",
+    "@babel/traverse": "^7.29.8",
+    "@babel/types": "^7.29.8",
     "fast-ratelimit": "^3.0.1",
     "nanoid": "^5.1.16",
     "stacktrace-parser": "^0.1.10",
@@ -49,12 +92,16 @@
     "url": "https://github.com/senimanjs/seniman/issues"
   },
   "homepage": "https://github.com/senimanjs/seniman#readme",
+  "peerDependencies": {
+    "@babel/core": "^7.20.0"
+  },
   "devDependencies": {
     "@babel/cli": "^7.20.7",
-    "@babel/generator": "^7.20.14",
-    "@babel/plugin-syntax-jsx": "^7.18.6",
-    "@babel/traverse": "^7.20.13",
+    "@babel/core": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
+    "@types/node": "^26.0.0",
     "execa": "^7.2.0",
+    "typescript": "^7.0.2",
     "uglify-js": "^3.17.4"
   }
 }
