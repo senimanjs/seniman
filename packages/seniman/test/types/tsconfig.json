@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "jsx": "preserve",
+    "strict": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["public-api.test.tsx", "../../types/**/*.d.ts"]
+}

@@ -1,8 +1,9 @@
 import t from '@babel/types';
-import parser from '@babel/parser';
 import traverse from '@babel/traverse';
 import _generate from '@babel/generator';
+import { transformFromAstSync } from '@babel/core';
 import _JSX from '@babel/plugin-syntax-jsx';
+import _transformTypeScript from '@babel/plugin-transform-typescript';
 import {
   createCompilerInternalImportsExpression,
   createDeclareBlockExpression2,
@@ -11,6 +12,8 @@ import {
 
 const generate = _generate.default;
 const JSX = _JSX.default;
+const transformTypeScript = _transformTypeScript.default;
+const COMPILER_STATE = Symbol('senimanCompiler');
 
 const eventTypeIdMap = {
   'onClick': 1,
@@ -153,22 +156,52 @@ function nodeHasDynamicAttribute(node) {
   return false;
 }
 
-export default function () {
+export default function (api) {
+
+  api.assertVersion('^7.20.0');
 
   return {
+    name: 'seniman',
     inherits: JSX,
     visitor: {
-      Program: processProgram
+      Program: {
+        enter(path, state) {
+          state[COMPILER_STATE] = createCompiler(path);
+        },
+        exit(path, state) {
+          state[COMPILER_STATE].finish();
+        }
+      },
+      CallExpression(path, state) {
+        state[COMPILER_STATE].lowerClientFunction(path);
+      },
+      JSXElement: {
+        exit(path, state) {
+          state[COMPILER_STATE].lowerJSXRoot(path);
+        }
+      },
+      JSXFragment: {
+        exit(path, state) {
+          state[COMPILER_STATE].lowerJSXRoot(path);
+        }
+      }
     }
   };
 }
 
 
-function processProgram(path) {
+function createCompiler(path) {
 
   let gatheredUIBlocks = [];
   let gatheredClientFunctions = [];
   let componentExistsInModule = false;
+  let compilerIdentifiers = {
+    createBlock: path.scope.generateUidIdentifier('senimanCreateBlock'),
+    createComponent: path.scope.generateUidIdentifier('senimanCreateComponent'),
+    useMemo: path.scope.generateUidIdentifier('senimanUseMemo'),
+    declareBlock: path.scope.generateUidIdentifier('senimanDeclareBlock'),
+    declareClientFunction: path.scope.generateUidIdentifier('senimanDeclareClientFunction')
+  };
 
   let moduleLevelLastBlockId = 0;
   let moduleLevelLastClientFunctionId = 0;
@@ -231,6 +264,7 @@ function processProgram(path) {
           moduleLevelLastBlockId++;
           contextBlock = {
             id: moduleLevelLastBlockId,//createNewBlockId(),
+            identifier: path.scope.generateUidIdentifier('senimanBlock'),
             rootElement: element,
             anchors: [],
             targetElementCount: 0,
@@ -259,7 +293,7 @@ function processProgram(path) {
         }
 
         if (hasEventHandlers) {
-          handleCreateBlockEventsExpression(contextBlock, targetId, node, process);
+          handleCreateBlockEventsExpression(contextBlock, targetId, node);
         }
 
         handleCreateElementEffectsEntryExpression(contextBlock, targetId, node, element);
@@ -269,7 +303,7 @@ function processProgram(path) {
         }
 
         if (hasLifecycles) {
-          handleCreateElementLifecycleExpression(contextBlock, targetId, node, process);
+          handleCreateElementLifecycleExpression(contextBlock, targetId, node);
         }
 
         if (node.children.length > 0) {
@@ -284,7 +318,7 @@ function processProgram(path) {
         //console.log('EL children', element.children);
 
         if (isNewBlockEnclosingElement) {
-          return createCallBlockExpression(contextBlock);
+          return createCallBlockExpression(contextBlock, compilerIdentifiers);
         } else {
           return null;
         }
@@ -330,7 +364,7 @@ function processProgram(path) {
             let childProcessed;
 
             if (child.type == 'JSXExpressionContainer') {
-              childProcessed = process(child.expression);
+              childProcessed = child.expression;
             } else {
               childProcessed = processJSX(child, null, null);
             }
@@ -339,7 +373,11 @@ function processProgram(path) {
           }
         }
 
-        let createComponentExpression = createCreateComponentExpression(node.openingElement.name, props, process);
+        let createComponentExpression = createCreateComponentExpression(
+          node.openingElement.name,
+          props,
+          compilerIdentifiers
+        );
 
         if (!isNewBlockEnclosingElement) {
           // add new anchor to the currently active UI block
@@ -365,6 +403,7 @@ function processProgram(path) {
         moduleLevelLastBlockId++;
         let contextBlock = {
           id: moduleLevelLastBlockId,
+          identifier: path.scope.generateUidIdentifier('senimanBlock'),
           rootElement: { type: '$text', value: trimmedValue },
           anchors: [],
           targetElementCount: 0,
@@ -376,7 +415,7 @@ function processProgram(path) {
 
         gatheredUIBlocks.push(contextBlock);
 
-        return createCallBlockExpression(contextBlock);
+        return createCallBlockExpression(contextBlock, compilerIdentifiers);
       } else {
         parentElement.children.push({ type: '$text', value: trimmedValue });
         return null;
@@ -389,7 +428,7 @@ function processProgram(path) {
         return null;
       }
 
-      let anchorExpression = process(node.expression);
+      let anchorExpression = node.expression;
 
       // if the expression is an identifier, we'll do nothing
       // if it isn't, then there's special handling to do
@@ -472,261 +511,142 @@ function processProgram(path) {
 
 
     } else {
-      return process(node);
-    }
-  }
-
-  function process(node) {
-
-    // TODO: we probably need to move to the visitor pattern here
-
-    if (node.type == 'File') {
-      node.program = process(node.program);
-      return node;
-    } else if (node.type == 'Program') {
-      let lastImportStatementIndex;
-
-      node.body.map((bodyNode, index) => {
-
-        if (bodyNode.type == 'ImportDeclaration') {
-          lastImportStatementIndex = index;
-        }
-
-        node.body[index] = process(bodyNode);
-      });
-
-      //let encodeCompressionMap = getEncodeCompressionMap();
-
-      gatheredUIBlocks.forEach((block, index) => {
-        node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareBlockExpression2(block.id, block.rootElement));
-      });
-
-      gatheredClientFunctions.forEach((clientFunction, index) => {
-        node.body.splice(lastImportStatementIndex + 1 + index, 0, createDeclareClientFunctionExpression(clientFunction));
-      });
-
-      if (componentExistsInModule || gatheredUIBlocks.length > 0 || gatheredClientFunctions.length > 0) {
-        node.body.splice(0, 0, createCompilerInternalImportsExpression());
-      }
-
-      return node;
-    } else if (node.type == 'IfStatement') {
-      node.consequent = process(node.consequent);
-      node.test = process(node.test);
-
-      if (node.alternate) {
-        node.alternate = process(node.alternate);
-      }
-
-      return node;
-    } else if (node.type == 'ExportDefaultDeclaration') {
-      node.declaration = process(node.declaration);
-
-      return node;
-    } else if (node.type == 'ExportNamedDeclaration') {
-
-      if (node.declaration) {
-        node.declaration = process(node.declaration);
-      } else {
-        node.specifiers.map((specifier, index) => {
-          node.specifiers[index] = process(specifier);
-        });
-      }
-
-      return node;
-    } else if (node.type == 'FunctionDeclaration') {
-      node.body = process(node.body);
-
-      return node;
-    } else if (node.type == 'BlockStatement') {
-      node.body.map((bodyNode, index) => {
-        node.body[index] = process(bodyNode);
-        //console.log('========');
-      });
-      return node;
-    } else if (node.type == 'ReturnStatement') {
-
-      if (node.argument) {
-        //console.log('ReturnStatement', node.argument.type);
-        node.argument = process(node.argument);
-      }
-
-      return node;
-    } else if (node.type == 'JSXText') {
-      throw new Error('JSXText happens outside processJSX');
-    } else if (node.type == 'JSXExpressionContainer') {
-      throw new Error('JSXExpressionContainer happens outside processJSX');
-    } else if (node.type == 'JSXFragment') {
-      return processJSX(node, null, null);
-    } else if (node.type == 'JSXElement') {
-      return processJSX(node, null, null);
-    } else if (node.type == 'CallExpression') {
-
-      // if the function name is runOnClient, then we'll need to do some special handling
-      if (node.callee.type == 'Identifier' && node.callee.name == '$c') {
-
-        // assign a unique ID to this client function
-        moduleLevelLastClientFunctionId++;
-        let clientFunctionId = moduleLevelLastClientFunctionId; //createNewClientFunctionId();
-
-        // node.arguments[0] is the function called within $c((arg1, arg2) => {...})
-        let cParsed = parse$CDefinition(node.arguments[0]);
-
-        let clientFunction = {
-          id: clientFunctionId,
-          argNames: cParsed.argNames,
-          body: cParsed.body
-        };
-
-        // get the first argument, which is the function to run
-        gatheredClientFunctions.push(clientFunction);
-
-        // rewrite the CallExpression node to an object
-        // example: { clientFnId: 3 }
-        node.type = 'ObjectExpression';
-
-        let props = [
-          {
-            type: 'ObjectProperty',
-            key: {
-              type: 'Identifier',
-              name: 'clientFnId'
-            },
-            value: {
-              type: 'NumericLiteral',
-              value: '_c$' + clientFunctionId.toString()
-            }
-          }
-        ];
-
-        if (cParsed.serverBindNodes.length > 0) {
-          props.push({
-            type: 'ObjectProperty',
-            key: {
-              type: 'Identifier',
-              name: 'serverBindFns'
-            },
-            value: {
-              type: 'ArrowFunctionExpression',
-              params: [],
-              body: {
-                type: 'ArrayExpression',
-                elements: cParsed.serverBindNodes
-              }
-            }
-          })
-        }
-
-        node.properties = props;
-      } else {
-        node.arguments.map((bodyNode, index) => {
-          node.arguments[index] = process(bodyNode);
-        });
-      }
-
-      return node;
-
-    } else if (node.type == 'ArrowFunctionExpression') {
-      node.body = process(node.body);
-      return node;
-    } else if (node.type == 'SwitchStatement') {
-
-      for (let i = 0; i < node.cases.length; i++) {
-        node.cases[i] = process(node.cases[i]);
-      }
-
-      return node;
-    } else if (node.type == 'SwitchCase') {
-      if (node.test) {
-        node.test = process(node.test);
-      }
-
-      for (let i = 0; i < node.consequent.length; i++) {
-        node.consequent[i] = process(node.consequent[i]);
-      }
-
-      return node;
-    } else if (node.type == 'LogicalExpression') {
-      node.left = process(node.left);
-      node.right = process(node.right);
-      return node;
-    } else if (node.type == 'OptionalCallExpression') {
-      // do we need to process the callee?
-      //node.callee = process(node.callee);
-      node.arguments.map((bodyNode, index) => {
-        node.arguments[index] = process(bodyNode);
-      });
-
-      return node;
-    } else if (node.type == 'ExpressionStatement') {
-      node.expression = process(node.expression);
-      return node;
-    } else if (node.type == 'ObjectExpression') {
-      node.properties.map((bodyNode, index) => {
-        node.properties[index] = process(bodyNode);
-      });
-      return node;
-    } else if (node.type == 'ObjectProperty') {
-      node.value = process(node.value);
-      return node;
-    } else if (node.type == 'AssignmentExpression') {
-      node.right = process(node.right);
-      return node;
-    } else if (node.type == 'VariableDeclaration') {
-      node.declarations.forEach((decl, index) => {
-        node.declarations[index] = process(decl);
-      });
-      return node;
-    } else if (node.type == 'VariableDeclarator') {
-
-      if (node.init) {
-        node.init = process(node.init);
-      }
-      return node;
-    }
-    // handle class and its methods
-    else if (node.type == 'ClassDeclaration') {
-      node.body.body.forEach((method, index) => {
-        node.body.body[index] = process(method);
-      });
-      return node;
-    } else if (node.type == 'ClassMethod') {
-      node.body = process(node.body);
-      return node;
-    } else if (node.type == 'ClassProperty') {
-      node.value = process(node.value);
-      return node;
-
-    } else if (node.type == 'ConditionalExpression') {
-      node.test = process(node.test);
-      node.consequent = process(node.consequent);
-      node.alternate = process(node.alternate);
-      return node;
-    }
-
-    else if (node.type == 'ArrayExpression') {
-
-      node.elements.forEach((element, index) => {
-        node.elements[index] = process(element);
-      });
-
-      return node;
-
-    } else {
-      //console.log('unknown node', node.type);
       return node;
     }
   }
 
-  process(path.node);
+  function lowerClientFunction(callPath) {
+    if (!callPath.get('callee').isIdentifier({ name: '$c' })) {
+      return;
+    }
+
+    moduleLevelLastClientFunctionId++;
+    let clientFunctionId = moduleLevelLastClientFunctionId;
+    let cParsed = parse$CDefinition(callPath.node.arguments[0]);
+    let clientFunction = {
+      id: clientFunctionId,
+      identifier: path.scope.generateUidIdentifier('senimanClientFunction'),
+      argNames: cParsed.argNames,
+      body: cParsed.body
+    };
+
+    gatheredClientFunctions.push(clientFunction);
+
+    let properties = [
+      t.objectProperty(
+        t.identifier('clientFnId'),
+        t.cloneNode(clientFunction.identifier)
+      )
+    ];
+
+    if (cParsed.serverBindNodes.length > 0) {
+      properties.push(
+        t.objectProperty(
+          t.identifier('serverBindFns'),
+          t.arrowFunctionExpression(
+            [],
+            t.arrayExpression(cParsed.serverBindNodes)
+          )
+        )
+      );
+    }
+
+    callPath.replaceWith(t.objectExpression(properties));
+    callPath.skip();
+  }
+
+  function isDirectJSXChild(jsxPath) {
+    return (
+      jsxPath.listKey == 'children' &&
+      (
+        jsxPath.parentPath.isJSXElement() ||
+        jsxPath.parentPath.isJSXFragment()
+      )
+    );
+  }
+
+  function lowerJSXRoot(jsxPath) {
+    if (isDirectJSXChild(jsxPath)) {
+      return;
+    }
+
+    let replacement = processJSX(jsxPath.node, null, null);
+    jsxPath.replaceWith(replacement);
+    jsxPath.skip();
+  }
+
+  function finish() {
+    if (
+      !componentExistsInModule &&
+      gatheredUIBlocks.length == 0 &&
+      gatheredClientFunctions.length == 0
+    ) {
+      return;
+    }
+
+    path.unshiftContainer(
+      'body',
+      createCompilerInternalImportsExpression(compilerIdentifiers)
+    );
+
+    let declarations = [
+      ...gatheredClientFunctions.map(clientFunction =>
+        createDeclareClientFunctionExpression(
+          clientFunction,
+          compilerIdentifiers
+        )
+      ),
+      ...gatheredUIBlocks.map(block =>
+        createDeclareBlockExpression2(block, compilerIdentifiers)
+      )
+    ];
+    let lastImportPath = path.get('body')
+      .filter(bodyPath => bodyPath.isImportDeclaration())
+      .at(-1);
+
+    lastImportPath.insertAfter(declarations);
+  }
+
+  return {
+    finish,
+    lowerClientFunction,
+    lowerJSXRoot
+  };
 }
 
 
 function parse$CDefinition(functionNode) {
-  // TODO: create a faster implementation that does not implementing print-ing and re-parsing
-  // the $c source code
-  let functionNodeString = generate(functionNode).code;
-  let newFunctionAst = parser.parse(functionNodeString);
+  if (
+    functionNode.type != 'ArrowFunctionExpression' &&
+    functionNode.type != 'FunctionExpression'
+  ) {
+    throw new Error('$c expects an arrow function or function expression');
+  }
+
+  // The client function leaves the surrounding Babel pipeline as a string,
+  // so project-level TypeScript transforms cannot reach it. Erase types from
+  // a cloned AST while leaving the original server module to the host build.
+  let clientFunctionAst = t.file(t.program([
+    t.expressionStatement(t.cloneNode(functionNode, true))
+  ]));
+  let transformedClientResult = transformFromAstSync(
+    clientFunctionAst,
+    undefined,
+    {
+      ast: true,
+      code: false,
+      babelrc: false,
+      configFile: false,
+      filename: 'seniman-client-function.tsx',
+      plugins: [[transformTypeScript, {
+        allExtensions: true,
+        isTSX: true,
+        onlyRemoveTypeImports: true
+      }]]
+    }
+  );
+  let newFunctionAst = transformedClientResult.ast;
+  let transformedFunctionNode = newFunctionAst.program.body[0].expression;
 
   let serverBindNodes = [];
 
@@ -746,12 +666,15 @@ function parse$CDefinition(functionNode) {
   });
 
   // tranform the argument signature into a list of argument names
-  let argNames = functionNode.params.map((param) => {
+  let argNames = transformedFunctionNode.params.map((param) => {
+    if (param.type != 'Identifier') {
+      throw new Error('$c parameters must be identifiers');
+    }
+
     return param.name;
   });
 
-  // fetch the first function node from the program AST
-  let functionNodeAst = newFunctionAst.program.body[0].expression.body;
+  let functionNodeAst = transformedFunctionNode.body;
 
   // if the function is a single-line arrow function
   // example: (e) => e.target.value
@@ -760,10 +683,9 @@ function parse$CDefinition(functionNode) {
   //    e.target.value;
   // }
   if (functionNodeAst.type != 'BlockStatement') {
-    functionNodeAst = {
-      type: 'BlockStatement',
-      body: [functionNodeAst]
-    }
+    functionNodeAst = t.blockStatement([
+      t.expressionStatement(functionNodeAst)
+    ]);
   }
 
   if (serverBindNodes.length > 0) {
@@ -810,13 +732,13 @@ function parse$CDefinition(functionNode) {
   }
 }
 
-function handleCreateBlockEventsExpression(contextBlock, targetId, node, process) {
+function handleCreateBlockEventsExpression(contextBlock, targetId, node) {
   eventNames.forEach(eventName => {
     let eventAttribute = getAttribute(node, eventName);
 
     if (eventAttribute) {
       let fnExpression = eventAttribute.expression;
-      contextBlock.eventHandlers.push(createBlockEventHandlerEntryExpression(targetId, eventTypeIdMap[eventName], process(fnExpression)));
+      contextBlock.eventHandlers.push(createBlockEventHandlerEntryExpression(targetId, eventTypeIdMap[eventName], fnExpression));
     }
   });
 }
@@ -853,13 +775,13 @@ function handleCreateElementRefsExpression(contextBlock, targetId, node) {
   });
 }
 
-function handleCreateElementLifecycleExpression(contextBlock, targetId, node, process) {
+function handleCreateElementLifecycleExpression(contextBlock, targetId, node) {
 
   // get the onMount attribute expression
   let onMountAttribute = getAttribute(node, 'onMount');
 
   contextBlock.lifecycles.push(
-    createBlockLifecycleEntryExpression(targetId, lifecycleTypeIdMap['onMount'], process(onMountAttribute.expression)));
+    createBlockLifecycleEntryExpression(targetId, lifecycleTypeIdMap['onMount'], onMountAttribute.expression));
 }
 
 function createBlockLifecycleEntryExpression(targetId, type, fnExpression) {
@@ -1249,11 +1171,11 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
   });
 }
 
-function createCallBlockExpression(block) {
+function createCallBlockExpression(block, identifiers) {
 
   let arguments_ = [{
     "type": "Identifier",
-    "name": "_b$" + block.id.toString()
+    "name": block.identifier.name
   }];
 
   arguments_.push(block.anchors.length > 0 ? {
@@ -1285,7 +1207,7 @@ function createCallBlockExpression(block) {
     "type": "CallExpression",
     "callee": {
       "type": "Identifier",
-      "name": "_$createBlock"
+      "name": identifiers.createBlock.name
     },
     "arguments": arguments_
   }
@@ -1341,7 +1263,7 @@ function createBlockEventHandlerEntryExpression(targetId, type, fnExpression) {
   }
 }
 
-function createCreateComponentExpression(componentIdentifier, props, process) {
+function createCreateComponentExpression(componentIdentifier, props, identifiers) {
 
   let arguments_ = [componentIdentifier];
 
@@ -1353,23 +1275,6 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
 
         let propExpression = props[propKey];
 
-        /*
-        if (propExpression.type == 'Identifier') {
- 
-            //console.log('propExpression standard', propExpression);
- 
-            return {
-                "type": "ObjectProperty",
-                "key": {
-                    "type": "Identifier",
-                    "name": propKey
-                },
-                "value": process(propExpression)
-            };
-        } else 
-        
-        */
-
         let propExpressionType = propExpression.type;
         let isStaticExpression = propExpressionType == 'StringLiteral' || propExpressionType == 'NumericLiteral' || propExpressionType == 'BooleanLiteral';
 
@@ -1380,7 +1285,7 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
               "type": "Identifier",
               "name": propKey
             },
-            "value": process(propExpression)
+            "value": propExpression
           };
         } else {
           // Wrap expressions that are not bare identifier or function.
@@ -1402,7 +1307,7 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
                     init: {
                       type: 'CallExpression',
                       callee: { type: 'Identifier', name: '_useMemo$' },
-                      arguments: [{ type: 'ArrowFunctionExpression', params: [], body: process(propExpression) }]
+                      arguments: [{ type: 'ArrowFunctionExpression', params: [], body: propExpression }]
                     }
                   }]
               },
@@ -1417,7 +1322,7 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
             ]
           } else {
             body = [
-              { "type": "ReturnStatement", "argument": process(propExpression) }
+              { "type": "ReturnStatement", "argument": propExpression }
             ]
           }
 
@@ -1455,7 +1360,7 @@ function createCreateComponentExpression(componentIdentifier, props, process) {
     "type": "CallExpression",
     "callee": {
       "type": "Identifier",
-      "name": "_$createComponent"
+      "name": identifiers.createComponent.name
     },
     "arguments": arguments_
   }
