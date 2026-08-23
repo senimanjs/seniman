@@ -9,6 +9,10 @@ import htmlBuffers from "./_htmlBuffers.js";
 import { createConfig } from './config.js';
 import { enqueueWindowInput, getWindow, registerWindow, deregisterWindow, setWindowSchedulerPaused } from './state.js';
 
+export const WINDOW_MAINTENANCE_IDLE = 0;
+export const WINDOW_MAINTENANCE_WAITING_FOR_ACK = 1;
+export const WINDOW_MAINTENANCE_DISCONNECTED = 2;
+
 export function createRoot(rootFn) {
   let root = new Root(rootFn);
   let processEnv = globalThis.process && globalThis.process.env;
@@ -32,6 +36,9 @@ class Root {
     this.globalOutputBackpressurePaused = false;
     this.outputPressureTimer = null;
     this.outputPressureChecking = false;
+    this.windowMaintenanceTimer = null;
+    this.windowMaintenanceLastTick = 0;
+    this.windowMaintenanceBuckets = new Array(256).fill(null);
     this.config = null;
     this.rateLimitDisabled = false;
     this.messageLimiter = null;
@@ -117,34 +124,65 @@ class Root {
   }
 
   _enqueueMessage(windowId, message) {
-
-    // apply global limit
     // TODO: move the length check to the websocket server's max message size
     // do this once we set up client-side rate limiting
-    let isUnderLimit =
-      this.messageLimiter.consumeSync(windowId) &&
-      message.byteLength < this.config.maxInputEventBufferSize;
+    if (
+      message.byteLength < 2 ||
+      message.byteLength >= this.config.maxInputEventBufferSize
+    ) {
+      this.droppedMessagesCount++;
+      return;
+    }
+
+    // `ws` already delivers binary frames as Buffers. Re-wrapping every input
+    // creates another Buffer view object on both the click and pong paths.
+    let inputBuffer = Buffer.isBuffer(message) ? message : Buffer.from(message);
+    let txPortId = inputBuffer.readUInt16LE(0);
+    let window = getWindow(windowId);
+
+    if (!window || window.destroyed) {
+      return;
+    }
+
+    // Port zero is reserved for acknowledgement and connection control.
+    if (txPortId == 0) {
+      if (inputBuffer.length === 2) {
+        window.requestDestroy();
+        return;
+      }
+
+      if (inputBuffer.length !== 6) {
+        this.droppedMessagesCount++;
+        return;
+      }
+
+      let readOffset = inputBuffer.readUInt32LE(2);
+      if (!this._registerWindowInput(window, readOffset)) {
+        this.droppedMessagesCount++;
+      }
+      return;
+    }
+
+    // A normal event needs the acknowledgement header plus at least the
+    // empty encoded argument list. Register progress before rate limiting so
+    // a dropped application event can still release retained output.
+    if (inputBuffer.length < 10) {
+      this.droppedMessagesCount++;
+      return;
+    }
+
+    if (!this._registerWindowInput(window, inputBuffer.readUInt32LE(2))) {
+      this.droppedMessagesCount++;
+      return;
+    }
 
     // TODO: print on a regular interval the amount of messages that are being dropped
-    if (!isUnderLimit) {
+    if (!this.messageLimiter.consumeSync(windowId)) {
       this.droppedMessagesCount++;
       return;
     }
 
     // TODO: apply window & handler specific limits
-
-    let inputBuffer = Buffer.from(message);
-    let txPortId = inputBuffer.readUInt16LE(0);
-
-    // portId of 0 is reserved for the pong command
-    if (txPortId == 0) {
-      let window = getWindow(windowId);
-
-      if (window) {
-        window.registerPong(inputBuffer);
-      }
-      return;
-    }
 
     enqueueWindowInput(windowId, inputBuffer);
   }
@@ -223,8 +261,6 @@ class Root {
       deregisterWindow(window);
       this._closeWindowConnection(window.id);
     });
-
-    window.startPingLoop(false);
 
   }
 
@@ -368,8 +404,10 @@ class Root {
     // Only the newest websocket may publish to or disconnect this window.
     window.onBuffer(this._setupWsListeners(ws, windowId));
 
-    window.startPingLoop(true);
     window.reconnect(pageParams);
+    // Reconnection may have no unread application output. Send one ephemeral
+    // probe so the browser can confirm the replacement socket immediately.
+    this._sendWindowProbe(window);
   }
 
   _setupWsListeners(ws, windowId) {
@@ -381,10 +419,11 @@ class Root {
       previousConnection.ws.close();
     }
 
-    ws.on('message', async (message) => {
+    ws.on('message', (message) => {
       if (this.windowConnectionMap.get(windowId) !== connection) {
         return;
       }
+
       this._enqueueMessage(windowId, message);
     });
 
@@ -414,20 +453,226 @@ class Root {
 
   _trackWindow(window) {
     this.windows.add(window);
+    let now = Date.now();
+    window.maintenanceState = WINDOW_MAINTENANCE_IDLE;
+    this._scheduleWindowMaintenance(
+      window,
+      now + this._getWindowIdleProbeDelay(window)
+    );
+    this._startWindowMaintenance();
   }
 
   _untrackWindow(window) {
     this._prepareWindowForDestroy(window);
     this.windows.delete(window);
+    if (this.windows.size === 0) {
+      clearInterval(this.windowMaintenanceTimer);
+      this.windowMaintenanceTimer = null;
+    }
   }
 
   _prepareWindowForDestroy(window) {
+    this._unlinkWindowMaintenance(window);
     clearTimeout(window.outputStallTimer);
     window.outputStallTimer = null;
     window.outputBackpressurePaused = false;
     window.globalOutputBackpressurePaused = false;
-    window.outputProgressProbeOutstanding = false;
+    window.maintenanceState = WINDOW_MAINTENANCE_DISCONNECTED;
     this._syncWindowSchedulerPause(window);
+  }
+
+  _startWindowMaintenance() {
+    if (this.windowMaintenanceTimer) {
+      return;
+    }
+
+    let tickMs = Math.max(1, this.config.windowMaintenanceTickMs);
+    this.windowMaintenanceLastTick = Math.floor(Date.now() / tickMs);
+    this.windowMaintenanceTimer = setInterval(() => {
+      this._runWindowMaintenance();
+    }, tickMs);
+    this.windowMaintenanceTimer.unref?.();
+  }
+
+  _unlinkWindowMaintenance(window) {
+    let bucketIndex = window.maintenanceBucketIndex;
+    if (bucketIndex < 0) {
+      return;
+    }
+
+    let previous = window.maintenancePrev;
+    let next = window.maintenanceNext;
+    if (previous) {
+      previous.maintenanceNext = next;
+    } else {
+      this.windowMaintenanceBuckets[bucketIndex] = next;
+    }
+    if (next) {
+      next.maintenancePrev = previous;
+    }
+
+    window.maintenancePrev = null;
+    window.maintenanceNext = null;
+    window.maintenanceBucketIndex = -1;
+  }
+
+  _scheduleWindowMaintenance(window, deadline) {
+    if (window.destroyed || !this.windows.has(window)) {
+      return;
+    }
+
+    this._unlinkWindowMaintenance(window);
+    let tickMs = Math.max(1, this.config.windowMaintenanceTickMs);
+    // Keep the exact fractional tick so other maintenance users can recover
+    // the deadline without adding a second per-window timestamp.
+    let dueTick = deadline / tickMs;
+    let bucketIndex = Math.ceil(dueTick) % this.windowMaintenanceBuckets.length;
+    let head = this.windowMaintenanceBuckets[bucketIndex];
+
+    window.maintenanceDueTick = dueTick;
+    window.maintenanceBucketIndex = bucketIndex;
+    window.maintenancePrev = null;
+    window.maintenanceNext = head;
+    if (head) {
+      head.maintenancePrev = window;
+    }
+    this.windowMaintenanceBuckets[bucketIndex] = window;
+  }
+
+  _runWindowMaintenance(now = Date.now()) {
+    let tickMs = Math.max(1, this.config.windowMaintenanceTickMs);
+    let currentTick = Math.floor(now / tickMs);
+    let elapsedTicks = currentTick - this.windowMaintenanceLastTick;
+    if (elapsedTicks <= 0) {
+      return;
+    }
+
+    let bucketCount = this.windowMaintenanceBuckets.length;
+    let firstTick = elapsedTicks > bucketCount
+      ? currentTick - bucketCount + 1
+      : this.windowMaintenanceLastTick + 1;
+
+    for (let tick = firstTick; tick <= currentTick; tick++) {
+      let bucketIndex = tick % bucketCount;
+      let window = this.windowMaintenanceBuckets[bucketIndex];
+
+      while (window) {
+        let next = window.maintenanceNext;
+        if (window.maintenanceDueTick <= currentTick) {
+          this._unlinkWindowMaintenance(window);
+          this._maintainWindow(window, now);
+        }
+        window = next;
+      }
+    }
+
+    this.windowMaintenanceLastTick = currentTick;
+  }
+
+  _maintainWindow(window, now) {
+    if (window.destroyed) {
+      return;
+    }
+
+    if (window.maintenanceState === WINDOW_MAINTENANCE_DISCONNECTED) {
+      window.destroy();
+      return;
+    }
+
+    if (window.maintenanceState === WINDOW_MAINTENANCE_WAITING_FOR_ACK) {
+      window.connected = false;
+      window.maintenanceState = WINDOW_MAINTENANCE_DISCONNECTED;
+      this._closeWindowConnection(window.id);
+      if (this.lowMemoryMode) {
+        window.destroy();
+        return;
+      }
+      this._scheduleWindowMaintenance(
+        window,
+        now + this.config.disconnectedWindowDestroyMs
+      );
+      return;
+    }
+
+    if (window.deleteBlockCount > 300) {
+      window.flushBlockDeleteQueue();
+    }
+
+    this._sendWindowProbe(window, now);
+  }
+
+  _sendWindowProbe(window, now = Date.now()) {
+    if (
+      window.destroyed ||
+      !window.connected ||
+      !window.bufferFn ||
+      window.maintenanceState !== WINDOW_MAINTENANCE_IDLE
+    ) {
+      return;
+    }
+
+    window.maintenanceState = WINDOW_MAINTENANCE_WAITING_FOR_ACK;
+    window.probeReadOffset = window.global_readOffset;
+    window.sendPing();
+    this._scheduleWindowMaintenance(
+      window,
+      now + this.config.idleProbeTimeoutMs
+    );
+  }
+
+  _expandWindowReadOffset(window, wireOffset) {
+    let range = 0x100000000;
+    let base = Math.floor(window.global_readOffset / range) * range;
+    let readOffset = base + wireOffset;
+
+    if (readOffset < window.global_readOffset) {
+      readOffset += range;
+    }
+    return readOffset;
+  }
+
+  _registerWindowInput(window, wireOffset) {
+    let readOffset = this._expandWindowReadOffset(window, wireOffset);
+    try {
+      window.registerClientAcknowledgement(readOffset);
+    } catch {
+      return false;
+    }
+
+    let now = Date.now();
+    window.connected = true;
+    window.maintenanceState = WINDOW_MAINTENANCE_IDLE;
+    window.outputUnacknowledgedAt = window.retainedOutputBytes > 0 ? now : 0;
+    this._scheduleWindowMaintenance(
+      window,
+      this._getWindowNextProbeDeadline(window, now)
+    );
+    return true;
+  }
+
+  _markWindowReconnected(window) {
+    let now = Date.now();
+    window.connected = true;
+    window.maintenanceState = WINDOW_MAINTENANCE_IDLE;
+    window.outputUnacknowledgedAt = window.retainedOutputBytes > 0 ? now : 0;
+    this._scheduleWindowMaintenance(
+      window,
+      this._getWindowNextProbeDeadline(window, now)
+    );
+  }
+
+  _getWindowIdleProbeDelay(window) {
+    let jitter = this.config.idleProbeJitterMs > 0
+      ? ((window.id * 2654435761) >>> 0) % this.config.idleProbeJitterMs
+      : 0;
+    return this.config.idleProbeIntervalMs + jitter;
+  }
+
+  _getWindowNextProbeDeadline(window, now) {
+    return window.outputUnacknowledgedAt > 0
+      ? window.outputUnacknowledgedAt +
+        this.config.staleOutputAcknowledgementMs
+      : now + this._getWindowIdleProbeDelay(window);
   }
 
   _syncWindowSchedulerPause(window) {
@@ -445,9 +690,11 @@ class Root {
   }
 
   _getWindowPublicationCount(window) {
-    return window.publications
-      ? (window.publications.length - window.publicationHead) / 2
-      : 0;
+    return window.publicationEndOffset === 0
+      ? 0
+      : 1 + (window.publications
+        ? window.publications.length - window.publicationHead
+        : 0);
   }
 
   _enableWindowOutputRetention(window) {
@@ -459,25 +706,13 @@ class Root {
     this._evaluateGlobalOutputFlowControl();
   }
 
-  _getSoftOutputLimit(limit) {
+  _getHalfOutputLimit(limit) {
     return limit > 0 ? Math.max(1, Math.floor(limit / 2)) : 0;
   }
 
-  _isWindowAtSoftOutputLimit(window) {
-    let config = this.config;
-    let softBytes = this._getSoftOutputLimit(
-      config.maxUnacknowledgedOutputBytes
-    );
-    let softPublications = this._getSoftOutputLimit(
-      config.maxUnacknowledgedPublications
-    );
-
-    return (
-      softBytes > 0 && window.retainedOutputBytes >= softBytes
-    ) || (
-      softPublications > 0 &&
-      this._getWindowPublicationCount(window) >= softPublications
-    );
+  _isWindowAtRecyclingAcknowledgementThreshold(window) {
+    let threshold = this.config.recyclingAcknowledgementBytes;
+    return threshold > 0 && window.retainedOutputBytes >= threshold;
   }
 
   _isWindowAtHardOutputLimit(window) {
@@ -495,46 +730,31 @@ class Root {
 
   _isWindowBelowResumeLimit(window) {
     let config = this.config;
-    let softBytes = this._getSoftOutputLimit(
+    let resumeBytes = this._getHalfOutputLimit(
       config.maxUnacknowledgedOutputBytes
     );
-    let softPublications = this._getSoftOutputLimit(
+    let resumePublications = this._getHalfOutputLimit(
       config.maxUnacknowledgedPublications
     );
-    let belowBytes = softBytes === 0 || window.retainedOutputBytes < softBytes;
-    let belowPublications = softPublications === 0 ||
-      this._getWindowPublicationCount(window) < softPublications;
+    let belowBytes = resumeBytes === 0 ||
+      window.retainedOutputBytes < resumeBytes;
+    let belowPublications = resumePublications === 0 ||
+      this._getWindowPublicationCount(window) < resumePublications;
 
     return belowBytes && belowPublications;
   }
 
-  _requestWindowOutputProgress(window) {
+  _requestWindowAcknowledgement(window) {
     if (
       window.destroyed ||
       !window.connected ||
       !window.bufferFn ||
-      window.outputProgressProbeOutstanding
+      window.maintenanceState !== WINDOW_MAINTENANCE_IDLE
     ) {
       return;
     }
 
-    let now = Date.now();
-    let probeCooldown = Math.min(
-      2500,
-      Math.max(1, this.config.outputPressureGraceMs)
-    );
-
-    if (
-      window.outputProgressProbeSentAt > 0 &&
-      now - window.outputProgressProbeSentAt < probeCooldown
-    ) {
-      return;
-    }
-
-    window.outputProgressProbeOutstanding = true;
-    window.outputProgressProbeReadOffset = window.global_readOffset;
-    window.outputProgressProbeSentAt = now;
-    window.sendPing();
+    this._sendWindowProbe(window);
   }
 
   _scheduleWindowStallCheck(window) {
@@ -595,7 +815,9 @@ class Root {
       return;
     }
 
-    if (this._isWindowAtHardOutputLimit(window)) {
+    let atHardLimit = this._isWindowAtHardOutputLimit(window);
+
+    if (atHardLimit) {
       this._setWindowOutputPaused(window, true);
     } else if (
       window.outputBackpressurePaused &&
@@ -604,8 +826,11 @@ class Root {
       this._setWindowOutputPaused(window, false);
     }
 
-    if (this._isWindowAtSoftOutputLimit(window)) {
-      this._requestWindowOutputProgress(window);
+    if (
+      atHardLimit ||
+      this._isWindowAtRecyclingAcknowledgementThreshold(window)
+    ) {
+      this._requestWindowAcknowledgement(window);
     }
   }
 
@@ -617,13 +842,6 @@ class Root {
   _afterWindowOutputProgress(window, madeProgress) {
     if (madeProgress) {
       window.outputLastProgressAt = Date.now();
-
-      if (
-        window.outputProgressProbeOutstanding &&
-        window.global_readOffset > window.outputProgressProbeReadOffset
-      ) {
-        window.outputProgressProbeOutstanding = false;
-      }
 
       if (
         window.outputBackpressurePaused &&
@@ -684,10 +902,12 @@ class Root {
     }
 
     let retainedBytes = window.global_publishOffset - window.global_readOffset;
-    this.retainedOutputBytes += retainedBytes - window.retainedOutputBytes;
+    let previousRetainedBytes = window.retainedOutputBytes;
+    this.retainedOutputBytes += retainedBytes - previousRetainedBytes;
     window.retainedOutputBytes = retainedBytes;
 
     if (retainedBytes === 0) {
+      window.outputUnacknowledgedAt = 0;
       this._unlinkOutputProgressWindow(window);
     } else if (!window.outputProgressListed) {
       this._appendOutputProgressWindow(window);
@@ -696,11 +916,23 @@ class Root {
       this._appendOutputProgressWindow(window);
     }
 
+    if (previousRetainedBytes === 0 && retainedBytes > 0) {
+      let now = Date.now();
+      window.outputUnacknowledgedAt = now;
+      if (window.maintenanceState === WINDOW_MAINTENANCE_IDLE) {
+        this._scheduleWindowMaintenance(
+          window,
+          now + this.config.staleOutputAcknowledgementMs
+        );
+      }
+    }
+
   }
 
   _releaseWindowRetainedOutput(window) {
     this.retainedOutputBytes -= window.retainedOutputBytes;
     window.retainedOutputBytes = 0;
+    window.outputUnacknowledgedAt = 0;
     this._unlinkOutputProgressWindow(window);
     this._evaluateGlobalOutputFlowControl();
   }
@@ -738,7 +970,7 @@ class Root {
 
     while (window) {
       let next = window.outputProgressNext;
-      this._requestWindowOutputProgress(window);
+      this._requestWindowAcknowledgement(window);
       window = next;
     }
   }
@@ -762,14 +994,21 @@ class Root {
 
   _isWindowEligibleForPressureCull(window, now) {
     let grace = Math.max(1, this.config.outputPressureGraceMs);
+    let tickMs = Math.max(1, this.config.windowMaintenanceTickMs);
+    let dueAt = window.maintenanceDueTick * tickMs;
 
-    if (!window.connected) {
-      return now - window.lastPongTime >= grace;
+    if (window.maintenanceState === WINDOW_MAINTENANCE_DISCONNECTED) {
+      let disconnectedAt = dueAt - this.config.disconnectedWindowDestroyMs;
+      return now - disconnectedAt >= grace;
     }
 
-    return window.outputProgressProbeOutstanding &&
-      window.global_readOffset <= window.outputProgressProbeReadOffset &&
-      now - window.outputProgressProbeSentAt >= grace;
+    if (window.maintenanceState !== WINDOW_MAINTENANCE_WAITING_FOR_ACK) {
+      return false;
+    }
+
+    let probeSentAt = dueAt - this.config.idleProbeTimeoutMs;
+    return window.global_readOffset <= window.probeReadOffset &&
+      now - probeSentAt >= grace;
   }
 
   _checkGlobalOutputPressure() {
@@ -823,7 +1062,7 @@ class Root {
     this.outputPressureChecking = true;
 
     try {
-      let softLimit = this._getSoftOutputLimit(maxRetainedBytes);
+      let softLimit = this._getHalfOutputLimit(maxRetainedBytes);
 
       if (this.retainedOutputBytes >= softLimit) {
         this._probeRetainedOutputWindows();
@@ -871,6 +1110,16 @@ class Root {
 
     if (window) {
       window.disconnect();
+      window.maintenanceState = WINDOW_MAINTENANCE_DISCONNECTED;
+      let now = Date.now();
+      if (this.lowMemoryMode) {
+        window.destroy();
+        return;
+      }
+      this._scheduleWindowMaintenance(
+        window,
+        now + this.config.disconnectedWindowDestroyMs
+      );
     }
   }
 }

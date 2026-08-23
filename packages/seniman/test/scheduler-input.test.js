@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   deregisterWindow,
+  enqueueWindowInput,
   registerWindow,
   runInWindow,
   schedulerInputWriter,
@@ -26,6 +27,7 @@ import {
   scheduler_ingest,
   scheduler_registerWindow,
   scheduler_setWindowPaused,
+  scheduler_promoteWindow,
   SCHEDULER_PACKET_END,
   SCHEDULER_PACKET_START,
   SCHEDULER_WINDOW_WORK_QUANTUM
@@ -222,6 +224,31 @@ test('host scheduling constants match the configured window slices', () => {
   assert.equal(WINDOW_SLICE_MAX_WORK_QUANTA, 8);
 });
 
+test('window input returns before draining reactive output', async () => {
+  let window = createWindow(24000);
+  let setValue;
+  let observedValues = [];
+
+  registerWindow(window);
+  runInWindow(window.id, () => {
+    useEffect(() => {
+      let [getValue, updateValue] = useState(0);
+      setValue = updateValue;
+      useEffect(() => observedValues.push(getValue()));
+    });
+  });
+  await waitForScheduler();
+
+  window.processInput = () => setValue(1);
+  enqueueWindowInput(window.id, Buffer.alloc(0));
+
+  assert.deepEqual(observedValues, [0]);
+  await waitForScheduler();
+  assert.deepEqual(observedValues, [0, 1]);
+
+  deregisterWindow(window);
+});
+
 test('host releases a busy window within the per-window quantum ceiling', async () => {
   let busyWindow = createWindow(25000);
   let smallWindow = createWindow(25001);
@@ -308,6 +335,82 @@ test('a leased window keeps consecutive quanta until release', () => {
 
   scheduler_deregisterWindow(busyHandle.slot, busyHandle.generation);
   scheduler_deregisterWindow(smallHandle.slot, smallHandle.generation);
+});
+
+test('an interactive window moves ahead of queued background work for one lease', () => {
+  let busyHandle = scheduler_registerWindow(26500);
+  let backgroundHandle = scheduler_registerWindow(26501);
+  let busyCommands = [];
+
+  for (let i = 0; i < SCHEDULER_WINDOW_WORK_QUANTUM + 1; i++) {
+    busyCommands.push([3, 0, 4 + i * 2]);
+  }
+
+  ingestSchedulerCommands(busyHandle, busyCommands);
+  ingestSchedulerCommands(backgroundHandle, [[3, 0, 4]]);
+  scheduler_promoteWindow(busyHandle.slot, busyHandle.generation);
+
+  let output = Buffer.alloc(SCHEDULER_OUTPUT_PAGE_SIZE);
+  let lease = scheduler_acquireWindow();
+
+  assert.deepEqual(lease, busyHandle);
+  assert.ok(scheduler_drainWindow(output, lease.slot, lease.generation) > 0);
+  assert.equal(output.readUInt32LE(20), SCHEDULER_WINDOW_WORK_QUANTUM);
+  scheduler_releaseWindow(lease.slot, lease.generation);
+
+  // The boost is consumed: residual busy work goes behind existing background
+  // work rather than retaining interactive priority indefinitely.
+  lease = scheduler_acquireWindow();
+  assert.deepEqual(lease, backgroundHandle);
+  assert.ok(scheduler_drainWindow(output, lease.slot, lease.generation) > 0);
+  scheduler_releaseWindow(lease.slot, lease.generation);
+
+  lease = scheduler_acquireWindow();
+  assert.deepEqual(lease, busyHandle);
+  assert.ok(scheduler_drainWindow(output, lease.slot, lease.generation) > 0);
+  scheduler_releaseWindow(lease.slot, lease.generation);
+
+  scheduler_deregisterWindow(busyHandle.slot, busyHandle.generation);
+  scheduler_deregisterWindow(backgroundHandle.slot, backgroundHandle.generation);
+});
+
+test('interactive priority serves background work after eight leases', () => {
+  let interactiveHandles = [];
+
+  for (let i = 0; i < 9; i++) {
+    let handle = scheduler_registerWindow(26600 + i);
+    ingestSchedulerCommands(handle, [[3, 0, 4]]);
+    scheduler_promoteWindow(handle.slot, handle.generation);
+    interactiveHandles.push(handle);
+  }
+
+  let backgroundHandle = scheduler_registerWindow(26610);
+  ingestSchedulerCommands(backgroundHandle, [[3, 0, 4]]);
+  let output = Buffer.alloc(SCHEDULER_OUTPUT_PAGE_SIZE);
+  let order = [];
+
+  while (true) {
+    let lease = scheduler_acquireWindow();
+    if (!lease) {
+      break;
+    }
+    order.push(lease.slot);
+    assert.ok(scheduler_drainWindow(output, lease.slot, lease.generation) > 0);
+    scheduler_releaseWindow(lease.slot, lease.generation);
+  }
+
+  assert.deepEqual(
+    order,
+    [
+      ...interactiveHandles.slice(0, 8).map(handle => handle.slot),
+      backgroundHandle.slot,
+      interactiveHandles[8].slot
+    ]
+  );
+
+  for (let handle of [...interactiveHandles, backgroundHandle]) {
+    scheduler_deregisterWindow(handle.slot, handle.generation);
+  }
 });
 
 test('pausing a leased window retains its unfinished work until resume', () => {

@@ -30,10 +30,16 @@ const OPERATION_NONE: u8 = 0;
 const OPERATION_DISPOSE: u8 = 1;
 const OPERATION_CLEAN: u8 = 2;
 
+const QUEUE_NONE: u8 = 0;
+const QUEUE_BACKGROUND: u8 = 1;
+const QUEUE_INTERACTIVE: u8 = 2;
+const MAX_CONSECUTIVE_INTERACTIVE_WINDOWS: u8 = 8;
+
 struct Window {
     generation: u32,
     next_packet_id: u32,
-    queued: bool,
+    queue_class: u8,
+    queue_epoch: u32,
     leased: bool,
     paused: bool,
     nodes: NodeStore,
@@ -47,7 +53,8 @@ impl Window {
         Self {
             generation,
             next_packet_id: 1,
-            queued: false,
+            queue_class: QUEUE_NONE,
+            queue_epoch: 0,
             leased: false,
             paused: false,
             nodes: NodeStore::new(),
@@ -139,7 +146,9 @@ struct Scheduler {
     windows: Vec<Option<Window>>,
     generations: Vec<u32>,
     free_slots: Vec<u32>,
-    active_windows: VecDeque<(u32, u32)>,
+    background_windows: VecDeque<(u32, u32, u32)>,
+    interactive_windows: VecDeque<(u32, u32, u32)>,
+    consecutive_interactive_windows: u8,
     leased: Option<(u32, u32)>,
     pending: Option<PendingPacket>,
     input: Box<[u8; INPUT_PAGE_SIZE]>,
@@ -152,7 +161,9 @@ impl Scheduler {
             windows: vec![None],
             generations: vec![0],
             free_slots: Vec::new(),
-            active_windows: VecDeque::new(),
+            background_windows: VecDeque::new(),
+            interactive_windows: VecDeque::new(),
+            consecutive_interactive_windows: 0,
             leased: None,
             pending: None,
             input: Box::new([0; INPUT_PAGE_SIZE]),
@@ -211,24 +222,106 @@ impl Scheduler {
         let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) else {
             return;
         };
-        if window.queued || window.leased || window.paused {
+        if window.queue_class != QUEUE_NONE || window.leased || window.paused {
             return;
         }
-        window.queued = true;
-        self.active_windows.push_back((slot, window.generation));
+        window.queue_class = QUEUE_BACKGROUND;
+        window.queue_epoch = window.queue_epoch.wrapping_add(1);
+        self.background_windows
+            .push_back((slot, window.generation, window.queue_epoch));
     }
 
-    fn take_active_window(&mut self) -> Option<(u32, u32)> {
-        while let Some((slot, generation)) = self.active_windows.pop_front() {
+    fn promote_window(&mut self, slot: u32, generation: u32) {
+        let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) else {
+            return;
+        };
+        if window.generation != generation
+            || window.leased
+            || window.paused
+            || window.queue_class == QUEUE_INTERACTIVE
+        {
+            return;
+        }
+
+        // A background tuple, if present, becomes stale. The boost lasts for
+        // one lease; release_window requeues residual work as background.
+        window.queue_class = QUEUE_INTERACTIVE;
+        window.queue_epoch = window.queue_epoch.wrapping_add(1);
+        self.interactive_windows
+            .push_back((slot, generation, window.queue_epoch));
+    }
+
+    fn peek_queue(&self, queue: &VecDeque<(u32, u32, u32)>, queue_class: u8) -> bool {
+        queue.iter().any(|(slot, generation, queue_epoch)| {
+            self.windows
+                .get(*slot as usize)
+                .and_then(Option::as_ref)
+                .is_some_and(|window| {
+                    window.queue_class == queue_class
+                        && window.queue_epoch == *queue_epoch
+                        && !window.leased
+                        && !window.paused
+                        && window.generation == *generation
+                })
+        })
+    }
+
+    fn take_interactive_window(&mut self) -> Option<(u32, u32)> {
+        while let Some((slot, generation, queue_epoch)) = self.interactive_windows.pop_front() {
             let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) else {
                 continue;
             };
-            if window.queued && !window.leased && !window.paused && window.generation == generation
+            if window.queue_class == QUEUE_INTERACTIVE
+                && window.queue_epoch == queue_epoch
+                && !window.leased
+                && !window.paused
+                && window.generation == generation
             {
-                window.queued = false;
+                window.queue_class = QUEUE_NONE;
                 return Some((slot, generation));
             }
         }
+        None
+    }
+
+    fn take_background_window(&mut self) -> Option<(u32, u32)> {
+        while let Some((slot, generation, queue_epoch)) = self.background_windows.pop_front() {
+            let Some(window) = self.windows.get_mut(slot as usize).and_then(Option::as_mut) else {
+                continue;
+            };
+            if window.queue_class == QUEUE_BACKGROUND
+                && window.queue_epoch == queue_epoch
+                && !window.leased
+                && !window.paused
+                && window.generation == generation
+            {
+                window.queue_class = QUEUE_NONE;
+                return Some((slot, generation));
+            }
+        }
+        None
+    }
+
+    fn take_active_window(&mut self) -> Option<(u32, u32)> {
+        if self.consecutive_interactive_windows < MAX_CONSECUTIVE_INTERACTIVE_WINDOWS {
+            if let Some(next) = self.take_interactive_window() {
+                self.consecutive_interactive_windows += 1;
+                return Some(next);
+            }
+        }
+
+        if let Some(next) = self.take_background_window() {
+            self.consecutive_interactive_windows = 0;
+            return Some(next);
+        }
+
+        if let Some(next) = self.take_interactive_window() {
+            self.consecutive_interactive_windows =
+                self.consecutive_interactive_windows.saturating_add(1);
+            return Some(next);
+        }
+
+        self.consecutive_interactive_windows = 0;
         None
     }
 
@@ -244,14 +337,8 @@ impl Scheduler {
                             && (!window.work_queue.is_empty() || !window.dispose_list.is_empty())
                     })
             })
-            || self.active_windows.iter().any(|(slot, generation)| {
-                self.windows
-                    .get(*slot as usize)
-                    .and_then(Option::as_ref)
-                    .is_some_and(|window| {
-                        window.queued && !window.paused && window.generation == *generation
-                    })
-            })
+            || self.peek_queue(&self.interactive_windows, QUEUE_INTERACTIVE)
+            || self.peek_queue(&self.background_windows, QUEUE_BACKGROUND)
     }
 
     fn acquire_window(&mut self) -> u32 {
@@ -306,7 +393,7 @@ impl Scheduler {
 
         window.paused = paused;
         if paused {
-            window.queued = false;
+            window.queue_class = QUEUE_NONE;
             return;
         }
 
@@ -1053,6 +1140,10 @@ pub extern "C" fn scheduler_set_window_paused(slot: u32, generation: u32, paused
             .borrow_mut()
             .set_window_paused(slot, generation, paused != 0);
     });
+}
+#[no_mangle]
+pub extern "C" fn scheduler_promote_window(slot: u32, generation: u32) {
+    SCHEDULER.with(|scheduler| scheduler.borrow_mut().promote_window(slot, generation));
 }
 #[no_mangle]
 pub extern "C" fn scheduler_acquire_window() -> u32 {

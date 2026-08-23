@@ -22,6 +22,7 @@ export const scheduler_getMemoryGrowthCount = scheduler.scheduler_getMemoryGrowt
 export const scheduler_registerWindow = scheduler.scheduler_registerWindow;
 export const scheduler_deregisterWindow = scheduler.scheduler_deregisterWindow;
 export const scheduler_setWindowPaused = scheduler.scheduler_setWindowPaused;
+export const scheduler_promoteWindow = scheduler.scheduler_promoteWindow;
 export const scheduler_acquireWindow = scheduler.scheduler_acquireWindow;
 export const scheduler_releaseWindow = scheduler.scheduler_releaseWindow;
 export const scheduler_ingest = scheduler.scheduler_ingest;

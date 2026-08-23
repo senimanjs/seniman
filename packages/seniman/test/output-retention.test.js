@@ -1,10 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createRoot } from '../dist/window_manager.js';
+import {
+  createRoot,
+  WINDOW_MAINTENANCE_IDLE,
+  WINDOW_MAINTENANCE_WAITING_FOR_ACK
+} from '../dist/window_manager.js';
 import { Window } from '../dist/window.js';
 
 const windowId = '123456789012345678901';
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+function allocCommandBuffer(window, size, scheduleFlush = true) {
+  let buffer = window._allocCommandPage(size, scheduleFlush);
+  return buffer.subarray(
+    window.commandBufferOffset,
+    window.commandBufferOffset + size
+  );
+}
 
 function createConfiguredRoot(env) {
   let root = createRoot(() => null);
@@ -28,32 +40,35 @@ function createTrackedWindow(root, id = windowId) {
   return { output, window };
 }
 
-test('soft output bytes request progress and the hard limit pauses instead of closing', () => {
+test('recycling threshold requests progress and the hard limit pauses instead of closing', () => {
   let root = createConfiguredRoot({
     SENIMAN_MAX_UNACKNOWLEDGED_OUTPUT_BYTES: '30',
     SENIMAN_MAX_UNACKNOWLEDGED_PUBLICATIONS: '1000',
+    SENIMAN_RECYCLING_ACKNOWLEDGEMENT_BYTES: '20',
     SENIMAN_MAX_RETAINED_OUTPUT_BYTES: '1000'
   });
   let { output, window } = createTrackedWindow(root);
 
   window.flushCommandBuffer();
+  let firstPublicationEnd = window.global_publishOffset;
 
   assert.deepEqual(output.map(buffer => buffer.length), [22, 1]);
-  assert.equal(window.outputProgressProbeOutstanding, true);
+  assert.equal(window.maintenanceState, WINDOW_MAINTENANCE_WAITING_FOR_ACK);
   assert.equal(window.outputBackpressurePaused, false);
 
-  window._allocCommandBuffer(7).fill(1);
+  allocCommandBuffer(window, 8).fill(1);
   window.flushCommandBuffer();
 
   assert.equal(window.destroyed, false);
   assert.equal(window.outputBackpressurePaused, true);
   assert.equal(window.schedulerOutputPaused, true);
 
-  window.registerReadOffset(window.global_publishOffset);
+  root._registerWindowInput(window, firstPublicationEnd >>> 0);
 
   assert.equal(window.outputBackpressurePaused, false);
   assert.equal(window.schedulerOutputPaused, false);
-  assert.equal(window.outputProgressProbeOutstanding, false);
+  assert.equal(window.retainedOutputBytes, 8);
+  assert.equal(window.maintenanceState, WINDOW_MAINTENANCE_IDLE);
   window.destroy();
 });
 
@@ -66,16 +81,42 @@ test('publication ceiling applies backpressure without repeatedly probing', () =
   let { output, window } = createTrackedWindow(root);
 
   window.flushCommandBuffer();
-  window.sendPing();
-  window.sendPing();
+  allocCommandBuffer(window, 1).fill(1);
+  window.flushCommandBuffer();
+  allocCommandBuffer(window, 1).fill(1);
+  window.flushCommandBuffer();
+  allocCommandBuffer(window, 1).fill(1);
+  window.flushCommandBuffer();
 
-  assert.deepEqual(output.map(buffer => buffer.length), [22, 1, 1, 1]);
+  assert.deepEqual(output.map(buffer => buffer.length), [22, 1, 1, 1, 1]);
   assert.equal(window.destroyed, false);
   assert.equal(window.outputBackpressurePaused, true);
-  assert.equal(window.outputProgressProbeOutstanding, true);
+  assert.equal(window.maintenanceState, WINDOW_MAINTENANCE_WAITING_FOR_ACK);
 
-  window.registerReadOffset(window.global_publishOffset);
+  root._registerWindowInput(window, window.global_publishOffset >>> 0);
   assert.equal(window.outputBackpressurePaused, false);
+  window.destroy();
+});
+
+test('a window can request another accelerated acknowledgement after progress', () => {
+  let root = createConfiguredRoot({
+    SENIMAN_MAX_UNACKNOWLEDGED_OUTPUT_BYTES: '256',
+    SENIMAN_MAX_UNACKNOWLEDGED_PUBLICATIONS: '1000',
+    SENIMAN_RECYCLING_ACKNOWLEDGEMENT_BYTES: '32',
+    SENIMAN_MAX_RETAINED_OUTPUT_BYTES: '1000'
+  });
+  let { output, window } = createTrackedWindow(root);
+
+  window.flushCommandBuffer();
+  allocCommandBuffer(window, 10).fill(1);
+  window.flushCommandBuffer();
+  root._registerWindowInput(window, window.global_publishOffset >>> 0);
+
+  allocCommandBuffer(window, 32).fill(1);
+  window.flushCommandBuffer();
+
+  assert.deepEqual(output.map(buffer => buffer.length), [22, 10, 1, 32, 1]);
+  assert.equal(window.maintenanceState, WINDOW_MAINTENANCE_WAITING_FOR_ACK);
   window.destroy();
 });
 
@@ -89,7 +130,7 @@ test('a paused window is expired only after making no progress for the stall tim
   let { window } = createTrackedWindow(root);
 
   window.flushCommandBuffer();
-  window._allocCommandBuffer(7).fill(1);
+  allocCommandBuffer(window, 8).fill(1);
   window.flushCommandBuffer();
 
   assert.equal(window.outputBackpressurePaused, true);
@@ -115,7 +156,7 @@ test('global pressure pauses publication and culls only windows without probe pr
 
   first.flushCommandBuffer();
   second.flushCommandBuffer();
-  first._allocCommandBuffer(5).fill(1);
+  allocCommandBuffer(first, 6).fill(1);
   first.flushCommandBuffer();
 
   assert.equal(root.globalOutputBackpressurePaused, true);
@@ -146,7 +187,7 @@ test('global pressure resumes without culling windows that acknowledge output', 
 
   first.flushCommandBuffer();
   second.flushCommandBuffer();
-  first._allocCommandBuffer(5).fill(1);
+  allocCommandBuffer(first, 5).fill(1);
   first.flushCommandBuffer();
 
   first.registerReadOffset(first.global_publishOffset);
@@ -172,7 +213,7 @@ test('the emergency ceiling protects the process without waiting for progress', 
   });
   let window = createTrackedWindow(root).window;
 
-  window._allocCommandBuffer(101).fill(1);
+  allocCommandBuffer(window, 101).fill(1);
   window.flushCommandBuffer();
 
   assert.equal(window.destroyed, true);

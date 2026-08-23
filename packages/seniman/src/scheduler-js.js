@@ -20,7 +20,15 @@ const windowSlotGenerations = [];
 let nextWindowSlot = 1;
 let activeWindowQueue = [];
 let activeWindowQueueHead = 0;
+let interactiveWindowQueue = [];
+let interactiveWindowQueueHead = 0;
+let consecutiveInteractiveWindows = 0;
 let leasedWindow = null;
+
+const QUEUE_NONE = 0;
+const QUEUE_BACKGROUND = 1;
+const QUEUE_INTERACTIVE = 2;
+const MAX_CONSECUTIVE_INTERACTIVE_WINDOWS = 8;
 
 const OPERATION_NONE = 0;
 const OPERATION_DISPOSE = 1;
@@ -71,7 +79,8 @@ export function scheduler_registerWindow(windowId) {
     slot,
     generation,
     nextPacketId: 1,
-    queued: false,
+    queueClass: QUEUE_NONE,
+    queueEpoch: 0,
     leased: false,
     paused: false,
     childrenListMap: new Map(),
@@ -93,7 +102,7 @@ export function scheduler_deregisterWindow(slot, generation) {
     return;
   }
 
-  window.queued = false;
+  window.queueClass = QUEUE_NONE;
 
   if (leasedWindow === window) {
     leasedWindow = null;
@@ -117,63 +126,135 @@ export function scheduler_setWindowPaused(slot, generation, paused) {
   window.paused = paused;
 
   if (paused) {
-    window.queued = false;
+    window.queueClass = QUEUE_NONE;
   } else if (!window.workQueue.isEmpty() || window.disposeList.length) {
     activateWindow(window);
   }
 }
 
 function activateWindow(window) {
-  if (window.queued || window.leased || window.paused) {
+  if (window.queueClass !== QUEUE_NONE || window.leased || window.paused) {
     return;
   }
 
-  window.queued = true;
-  activeWindowQueue.push(window.slot, window.generation);
+  window.queueClass = QUEUE_BACKGROUND;
+  window.queueEpoch = (window.queueEpoch + 1) >>> 0;
+  activeWindowQueue.push(
+    window.slot,
+    window.generation,
+    window.queueEpoch
+  );
 }
 
-function compactActiveWindowQueue() {
-  if (activeWindowQueueHead === activeWindowQueue.length) {
-    activeWindowQueue = [];
-    activeWindowQueueHead = 0;
-  } else if (
-    activeWindowQueueHead >= 2048 &&
-    activeWindowQueueHead * 2 >= activeWindowQueue.length
+export function scheduler_promoteWindow(slot, generation) {
+  let window = windowMap.get(slot);
+
+  if (
+    !window ||
+    window.generation !== generation ||
+    window.leased ||
+    window.paused ||
+    window.queueClass === QUEUE_INTERACTIVE
   ) {
-    activeWindowQueue = activeWindowQueue.slice(activeWindowQueueHead);
-    activeWindowQueueHead = 0;
+    return;
   }
+
+  // If it was already in the background queue, that tuple becomes stale and
+  // is skipped when encountered. The interactive boost is consumed on lease;
+  // residual work is requeued normally by scheduler_releaseWindow.
+  window.queueClass = QUEUE_INTERACTIVE;
+  window.queueEpoch = (window.queueEpoch + 1) >>> 0;
+  interactiveWindowQueue.push(
+    window.slot,
+    window.generation,
+    window.queueEpoch
+  );
 }
 
-function peekActiveWindow() {
-  while (activeWindowQueueHead < activeWindowQueue.length) {
-    let slot = activeWindowQueue[activeWindowQueueHead];
-    let generation = activeWindowQueue[activeWindowQueueHead + 1];
+function compactWindowQueue(queue, head) {
+  if (head === queue.length) {
+    return [[], 0];
+  } else if (
+    head >= 2048 &&
+    head * 2 >= queue.length
+  ) {
+    return [queue.slice(head), 0];
+  }
+
+  return [queue, head];
+}
+
+function peekWindowQueue(queue, head, queueClass) {
+  while (head < queue.length) {
+    let slot = queue[head];
+    let generation = queue[head + 1];
+    let queueEpoch = queue[head + 2];
     let window = windowMap.get(slot);
 
     if (
-      window?.queued &&
+      window?.queueClass === queueClass &&
+      window.queueEpoch === queueEpoch &&
       !window.leased &&
       !window.paused &&
       window.generation === generation
     ) {
-      return window;
+      return [window, head];
     }
 
-    activeWindowQueueHead += 2;
+    head += 3;
   }
 
-  compactActiveWindowQueue();
-  return null;
+  return [null, head];
+}
+
+function peekInteractiveWindow() {
+  let result = peekWindowQueue(
+    interactiveWindowQueue,
+    interactiveWindowQueueHead,
+    QUEUE_INTERACTIVE
+  );
+  interactiveWindowQueueHead = result[1];
+  [interactiveWindowQueue, interactiveWindowQueueHead] = compactWindowQueue(
+    interactiveWindowQueue,
+    interactiveWindowQueueHead
+  );
+  return result[0];
+}
+
+function peekBackgroundWindow() {
+  let result = peekWindowQueue(
+    activeWindowQueue,
+    activeWindowQueueHead,
+    QUEUE_BACKGROUND
+  );
+  activeWindowQueueHead = result[1];
+  [activeWindowQueue, activeWindowQueueHead] = compactWindowQueue(
+    activeWindowQueue,
+    activeWindowQueueHead
+  );
+  return result[0];
 }
 
 function takeActiveWindow() {
-  let window = peekActiveWindow();
+  let interactive = peekInteractiveWindow();
+  let background = peekBackgroundWindow();
+  let takeInteractive = interactive && (
+    !background ||
+    consecutiveInteractiveWindows < MAX_CONSECUTIVE_INTERACTIVE_WINDOWS
+  );
+  let window = takeInteractive ? interactive : background;
 
   if (window) {
-    activeWindowQueueHead += 2;
-    window.queued = false;
-    compactActiveWindowQueue();
+    if (takeInteractive) {
+      interactiveWindowQueueHead += 3;
+      consecutiveInteractiveWindows++;
+    } else {
+      activeWindowQueueHead += 3;
+      consecutiveInteractiveWindows = 0;
+    }
+    window.queueClass = QUEUE_NONE;
+  } else {
+    consecutiveInteractiveWindows = 0;
   }
 
   return window;
@@ -182,7 +263,8 @@ function takeActiveWindow() {
 export function scheduler_hasWork() {
   return pendingWindow !== null ||
     hasWindowWork(leasedWindow) ||
-    peekActiveWindow() !== null;
+    peekInteractiveWindow() !== null ||
+    peekBackgroundWindow() !== null;
 }
 
 function hasWindowWork(window) {

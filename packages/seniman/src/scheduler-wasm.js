@@ -75,6 +75,10 @@ export function scheduler_setWindowPaused(slot, generation, paused) {
   schedulerCore.scheduler_set_window_paused(slot, generation, paused ? 1 : 0);
 }
 
+export function scheduler_promoteWindow(slot, generation) {
+  schedulerCore.scheduler_promote_window(slot, generation);
+}
+
 export function scheduler_acquireWindow() {
   let slot = schedulerCore.scheduler_acquire_window();
 
