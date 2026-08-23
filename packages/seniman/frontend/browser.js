@@ -1062,6 +1062,7 @@
     contentBufferOffset = 0;
 
     const MARKERS_STRING = 1;
+    const MARKERS_NULL = 2;
     const MARKERS_NUMBER_INT16 = 3;
     const MARKERS_NUMBER_INT32 = 4;
     const MARKERS_NUMBER_FLOAT64 = 5;
@@ -1073,6 +1074,13 @@
     let stringBufferRawOffset = 0;
     // utf-8-ed string buffer offset, which is shorter than the raw string buffer offset due to utf-8 encoding
     let stringBufferOffset = 0;
+
+    let writeCollectionLength = (length) => {
+      if (length > 0xffff) {
+        throw new RangeError('Cannot encode a collection with more than 65535 entries');
+      }
+      writeUint16LE(length);
+    }
 
     let assignStringBufferOffset = (value, useMap) => {
       if (useMap && stringBufferMap.has(value)) {
@@ -1102,7 +1110,7 @@
     let encodeValue = (value) => {
       if (Array.isArray(value)) {
         writeUint8(MARKERS_ARRAY);
-        writeUint8(value.length);
+        writeCollectionLength(value.length);
         value.forEach(encodeValue);
       } else if (typeof value === "string") {
         writeUint8(MARKERS_STRING);
@@ -1115,11 +1123,11 @@
       } else if (typeof value === "number") {
         let isInt = Number.isInteger(value);
 
-        // TODO: revisit whether this division is reasonable
-        if (isInt && Math.abs(value) < 32768) {
+        // Use the smallest representation that preserves the value exactly.
+        if (isInt && value >= -32768 && value <= 32767) {
           writeUint8(MARKERS_NUMBER_INT16);
           writeInt16LE(value);
-        } else if (isInt) {
+        } else if (isInt && value >= -2147483648 && value <= 2147483647) {
           writeUint8(MARKERS_NUMBER_INT32);
           writeInt32LE(value);
         } else {
@@ -1129,6 +1137,8 @@
       } else if (typeof value === "boolean") {
         writeUint8(MARKERS_BOOLEAN);
         writeUint8(value ? 1 : 0);
+      } else if (value === null || value === undefined) {
+        writeUint8(MARKERS_NULL);
       } else if (value instanceof ArrayBuffer) {
         writeUint8(MARKERS_ARRAY_BUFFER);
 
@@ -1143,7 +1153,7 @@
       } else if (typeof value === "object") {
         let keys = Object.keys(value);
         writeUint8(MARKERS_OBJECT);
-        writeUint8(keys.length);
+        writeCollectionLength(keys.length);
 
         keys.forEach(key => {
           let [stringBufferOffset, encodedStringLength] = assignStringBufferOffset(key, true);
@@ -1152,6 +1162,8 @@
 
           encodeValue(value[key]);
         });
+      } else {
+        throw new TypeError('Cannot encode client value of type ' + typeof value);
       }
     }
 
