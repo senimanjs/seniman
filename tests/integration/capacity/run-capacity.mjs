@@ -16,6 +16,8 @@ function parseArguments(argv) {
     }
   }
 
+  const output = values.output || path.join(capacityDirectory, 'results/latest.json');
+
   return {
     profile: values.profile || 'interactive-counters',
     steps: (values.steps || '100').split(',').map(Number),
@@ -28,7 +30,20 @@ function parseArguments(argv) {
     activitySeconds: Number(values['activity-seconds'] || 10),
     disconnectPercent: Number(values['disconnect-percent'] || 20),
     maxOldSpaceMb: Number(values['max-old-space-mb'] || 16384),
-    output: values.output || path.join(capacityDirectory, 'results/latest.json'),
+    runtimeDiagnostics: values['runtime-diagnostics'] === '1',
+    allocationProfile: values['allocation-profile'] === '1',
+    disablePingPong: values['disable-ping-pong'] === '1',
+    smallFrameSend: values['small-frame-send'] === '1',
+    allocationProfileOutput:
+      values['allocation-profile-output'] || `${output}.heapprofile`,
+    heapSnapshot: values['heap-snapshot'] === '1',
+    heapSnapshotOutput:
+      values['heap-snapshot-output'] || `${output}.heapsnapshot`,
+    forceGcSamples: values['force-gc-samples'] !== '0',
+    teardownBatchSize: Number(
+      values['teardown-batch-size'] || values['batch-size'] || 100
+    ),
+    output,
   };
 }
 
@@ -45,6 +60,69 @@ function summarizeLatencies(latencies) {
     p95Ms: percentile(sorted, 0.95),
     p99Ms: percentile(sorted, 0.99),
     maxMs: sorted.at(-1) ?? null,
+  };
+}
+
+function summarizeDurations(events) {
+  const durations = events.map(event => event.durationMs).sort((a, b) => a - b);
+  return {
+    count: durations.length,
+    totalMs: durations.reduce((total, duration) => total + duration, 0),
+    p50Ms: percentile(durations, 0.5),
+    p95Ms: percentile(durations, 0.95),
+    p99Ms: percentile(durations, 0.99),
+    maxMs: durations.at(-1) ?? null,
+  };
+}
+
+function eventOverlapsClick(event, click) {
+  return event.startEpochMs <= click.endedAtEpochMs &&
+    event.startEpochMs + event.durationMs >= click.startedAtEpochMs;
+}
+
+function correlateRuntimeDiagnostics(activity, diagnostics) {
+  const clickTimings = activity.clickTimings || [];
+  const slowCutoffMs = activity.latency.p95Ms;
+
+  const correlateEvents = events => {
+    const overlappingLatencies = [];
+    const nonOverlappingLatencies = [];
+    let slowClicksOverlapping = 0;
+
+    for (const click of clickTimings) {
+      const overlaps = events.some(event => eventOverlapsClick(event, click));
+      (overlaps ? overlappingLatencies : nonOverlappingLatencies).push(click.latencyMs);
+      if (overlaps && click.latencyMs >= slowCutoffMs) slowClicksOverlapping++;
+    }
+
+    return {
+      events: summarizeDurations(events),
+      clicksOverlapping: overlappingLatencies.length,
+      slowClicksOverlapping,
+      slowClickOverlapPercent: activity.latency.count
+        ? slowClicksOverlapping / Math.max(1, clickTimings.filter(
+            click => click.latencyMs >= slowCutoffMs
+          ).length) * 100
+        : null,
+      overlappingLatency: summarizeLatencies(overlappingLatencies),
+      nonOverlappingLatency: summarizeLatencies(nonOverlappingLatencies),
+    };
+  };
+
+  return {
+    slowCutoffMs,
+    eventLoop: correlateEvents(diagnostics.eventLoopStalls),
+    gc: correlateEvents(diagnostics.gcPauses),
+    topSlowClicks: [...clickTimings]
+      .sort((a, b) => b.latencyMs - a.latencyMs)
+      .slice(0, 100)
+      .map(click => ({
+        ...click,
+        overlapsEventLoopStall: diagnostics.eventLoopStalls.some(
+          event => eventOverlapsClick(event, click)
+        ),
+        overlapsGc: diagnostics.gcPauses.some(event => eventOverlapsClick(event, click)),
+      })),
   };
 }
 
@@ -117,6 +195,8 @@ export async function startMeasuredServer(options) {
       SENIMAN_CAPACITY_PROFILE: options.profile,
       SENIMAN_CAPACITY_COUNTER_COUNT: String(options.counterCount),
       SENIMAN_CAPACITY_OUTPUT_BYTES: String(options.outputBytes || 0),
+      SENIMAN_CAPACITY_DISABLE_PING_PONG: options.disablePingPong ? '1' : '0',
+      SENIMAN_CAPACITY_SMALL_FRAME_SEND: options.smallFrameSend ? '1' : '0',
     },
     execArgv,
     stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
@@ -132,6 +212,15 @@ export async function startMeasuredServer(options) {
       requests.delete(message.requestId);
     } else if (message.type === 'configured') {
       requests.get(message.requestId)?.resolve();
+      requests.delete(message.requestId);
+    } else if (message.type === 'runtime-diagnostics-started') {
+      requests.get(message.requestId)?.resolve();
+      requests.delete(message.requestId);
+    } else if (message.type === 'runtime-diagnostics') {
+      requests.get(message.requestId)?.resolve(message.diagnostics);
+      requests.delete(message.requestId);
+    } else if (message.type === 'heap-snapshot-written') {
+      requests.get(message.requestId)?.resolve(message.filename);
       requests.delete(message.requestId);
     } else if (message.type === 'fatal') {
       fatalError = new Error(message.error);
@@ -154,7 +243,7 @@ export async function startMeasuredServer(options) {
   return {
     child,
     ready,
-    async sample() {
+    async sample({ forceGc = true } = {}) {
       if (fatalError) throw fatalError;
       const id = ++requestId;
       return new Promise((resolve, reject) => {
@@ -168,7 +257,7 @@ export async function startMeasuredServer(options) {
             resolve(sample);
           },
         });
-        child.send({ type: 'sample', requestId: id, forceGc: true });
+        child.send({ type: 'sample', requestId: id, forceGc });
       });
     },
     async configure(env) {
@@ -186,6 +275,65 @@ export async function startMeasuredServer(options) {
           },
         });
         child.send({ type: 'configure', requestId: id, env });
+      });
+    },
+    async startRuntimeDiagnostics({ captureAllocations = false } = {}) {
+      if (fatalError) throw fatalError;
+      const id = ++requestId;
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          requests.delete(id);
+          reject(new Error('Timed out starting runtime diagnostics'));
+        }, 10000);
+        requests.set(id, {
+          resolve: () => {
+            clearTimeout(timeout);
+            resolve();
+          },
+        });
+        child.send({
+          type: 'start-runtime-diagnostics',
+          requestId: id,
+          captureAllocations,
+        });
+      });
+    },
+    async stopRuntimeDiagnostics() {
+      if (fatalError) throw fatalError;
+      const id = ++requestId;
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          requests.delete(id);
+          reject(new Error('Timed out stopping runtime diagnostics'));
+        }, 10000);
+        requests.set(id, {
+          resolve: diagnostics => {
+            clearTimeout(timeout);
+            resolve(diagnostics);
+          },
+        });
+        child.send({ type: 'stop-runtime-diagnostics', requestId: id });
+      });
+    },
+    async takeHeapSnapshot(filename) {
+      if (fatalError) throw fatalError;
+      const id = ++requestId;
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          requests.delete(id);
+          reject(new Error('Timed out collecting server heap snapshot'));
+        }, 180000);
+        requests.set(id, {
+          resolve: writtenFilename => {
+            clearTimeout(timeout);
+            resolve(writtenFilename);
+          },
+        });
+        child.send({
+          type: 'heap-snapshot',
+          requestId: id,
+          filename,
+        });
       });
     },
     async stop() {
@@ -210,6 +358,7 @@ async function runActivity(clients, options) {
   const activeClients = clients.slice(0, activeCount);
   const deadline = Date.now() + options.activitySeconds * 1000;
   const latencies = [];
+  const clickTimings = [];
   let errors = 0;
 
   await Promise.all(activeClients.map(async client => {
@@ -218,14 +367,29 @@ async function runActivity(clients, options) {
       await wait(Math.min(randomDelay, Math.max(0, deadline - Date.now())));
       if (Date.now() >= deadline) break;
       try {
-        latencies.push(await client.click(client.randomHandlerId()));
+        const result = await client.click(
+          client.randomHandlerId(),
+          5000,
+          { captureTiming: options.runtimeDiagnostics }
+        );
+        if (options.runtimeDiagnostics) {
+          latencies.push(result.latencyMs);
+          clickTimings.push({ clientId: client.id, ...result });
+        } else {
+          latencies.push(result);
+        }
       } catch {
         errors++;
       }
     }
   }));
 
-  return { activeClients: activeCount, errors, latency: summarizeLatencies(latencies) };
+  return {
+    activeClients: activeCount,
+    errors,
+    latency: summarizeLatencies(latencies),
+    ...(options.runtimeDiagnostics ? { clickTimings } : {}),
+  };
 }
 
 export async function runCapacity(options) {
@@ -233,10 +397,22 @@ export async function runCapacity(options) {
   const clients = [];
   const samples = [];
   let activity = null;
+  let runtimeDiagnostics = null;
 
   const takeSample = async label => {
-    const sample = await server.sample();
-    samples.push({ label, clients: clients.length, ...sample });
+    const sample = await server.sample({ forceGc: options.forceGcSamples });
+    const egressBytes = clients.reduce((total, client) => total + client.egressBytes(), 0);
+    const counterUpdateEgressBytes = clients.reduce(
+      (total, client) => total + client.counterUpdateEgressBytes,
+      0
+    );
+    samples.push({
+      label,
+      clients: clients.length,
+      egressBytes,
+      counterUpdateEgressBytes,
+      ...sample,
+    });
     console.log(
       `[capacity] ${label}: windows=${sample.fixture.activeWindows} ` +
       `rss=${(sample.natural.rss / 1024 / 1024).toFixed(1)}MB ` +
@@ -262,9 +438,30 @@ export async function runCapacity(options) {
       clients.push(...newClients);
       await wait(options.settleMs);
       await takeSample(`connected-${target}`);
+
+      if (
+        options.heapSnapshot &&
+        target === options.steps[options.steps.length - 1]
+      ) {
+        await mkdir(path.dirname(options.heapSnapshotOutput), {
+          recursive: true,
+        });
+        await server.takeHeapSnapshot(path.resolve(options.heapSnapshotOutput));
+      }
     }
 
-    activity = await runActivity(clients, options);
+    if (options.runtimeDiagnostics) {
+      await server.startRuntimeDiagnostics({
+        captureAllocations: options.allocationProfile,
+      });
+    }
+    try {
+      activity = await runActivity(clients, options);
+    } finally {
+      if (options.runtimeDiagnostics) {
+        runtimeDiagnostics = await server.stopRuntimeDiagnostics();
+      }
+    }
     await takeSample('after-activity');
 
     const disconnectCount = Math.floor(clients.length * options.disconnectPercent / 100);
@@ -277,7 +474,11 @@ export async function runCapacity(options) {
     await wait(Math.min(options.settleMs, 1000));
     await takeSample('reconnected');
 
-    await runBatched(clients, options.batchSize, client => client.destroy());
+    await runBatched(
+      clients,
+      options.teardownBatchSize || options.batchSize,
+      client => client.destroy()
+    );
     await wait(1500);
     await takeSample('released');
   } finally {
@@ -306,11 +507,45 @@ export async function runCapacity(options) {
     options,
     fixture: server.ready.fixture,
     activity,
+    runtimeDiagnostics,
     samples,
   };
 
+  if (runtimeDiagnostics) {
+    report.runtimeCorrelation = correlateRuntimeDiagnostics(activity, runtimeDiagnostics);
+  }
+
+  if (runtimeDiagnostics?.allocationProfile) {
+    const allocationProfileOutput = options.allocationProfileOutput ||
+      `${options.output}.heapprofile`;
+    await mkdir(path.dirname(allocationProfileOutput), { recursive: true });
+    await writeFile(
+      allocationProfileOutput,
+      JSON.stringify(runtimeDiagnostics.allocationProfile)
+    );
+    runtimeDiagnostics.allocationProfile = null;
+    report.allocationProfileOutput = allocationProfileOutput;
+  }
+
   const baseline = samples[0];
   report.cpuPhases = deriveCpuPhases(samples);
+  report.egressPhases = samples.slice(1).map((sample, index) => {
+    const previous = samples[index];
+    const elapsedWallMs = sample.measurement.beforeGcTimeMs - previous.measurement.afterGcTimeMs;
+    const egressBytes = sample.egressBytes - previous.egressBytes;
+    return {
+      from: previous.label,
+      phase: sample.label,
+      elapsedWallMs,
+      egressBytes,
+      averageBytesPerSecond: elapsedWallMs ? egressBytes * 1000 / elapsedWallMs : null,
+    };
+  });
+  report.totalEgressBytes = samples.at(-1)?.egressBytes || 0;
+  report.totalCounterUpdateEgressBytes = samples.at(-1)?.counterUpdateEgressBytes || 0;
+  report.counterUpdateBytesPerClick = activity?.latency.count
+    ? report.totalCounterUpdateEgressBytes / activity.latency.count
+    : null;
   report.capacity = samples
     .filter(sample => sample.fixture.activeWindows > 0)
     .map(sample => ({
@@ -339,12 +574,15 @@ export async function runCapacity(options) {
     wasmMB: (sample.scheduler.wasmMemoryBytes / 1024 / 1024).toFixed(1),
     heapMB: (sample.natural.heapUsed / 1024 / 1024).toFixed(1),
     clicks: sample.fixture.clicksHandled,
+    egressMB: (sample.egressBytes / 1024 / 1024).toFixed(2),
   })));
   console.table(report.capacity.map(sample => ({
     phase: sample.phase,
     windows: sample.windows,
     rssKBPerWindow: (sample.naturalRssBytesPerWindow / 1024).toFixed(1),
-    postGcHeapKBPerWindow: (sample.postGcHeapBytesPerWindow / 1024).toFixed(1),
+    postGcHeapKBPerWindow: sample.postGcHeapBytesPerWindow == null
+      ? '-'
+      : (sample.postGcHeapBytesPerWindow / 1024).toFixed(1),
   })));
   console.table(report.cpuPhases.map(phase => ({
     phase: phase.phase,
@@ -354,7 +592,19 @@ export async function runCapacity(options) {
     cpuMsPerWindow: phase.cpuMsPerNewWindow?.toFixed(3) ?? '-',
     cpuMsPerClick: phase.cpuMsPerClick?.toFixed(3) ?? '-',
   })));
-  console.log(`Activity: ${JSON.stringify(activity)}`);
+  console.table(report.egressPhases.map(phase => ({
+    phase: phase.phase,
+    egressMB: (phase.egressBytes / 1024 / 1024).toFixed(2),
+    averageMbps: (phase.averageBytesPerSecond * 8 / 1_000_000).toFixed(3),
+  })));
+  console.log(`Total egress: ${(report.totalEgressBytes / 1024 / 1024).toFixed(2)}MB`);
+  console.log(
+    `Counter update egress: ${(report.totalCounterUpdateEgressBytes / 1024).toFixed(2)}KB ` +
+    `(${report.counterUpdateBytesPerClick?.toFixed(2) || '-'} bytes/click)`
+  );
+  console.log(`Activity: ${JSON.stringify(
+    activity ? { ...activity, clickTimings: undefined } : activity
+  )}`);
   console.log(`Report: ${options.output}`);
 
   return report;

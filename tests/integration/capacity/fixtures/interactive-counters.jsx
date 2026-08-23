@@ -31,12 +31,41 @@ export function createFixture(options = {}) {
       metrics.clicksHandled++;
       setCount(value => value + 1);
     });
+    const tracedClickHandler = $c(event => {
+      const marker = event.currentTarget.previousElementSibling;
+      const valueBefore = marker.textContent;
+      const startedAt = performance.now();
+      let observer = new MutationObserver(() => {
+        if (marker.textContent !== valueBefore) {
+          const completedAt = performance.now();
+          const sample = {
+            counterLabel: valueBefore.split(':', 1)[0],
+            latencyMs: completedAt - startedAt,
+            startedAt,
+            completedAt,
+          };
+          window.__senimanInputLatencySamples ||= [];
+          window.__senimanInputLatencySamples.push(sample);
+          window.dispatchEvent(new CustomEvent('seniman-input-latency', { detail: sample }));
+          clearTimeout(observerTimeout);
+          observer.disconnect();
+        }
+      });
+      const observerTimeout = setTimeout(() => observer.disconnect(), 10000);
+
+      observer.observe(marker, {
+        characterData: true,
+        childList: true,
+        subtree: true,
+      });
+      $s(clickHandler)();
+    });
 
     props.registerHandler(props.index, clickHandler);
 
     return <section class="counter">
       <span>Counter {props.index + 1}: {displayValue()}</span>
-      <button onClick={clickHandler}>Increment</button>
+      <button onClick={tracedClickHandler}>Increment</button>
     </section>;
   }
 
@@ -99,10 +128,22 @@ export function createFixture(options = {}) {
       paragraphBytes: Buffer.byteLength(PARAGRAPH.repeat(12)),
     },
     getMetrics() {
+      let outputPageBytes = 0;
+      let outputPageCount = 0;
+
+      for (let window of root.windows) {
+        for (let page of window.pages) {
+          outputPageBytes += page.buffer.length;
+          outputPageCount++;
+        }
+      }
+
       return {
         ...metrics,
         retainedOutputBytes: root.retainedOutputBytes,
         outputBackpressurePaused: root.globalOutputBackpressurePaused,
+        outputPageBytes,
+        outputPageCount,
       };
     },
   };

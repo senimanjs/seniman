@@ -1,4 +1,5 @@
 import { WebSocket } from '../../../packages/seniman/node_modules/ws/wrapper.mjs';
+import { performance } from 'node:perf_hooks';
 
 const CMD_PING = 0;
 const CMD_CHANNEL_MESSAGE = 15;
@@ -78,24 +79,50 @@ function decodeServerValues(buffer, initialOffset) {
   return Array.from({ length: count }, decodeValue);
 }
 
-function createInputMessage(handlerId) {
-  const message = Buffer.allocUnsafe(6);
+function createInputMessage(handlerId, readOffset, args = []) {
+  if (args.length === 0) {
+    const message = Buffer.allocUnsafe(10);
+    message.writeUInt16LE(handlerId, 0);
+    message.writeUInt32LE(readOffset >>> 0, 2);
+    message.writeUInt16LE(0, 6); // empty string table
+    message.writeUInt8(8, 8); // encoded argument Array
+    message.writeUInt8(0, 9); // zero arguments
+    return message;
+  }
+
+  if (args.length !== 1 || typeof args[0] !== 'string') {
+    throw new Error('Capacity protocol client only supports zero args or one string arg');
+  }
+
+  const encoded = Buffer.from(args[0]);
+  const message = Buffer.allocUnsafe(15 + encoded.length);
   message.writeUInt16LE(handlerId, 0);
-  message.writeUInt16LE(0, 2); // empty string table
-  message.writeUInt8(8, 4); // encoded argument Array
-  message.writeUInt8(0, 5); // zero arguments
+  message.writeUInt32LE(readOffset >>> 0, 2);
+  message.writeUInt16LE(encoded.length, 6);
+  encoded.copy(message, 8);
+  let offset = 8 + encoded.length;
+  message.writeUInt8(8, offset++); // encoded argument Array
+  message.writeUInt8(1, offset++); // one argument
+  message.writeUInt8(1, offset++); // encoded String
+  message.writeUInt16LE(0, offset);
+  offset += 2;
+  message.writeUInt16LE(args[0].length, offset);
   return message;
 }
 
-function createPong(readOffset) {
-  const message = Buffer.allocUnsafe(11);
+function createAcknowledgement(readOffset) {
+  const message = Buffer.allocUnsafe(6);
   message.writeUInt16LE(0, 0);
-  message.writeUInt16LE(0, 2); // empty string table
-  message.writeUInt8(8, 4); // encoded argument Array
-  message.writeUInt8(1, 5);
-  message.writeUInt8(4, 6); // int32
-  message.writeInt32LE(readOffset, 7);
+  message.writeUInt32LE(readOffset >>> 0, 2);
   return message;
+}
+
+function createCloseMessage() {
+  return Buffer.alloc(2);
+}
+
+function serverFrameBytes(payloadBytes) {
+  return payloadBytes + (payloadBytes < 126 ? 2 : payloadBytes <= 65535 ? 4 : 10);
 }
 
 export class ProtocolClient {
@@ -108,11 +135,14 @@ export class ProtocolClient {
     this.windowId = '';
     this.handlerIds = [];
     this.bytesReceived = 0;
+    this.tcpEgressBytesClosed = 0;
+    this.counterUpdateEgressBytes = 0;
     this.acknowledgementsEnabled = true;
     this.closeCode = null;
     this.closePromise = null;
     this.resolveClose = null;
     this.pendingClick = null;
+    this.selectionHandlerIds = [];
     this.socket = null;
   }
 
@@ -150,6 +180,7 @@ export class ProtocolClient {
         reject(error);
       });
       socket.once('close', code => {
+        this._recordClosedSocketEgress(socket);
         this.closeCode = code;
         this.resolveClose?.(code);
         this.resolveClose = null;
@@ -180,9 +211,8 @@ export class ProtocolClient {
 
         if (message.length === 1 && message.readUInt8(0) === CMD_PING) {
           if (this.acknowledgementsEnabled) {
-            this.sendPong(this.readOffset);
+            this.sendAcknowledgement(this.readOffset);
           }
-          this.readOffset += message.length;
           maybeReady();
           return;
         }
@@ -195,6 +225,9 @@ export class ProtocolClient {
             if (process.env.SENIMAN_CAPACITY_DEBUG === '1') {
               console.error(`client=${this.id} handlers=${this.handlerIds.length}`);
             }
+          } else if (announcement?.type === 'benchmark-selection-handlers') {
+            this.selectionHandlerIds = announcement.handlerIds;
+            this.handlerIds = announcement.handlerIds;
           }
         }
 
@@ -203,7 +236,16 @@ export class ProtocolClient {
         if (this.pendingClick) {
           const pending = this.pendingClick;
           this.pendingClick = null;
-          pending.resolve(Number(process.hrtime.bigint() - pending.startedAt) / 1e6);
+          this.counterUpdateEgressBytes += serverFrameBytes(message.length);
+          const endedAtEpochMs = performance.timeOrigin + performance.now();
+          const latencyMs = Number(process.hrtime.bigint() - pending.startedAt) / 1e6;
+          pending.resolve(pending.captureTiming
+            ? {
+                startedAtEpochMs: pending.startedAtEpochMs,
+                endedAtEpochMs,
+                latencyMs,
+              }
+            : latencyMs);
         }
 
         maybeReady();
@@ -211,13 +253,19 @@ export class ProtocolClient {
     });
   }
 
-  sendPong(offset) {
+  sendAcknowledgement(offset) {
     if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(createPong(offset));
+      this.socket.send(createAcknowledgement(offset));
     }
   }
 
-  async click(handlerId, timeoutMs = 5000) {
+  // Backward-compatible test-helper name. Protocol pongs now carry only the
+  // cumulative read acknowledgement, so both helpers send the same frame.
+  sendPong(offset) {
+    this.sendAcknowledgement(offset);
+  }
+
+  async click(handlerId, timeoutMs = 5000, { captureTiming = false, args = [] } = {}) {
     if (this.pendingClick) {
       throw new Error(`Client ${this.id} already has an outstanding click`);
     }
@@ -233,18 +281,26 @@ export class ProtocolClient {
 
       this.pendingClick = {
         startedAt: process.hrtime.bigint(),
+        startedAtEpochMs: performance.timeOrigin + performance.now(),
+        captureTiming,
         reject,
         resolve: latency => {
           clearTimeout(timeout);
           resolve(latency);
         },
       };
-      this.socket.send(createInputMessage(handlerId));
+      this.socket.send(createInputMessage(handlerId, this.readOffset, args));
     });
   }
 
   randomHandlerId() {
     return this.handlerIds[Math.floor(Math.random() * this.handlerIds.length)];
+  }
+
+  randomSelectionHandlerId() {
+    return this.selectionHandlerIds[
+      Math.floor(Math.random() * this.selectionHandlerIds.length)
+    ];
   }
 
   setAcknowledgementsEnabled(enabled) {
@@ -278,7 +334,7 @@ export class ProtocolClient {
 
   async destroy() {
     if (this.socket?.readyState === WebSocket.OPEN) {
-      this.sendPong(0);
+      this.socket.send(createCloseMessage());
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     await this.closeSocket();
@@ -301,5 +357,19 @@ export class ProtocolClient {
       });
       socket.close();
     });
+  }
+
+  _recordClosedSocketEgress(socket) {
+    if (socket._capacityEgressRecorded) return;
+    socket._capacityEgressRecorded = true;
+    this.tcpEgressBytesClosed += socket._socket?.bytesRead || 0;
+  }
+
+  egressBytes() {
+    const current = this.socket;
+    const currentBytes = current && !current._capacityEgressRecorded
+      ? current._socket?.bytesRead || 0
+      : 0;
+    return this.tcpEgressBytesClosed + currentBytes;
   }
 }
