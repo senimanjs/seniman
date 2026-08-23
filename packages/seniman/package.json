@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "0.0.185",
+  "version": "0.0.186",
   "description": "",
   "main": "./dist/index.js",
   "types": "./types/index.d.ts",
