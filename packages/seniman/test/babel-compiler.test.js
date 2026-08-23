@@ -216,3 +216,24 @@ test('compiler distinguishes template children from expression JSX roots', () =>
   assert.equal(code.match(/v: "2\.0"/g)?.length, 3);
   assert.doesNotMatch(code, /<(main|span|em|Child|b)/);
 });
+
+test('single dynamic element effects suppress unchanged final values', () => {
+  let code = compile(`
+    function Icon(props) {
+      return <path stroke={props.stroke()} />;
+    }
+
+    function Row(props) {
+      return <div class={props.kind()} />;
+    }
+
+    function Box(props) {
+      return <div style={{ color: props.color() }} />;
+    }
+  `);
+
+  assert.equal(code.match(/effectFn\(elRef, _p\$\)/g)?.length, 3);
+  assert.match(code, /const _v\$ = props\.stroke\(\);[\s\S]*?_v\$ !== _p\$ && elRef\.setAttribute\("stroke", _v\$\);[\s\S]*?return _v\$/);
+  assert.match(code, /const _v\$ = props\.kind\(\);[\s\S]*?_v\$ !== _p\$ && elRef\.setClassName\(_v\$\);[\s\S]*?return _v\$/);
+  assert.match(code, /const _v\$ = props\.color\(\);[\s\S]*?_v\$ !== _p\$ && elRef\.setStyleProperty\("color", _v\$\);[\s\S]*?return _v\$/);
+});

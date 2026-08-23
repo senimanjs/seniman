@@ -974,24 +974,53 @@ function createMultiConditionStyleEffectBodyBlockStatement(styleConditions) {
 
 function createSingleConditionStyleEffectBodyBlockStatement(styleCondition) {
 
+  let buildValueIdentifier = () => ({ type: 'Identifier', name: '_v$' });
   let _arguments;
   let conditionType = styleCondition.type;
 
   // if a single parameter function call (e.g. toggleClass, setMultiStyleProps)
   if (conditionType == 'class' || conditionType == 'multiStyleProp') {
-    _arguments = [_buildStyleConditionValueExpression(styleCondition)];
+    _arguments = [buildValueIdentifier()];
   } else {
 
     // TODO: handle style creations that are not in the static compression map
     _arguments = [
       _buildStyleConditionKeyExpression(styleCondition),
-      _buildStyleConditionValueExpression(styleCondition)
+      buildValueIdentifier()
     ];
   }
 
   return {
     type: "BlockStatement",
-    body: [_buildElRefCallExpression(styleCondition, _arguments)]
+    body: [
+      {
+        type: 'VariableDeclaration',
+        kind: 'const',
+        declarations: [{
+          type: 'VariableDeclarator',
+          id: buildValueIdentifier(),
+          init: _buildStyleConditionValueExpression(styleCondition)
+        }]
+      },
+      {
+        type: 'ExpressionStatement',
+        expression: {
+          type: 'LogicalExpression',
+          operator: '&&',
+          left: {
+            type: 'BinaryExpression',
+            operator: '!==',
+            left: buildValueIdentifier(),
+            right: { type: 'Identifier', name: '_p$' }
+          },
+          right: _buildElRefCallExpression(styleCondition, _arguments)
+        }
+      },
+      {
+        type: 'ReturnStatement',
+        argument: buildValueIdentifier()
+      }
+    ]
   };
 }
 
@@ -1113,9 +1142,10 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
     type: "ObjectMethod",
     method: true,
     key: { type: "Identifier", name: "effectFn" },
-    params: isMultiConditionStyleEffect ?
-      [{ type: "Identifier", name: "elRef" }, { type: "Identifier", name: "_p$" }] :
-      [{ type: "Identifier", name: "elRef" }],
+    params: [
+      { type: "Identifier", name: "elRef" },
+      { type: "Identifier", name: "_p$" }
+    ],
     id: null,
     kind: "method",
     computed: false,
