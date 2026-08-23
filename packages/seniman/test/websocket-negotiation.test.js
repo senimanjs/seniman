@@ -97,3 +97,14 @@ test('serve starts and returns a Node server', async () => {
     await close(server);
   }
 });
+
+test('serve binds to an explicit host', async () => {
+  const server = serve(createRootStub(), 0, { host: '127.0.0.1' });
+  await waitForListening(server);
+
+  try {
+    assert.equal(server.address().address, '127.0.0.1');
+  } finally {
+    await close(server);
+  }
+});

@@ -3,6 +3,10 @@ import type { Duplex } from 'node:stream';
 import type { Root } from './index.js';
 import type { EntrypointOptions } from './entrypoint.js';
 
+export interface ServeOptions extends EntrypointOptions {
+  host?: string;
+}
+
 export interface NodeEntrypoint {
   fetch(request: Request): Promise<Response>;
   request(request: IncomingMessage, response: ServerResponse): Promise<void>;
@@ -17,5 +21,5 @@ export function createEntrypoint(
 export function serve(
   root: Root,
   port: number,
-  options?: EntrypointOptions
+  options?: ServeOptions
 ): Server;
