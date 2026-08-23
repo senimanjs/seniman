@@ -11,9 +11,14 @@ test('createConfig returns Seniman defaults', () => {
   assert.equal(config.rateLimitWindowInputThreshold, 32);
   assert.equal(config.maxUnacknowledgedOutputBytes, 256 * 1024);
   assert.equal(config.maxUnacknowledgedPublications, 256);
+  assert.equal(config.recyclingAcknowledgementBytes, 32 * 1024);
   assert.equal(config.maxRetainedOutputBytes, 256 * 1024 * 1024);
   assert.equal(config.outputStallTimeoutMs, 30 * 1000);
   assert.equal(config.outputPressureGraceMs, 5 * 1000);
+  assert.equal(config.staleOutputAcknowledgementMs, 30 * 1000);
+  assert.equal(config.idleProbeIntervalMs, 60 * 1000);
+  assert.equal(config.idleProbeJitterMs, 15 * 1000);
+  assert.equal(config.idleProbeTimeoutMs, 10 * 1000);
 });
 
 test('createConfig resolves values from the supplied environment', () => {
@@ -23,9 +28,14 @@ test('createConfig resolves values from the supplied environment', () => {
     SENIMAN_RATELIMIT_WINDOW_INPUT_THRESHOLD: '12',
     SENIMAN_MAX_UNACKNOWLEDGED_OUTPUT_BYTES: '4096',
     SENIMAN_MAX_UNACKNOWLEDGED_PUBLICATIONS: '16',
+    SENIMAN_RECYCLING_ACKNOWLEDGEMENT_BYTES: '2048',
     SENIMAN_MAX_RETAINED_OUTPUT_BYTES: '65536',
     SENIMAN_OUTPUT_STALL_TIMEOUT_MS: '3000',
     SENIMAN_OUTPUT_PRESSURE_GRACE_MS: '500',
+    SENIMAN_STALE_OUTPUT_ACKNOWLEDGEMENT_MS: '4000',
+    SENIMAN_IDLE_PROBE_INTERVAL_MS: '5000',
+    SENIMAN_IDLE_PROBE_JITTER_MS: '6000',
+    SENIMAN_IDLE_PROBE_TIMEOUT_MS: '7000',
   });
 
   assert.equal(config.enableCrawlerRenderer, true);
@@ -33,9 +43,14 @@ test('createConfig resolves values from the supplied environment', () => {
   assert.equal(config.rateLimitWindowInputThreshold, 12);
   assert.equal(config.maxUnacknowledgedOutputBytes, 4096);
   assert.equal(config.maxUnacknowledgedPublications, 16);
+  assert.equal(config.recyclingAcknowledgementBytes, 2048);
   assert.equal(config.maxRetainedOutputBytes, 65536);
   assert.equal(config.outputStallTimeoutMs, 3000);
   assert.equal(config.outputPressureGraceMs, 500);
+  assert.equal(config.staleOutputAcknowledgementMs, 4000);
+  assert.equal(config.idleProbeIntervalMs, 5000);
+  assert.equal(config.idleProbeJitterMs, 6000);
+  assert.equal(config.idleProbeTimeoutMs, 7000);
 });
 
 test('createRoot configures itself from process.env', () => {

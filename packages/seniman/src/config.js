@@ -29,9 +29,18 @@ export function createConfig(env = null) {
     rssLowMemoryThresholdEnabled: rssLowMemoryThreshold > 0,
     maxUnacknowledgedOutputBytes: readConfigValueAsInt(env, "SENIMAN_MAX_UNACKNOWLEDGED_OUTPUT_BYTES", 256 * 1024),
     maxUnacknowledgedPublications: readConfigValueAsInt(env, "SENIMAN_MAX_UNACKNOWLEDGED_PUBLICATIONS", 256),
+    // Amortize acknowledgement traffic while keeping finalized 8 KiB pages
+    // moving back to the shared pool in four-page batches.
+    recyclingAcknowledgementBytes: readConfigValueAsInt(env, "SENIMAN_RECYCLING_ACKNOWLEDGEMENT_BYTES", 4 * 8 * 1024),
     maxRetainedOutputBytes: readConfigValueAsInt(env, "SENIMAN_MAX_RETAINED_OUTPUT_BYTES", 256 * 1024 * 1024),
     outputStallTimeoutMs: readConfigValueAsInt(env, "SENIMAN_OUTPUT_STALL_TIMEOUT_MS", 30 * 1000),
     outputPressureGraceMs: readConfigValueAsInt(env, "SENIMAN_OUTPUT_PRESSURE_GRACE_MS", 5 * 1000),
+    windowMaintenanceTickMs: readConfigValueAsInt(env, "SENIMAN_WINDOW_MAINTENANCE_TICK_MS", 250),
+    staleOutputAcknowledgementMs: readConfigValueAsInt(env, "SENIMAN_STALE_OUTPUT_ACKNOWLEDGEMENT_MS", 30 * 1000),
+    idleProbeIntervalMs: readConfigValueAsInt(env, "SENIMAN_IDLE_PROBE_INTERVAL_MS", 60 * 1000),
+    idleProbeJitterMs: readConfigValueAsInt(env, "SENIMAN_IDLE_PROBE_JITTER_MS", 15 * 1000),
+    idleProbeTimeoutMs: readConfigValueAsInt(env, "SENIMAN_IDLE_PROBE_TIMEOUT_MS", 10 * 1000),
+    disconnectedWindowDestroyMs: readConfigValueAsInt(env, "SENIMAN_DISCONNECTED_WINDOW_DESTROY_MS", 60 * 1000),
     rateLimitWindowInputThreshold: readConfigValueAsInt(env, "SENIMAN_RATELIMIT_WINDOW_INPUT_THRESHOLD", 32),
     rateLimitWindowInputTtlSeconds: readConfigValueAsInt(env, "SENIMAN_RATELIMIT_WINDOW_INPUT_TTL_SECONDS", 2),
     maxInputEventBufferSize: readConfigValueAsInt(env, "SENIMAN_MAX_INPUT_EVENT_BUFFER_SIZE", 65536),

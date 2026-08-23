@@ -50,9 +50,10 @@ export function streamBlockTemplateInstall(window, templateId) {
       commandSize += 1 + tokenBuffer.length;
     }
 
-    let buf = window._allocCommandBuffer(commandSize);
-    buf.writeUInt8(CMD_MODIFY_TOKENMAP, 0);
-    let offset2 = 1;
+    let buf = window._allocCommandPage(commandSize);
+    let commandOffset = window.commandBufferOffset;
+    buf.writeUInt8(CMD_MODIFY_TOKENMAP, commandOffset);
+    let offset2 = commandOffset + 1;
 
     tokenBuffers.forEach((tokenBuffer) => {
       buf.writeUInt8(tokenBuffer.length, offset2);
@@ -69,10 +70,10 @@ export function streamBlockTemplateInstall(window, templateId) {
 
   let commandSize = 3 + tokenIndexes.length * 2 + 2
     + blockDef.templateBuffer.length + blockDef.elScriptBuffer.length;
-  let installBuffer = window._allocCommandBuffer(commandSize);
-  let offset = 0;
-  installBuffer.writeUInt8(CMD_INSTALL_TEMPLATE, 0);
-  installBuffer.writeUInt16BE(templateId, 1);
+  let installBuffer = window._allocCommandPage(commandSize);
+  let offset = window.commandBufferOffset;
+  installBuffer.writeUInt8(CMD_INSTALL_TEMPLATE, offset);
+  installBuffer.writeUInt16BE(templateId, offset + 1);
   offset += 3;
 
   tokenIndexes.forEach((tokenId) => {

@@ -11,6 +11,7 @@ import {
   scheduler_registerWindow,
   scheduler_deregisterWindow,
   scheduler_setWindowPaused,
+  scheduler_promoteWindow,
   scheduler_acquireWindow,
   scheduler_releaseWindow,
   scheduler_ingest,
@@ -173,26 +174,39 @@ export function enqueueWindowInput(windowId, inputBuffer) {
 
   _setActiveWindowId(windowId);
 
-  untrack(() => {
-    try {
-      ActiveWindow.processInput(inputBuffer);
-    } catch (e) {
-      console.error(e);
-    }
-  });
-
-  if (ExecWorkStartTimeout) {
-    clearTimeout(ExecWorkStartTimeout);
-    ExecWorkStartTimeout = null;
+  SynchronousInputDepth++;
+  try {
+    untrack(() => {
+      try {
+        ActiveWindow.processInput(inputBuffer);
+      } catch (e) {
+        console.error(e);
+      }
+    });
+  } finally {
+    SynchronousInputDepth--;
   }
-  _execWork();
 
   _setActiveWindowId(null);
+
+  // Input handlers should return to the event loop without also draining the
+  // global reactive queue. Give this window one interactive turn, then let the
+  // scheduled drain batch work produced by all input callbacks in this poll.
+  scheduler_promoteWindow(
+    window.schedulerSlot,
+    window.schedulerGeneration
+  );
+  _scheduleExecWork();
 }
 
 let ExecWorkStartTimeout;
+let SynchronousInputDepth = 0;
 
 function _scheduleExecWork() {
+
+  if (SynchronousInputDepth > 0) {
+    return;
+  }
 
   if (ExecWorkStartTimeout) {
     return;

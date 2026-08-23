@@ -6,11 +6,15 @@ Initialize a new `npm` project in a folder of your choice:
 npm init
 ```
 
-Then, install the `seniman` package with:
+Then, install Seniman 0.0.186:
   
 ```bash
-npm install seniman
+npm install seniman@0.0.186
 ```
+
+Seniman's server runtime and generated browser runtime are released together.
+When upgrading an existing application, rebuild the application and deploy the
+updated server and browser assets together.
 
 Seniman uses Babel to compile JSX code. Install Babel's core and CLI packages:
   

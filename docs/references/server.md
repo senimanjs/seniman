@@ -13,6 +13,16 @@ serve(createRoot(App), 3002);
 
 `serve(root, port, options?)` creates and starts the Node server. It returns the server so the application can configure timeouts, listen for events, or close it.
 
+When `host` is omitted, Node listens on the unspecified address (typically `::`
+or `0.0.0.0`), making the server available on all network interfaces. Set it
+explicitly when the application should bind to one interface:
+
+```js
+serve(createRoot(App), 3002, {
+  host: '127.0.0.1'
+});
+```
+
 Use `createEntrypoint` when the application owns the server:
 
 ```js
@@ -54,6 +64,12 @@ server.on('upgrade', entrypoint.upgrade);
 ```
 
 ## Options
+
+### `host`
+
+The hostname or IP address used by the standalone Node `serve` helper. This
+option does not apply to `createEntrypoint`, because the application-owned HTTP
+server controls its own listening address.
 
 ### `allowedOrigins`
 

@@ -18,7 +18,7 @@ import {
   type SenimanNode
 } from 'seniman';
 import { createCoreEntrypoint } from 'seniman/entrypoint';
-import { createEntrypoint } from 'seniman/node';
+import { createEntrypoint, serve } from 'seniman/node';
 import { Link, Meta, Script, Style, Title } from 'seniman/head';
 import senimanBabelPlugin from 'seniman/babel';
 
@@ -73,6 +73,7 @@ function App() {
 
 const root = createRoot(App);
 const nodeEntrypoint = createEntrypoint(root);
+serve(root, 3002, { host: '127.0.0.1' });
 const coreEntrypoint = createCoreEntrypoint(root);
 
 void nodeEntrypoint;

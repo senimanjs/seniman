@@ -73,11 +73,17 @@ export function createEntrypoint(root, options = {}) {
 }
 
 export function serve(root, port, options = {}) {
-  let entrypoint = createEntrypoint(root, options);
+  let { host, ...entrypointOptions } = options;
+  let entrypoint = createEntrypoint(root, entrypointOptions);
   let server = createServer(entrypoint.request);
 
   server.on('upgrade', entrypoint.upgrade);
-  server.listen(port);
+
+  if (host === undefined) {
+    server.listen(port);
+  } else {
+    server.listen(port, host);
+  }
 
   return server;
 }

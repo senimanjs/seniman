@@ -36,7 +36,7 @@ test('destroy cancels a queued publication before releasing its pages', async ()
   assert.equal(window.pages.length, 0);
   assert.equal(window.mutationGroup, null);
   assert.throws(
-    () => window._allocCommandBuffer(1),
+    () => window._allocCommandPage(1),
     /window has been destroyed/
   );
 

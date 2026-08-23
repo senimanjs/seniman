@@ -1,0 +1,22 @@
+{
+  "name": "seniman-stock-terminal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "babel src --out-dir dist --extensions .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "dev": "npm run build && node dist/index.js",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "seniman": "file:../../packages/seniman"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.29.0",
+    "@babel/core": "^7.29.0",
+    "@babel/preset-typescript": "^7.29.0",
+    "@types/node": "^26.0.0",
+    "typescript": "^7.0.0"
+  }
+}

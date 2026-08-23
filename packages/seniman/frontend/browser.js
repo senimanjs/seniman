@@ -63,7 +63,7 @@
 
     connectSocket();
 
-    _addEventListener(window, "beforeunload", () => _portSend(0, 0));
+    _addEventListener(window, "beforeunload", () => _sendClose());
 
     return {
       lastMessageTime: () => lastMessageTime,
@@ -753,8 +753,8 @@
   let GlobalTokenList = [''];
 
   let _opcodeFnMap = [
-    // 0: CMD_PING
-    () => _portSend(0, readOffset),
+    // 0: CMD_PING (handled as an out-of-stream control message)
+    () => _sendAck(readOffset),
     // 1: CMD_INSTALL_TEMPLATE
     _installTemplate2,
     // 2: CMD_INIT_WINDOW
@@ -926,6 +926,14 @@
 
     let totalLength = dv.byteLength;
 
+    // Heartbeat probes are transport control messages. They are shared by all
+    // windows on the server and do not participate in the retained output
+    // byte stream.
+    if (totalLength === 1 && dv.getUint8(0) === 0) {
+      _sendAck(readOffset);
+      return;
+    }
+
     while (processOffset < totalLength) {
       let opcode = getUint8();
       let fn = _opcodeFnMap[opcode];
@@ -1013,9 +1021,22 @@
   let contentBufferOffset = 0;
   let stringBufferMap = createMap();
 
+  let ackBuffer = createBuffer(6);
+  let ackDv = new DataView(ackBuffer.buffer);
+  let closeBuffer = createBuffer(2);
+
+  const _sendAck = (offset) => {
+    ackDv.setUint16(0, 0, true);
+    ackDv.setUint32(2, offset, true);
+    coreNetworkModule.send(ackBuffer);
+  }
+
+  const _sendClose = () => coreNetworkModule.send(closeBuffer);
+
   const _portSend = (id, ...args) => {
     // the encoding of the message is:
     // 2 bytes for the port id
+    // 4 bytes for the acknowledged server output offset
     // 2 bytes for the length of the string buffer
     // N bytes for the string buffer
     // M bytes for the content buffer
@@ -1024,14 +1045,15 @@
     let [stringBufferLength, contentBufferLength] = senimanEncode(args);
 
     writeDv.setUint16(0, id, true);
-    writeDv.setUint16(2, stringBufferLength, true);
+    writeDv.setUint32(2, readOffset, true);
+    writeDv.setUint16(6, stringBufferLength, true);
 
     // NOTE: we don't need to copy the string buffer since we're direct-writing to the writeBuffer in senimanEncode
 
     // copy contentBuffer into buf at offset 4 + stringBufferOffset for length contentBufferOffset
-    writeBuffer.set(contentBuffer, 4 + stringBufferLength);
+    writeBuffer.set(contentBuffer, 8 + stringBufferLength);
 
-    let finalLength = 2 + 2 + stringBufferLength + contentBufferLength;
+    let finalLength = 2 + 4 + 2 + stringBufferLength + contentBufferLength;
     coreNetworkModule.send(writeBuffer.slice(0, finalLength));
   }
 
@@ -1061,9 +1083,8 @@
       let encodedStringByteLength = encodedString.byteLength;
 
       // write the string into the string buffer
-      // + 4 since we are directly writing to the final buffer with 4 bytes of prefix (port id + string buffer length)
-      //writeStringWithLength(writeBuffer, encodedString, stringBufferRawOffset + 4);
-      writeBuffer.set(encodedString, stringBufferRawOffset + 4);
+      // + 8 for port id, read offset, and string buffer length.
+      writeBuffer.set(encodedString, stringBufferRawOffset + 8);
 
       stringBufferRawOffset += encodedStringByteLength;
 

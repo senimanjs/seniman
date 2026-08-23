@@ -34,7 +34,9 @@ export let NetworkManagerModule = createModule($c(() => {
 
     let _now = Date.now();
     let lastMessageTime = coreNetwork.lastMessageTime();
-    let pingLate = (_now - lastMessageTime) > 4000;
+    // A healthy idle connection receives a server probe within 75 seconds.
+    // Leave enough room for timer jitter and the acknowledgement round trip.
+    let pingLate = (_now - lastMessageTime) > 90000;
     let intervalTimeDiff = (_now - lastIntervalTime);
 
     lastIntervalTime = _now;

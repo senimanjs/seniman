@@ -1,7 +1,10 @@
 import { Buffer } from 'node:buffer';
 import { useState, useEffect, useDisposableEffect, onCleanup, untrack, useMemo, createContext, useContext, getActiveNode, getActiveWindow, useCallback, onDispose, getActiveScope, runInScope, runInWindow } from './state.js';
 import { clientFunctionDefinitions, streamBlockTemplateInstall } from './declare.js';
-import { bufferPool, STANDARD_PAGE_SIZE } from './buffer-pool.js';
+import {
+  bufferPool,
+  STANDARD_PAGE_SIZE,
+} from './buffer-pool.js';
 import { DefaultErrorHandler } from './errors.js';
 import { HeadContext, createHeadContextValue } from './head.js';
 import { DefaultNetworkStatusView } from './network.js';
@@ -238,7 +241,9 @@ const CMD_SEQUENCE_REMOVE_ITEMS = 19;
 
 const emptyBuffer = Buffer.alloc(0);
 const DELETE_BLOCK_BUFFER_SIZE = 2048;
+const INITIAL_DELETE_BLOCK_BUFFER_SIZE = 32;
 const MAX_BLOCK_ID = 0x7fff;
+const PING_BUFFER = Buffer.from([0]);
 const INITIAL_FREE_BLOCK_ID_CAPACITY = 16;
 
 function uvarintSize(value) {
@@ -260,9 +265,9 @@ function writeUvarint(buffer, value, offset) {
 }
 
 class BufferWriter {
-  constructor(buffer) {
+  constructor(buffer, offset = 0) {
     this.buffer = buffer;
-    this.offset = 0;
+    this.offset = offset;
   }
 
   writeUInt8(value) {
@@ -326,6 +331,8 @@ export class Window {
     this.global_readOffset = 0;
     this.global_publishOffset = 0;
     this.global_writeOffset = 0;
+    this.publicationEndOffset = 0;
+    this.commandBufferOffset = 0;
     this.publications = null;
     this.publicationHead = 0;
     this.publicationOpen = false;
@@ -339,11 +346,15 @@ export class Window {
     this.outputBackpressurePaused = false;
     this.globalOutputBackpressurePaused = false;
     this.schedulerOutputPaused = false;
-    this.outputProgressProbeOutstanding = false;
-    this.outputProgressProbeReadOffset = 0;
-    this.outputProgressProbeSentAt = 0;
+    this.outputUnacknowledgedAt = 0;
+    this.probeReadOffset = 0;
     this.outputLastProgressAt = Date.now();
     this.outputStallTimer = null;
+    this.maintenanceState = 0;
+    this.maintenancePrev = null;
+    this.maintenanceNext = null;
+    this.maintenanceBucketIndex = -1;
+    this.maintenanceDueTick = 0;
 
     this.bufferFn = bufferFn;
 
@@ -354,7 +365,7 @@ export class Window {
     this.freeBlockIdCount = 0;
 
     // reuse the same buffer for all block delete commands
-    this.deleteBlockCommandBuffer = Buffer.alloc(DELETE_BLOCK_BUFFER_SIZE * 2);
+    this.deleteBlockCommandBuffer = null;
     this.deleteBlockCount = 0;
     this.pendingDeleteBlockChunks = null;
     this.deleteBlockFlushTimer = null;
@@ -379,8 +390,6 @@ export class Window {
     this.tokenList = new Map();
     // fill out the 0 index to make it easier for templating system to do 1-indexing
     this.tokenList.set('', 0);
-
-    this.lastPongTime = Date.now();
 
     this.clientContext = null;
 
@@ -622,46 +631,6 @@ export class Window {
     }, null);
   }
 
-  startPingLoop(immediateFire) {
-    let reconnectionId = ++this.reconnectionId;
-
-    let _pingFunction = function pingFunction() {
-      if (reconnectionId != this.reconnectionId) {
-        return;
-      }
-
-      let pongDiff = Date.now() - this.lastPongTime;
-
-      if (pongDiff >= 6000) {
-        this.connected = false;
-      }
-
-      if (!this.connected) {
-        let destroyTimeout = 60000;
-        let lowMemoryMode = this.windowManager.lowMemoryMode;
-
-        if (lowMemoryMode || pongDiff >= destroyTimeout) {
-          this.destroy();
-          return;
-        }
-      }
-
-      this.sendPing();
-
-      if (this.deleteBlockCount > 300) {
-        this.flushBlockDeleteQueue();
-      }
-
-      setTimeout(_pingFunction, 2500);
-    }.bind(this);
-
-    if (immediateFire) {
-      _pingFunction();
-    } else {
-      setTimeout(_pingFunction, 2500);
-    }
-  }
-
   _streamModuleInstallCommand(serverBoundValues) {
 
     // look through the server bound values and see if there are any modules that need to be installed
@@ -762,13 +731,10 @@ export class Window {
   }
 
   sendPing() {
-    if (this.destroyed) {
+    if (this.destroyed || !this.bufferFn) {
       return;
     }
-
-    let buffer = this._allocCommandBuffer(1);
-    buffer.writeUInt8(0);
-    this.flushCommandBuffer();
+    this.bufferFn(PING_BUFFER);
   }
 
   _handleBlockCleanup(blockId) {
@@ -776,12 +742,28 @@ export class Window {
       return;
     }
 
-    // if the buffer is full, send it
-    if (this.deleteBlockCount == DELETE_BLOCK_BUFFER_SIZE) {
-      this.emergencyFlushBlockDeleteQueue();
+    let deleteBuffer = this.deleteBlockCommandBuffer;
+
+    if (!deleteBuffer) {
+      deleteBuffer = this.deleteBlockCommandBuffer = Buffer.alloc(
+        INITIAL_DELETE_BLOCK_BUFFER_SIZE * 2
+      );
+    } else if (this.deleteBlockCount === deleteBuffer.length / 2) {
+      if (this.deleteBlockCount === DELETE_BLOCK_BUFFER_SIZE) {
+        this.emergencyFlushBlockDeleteQueue();
+        deleteBuffer = this.deleteBlockCommandBuffer;
+      } else {
+        let nextSize = Math.min(
+          this.deleteBlockCount * 2,
+          DELETE_BLOCK_BUFFER_SIZE
+        );
+        let nextBuffer = Buffer.alloc(nextSize * 2);
+        deleteBuffer.copy(nextBuffer);
+        deleteBuffer = this.deleteBlockCommandBuffer = nextBuffer;
+      }
     }
 
-    this.deleteBlockCommandBuffer.writeUInt16BE(blockId, this.deleteBlockCount * 2);
+    deleteBuffer.writeUInt16BE(blockId, this.deleteBlockCount * 2);
     this.deleteBlockCount++;
 
     if (this.deleteBlockFlushTimer === null) {
@@ -906,15 +888,16 @@ export class Window {
   }
 
   _writeBlockDeleteCommand(blockIds, deleteBlockCount) {
-    let buf = this._allocCommandBuffer(1 + 2 * deleteBlockCount + 2);
+    let buffer = this._allocCommandPage(1 + 2 * deleteBlockCount + 2);
+    let offset = this.commandBufferOffset;
 
-    buf.writeUInt8(CMD_REMOVE_BLOCKS, 0);
+    buffer.writeUInt8(CMD_REMOVE_BLOCKS, offset);
 
     // copy over the block ids
-    blockIds.copy(buf, 1, 0, deleteBlockCount * 2);
+    blockIds.copy(buffer, offset + 1, 0, deleteBlockCount * 2);
 
     // write the end marker
-    buf.writeUInt16BE(0, 1 + 2 * deleteBlockCount);
+    buffer.writeUInt16BE(0, offset + 1 + 2 * deleteBlockCount);
 
     this._recycleBlockIds(blockIds, deleteBlockCount);
   }
@@ -942,26 +925,21 @@ export class Window {
     this.deleteBlockCount = 0;
   }
 
-  registerPong(pongBuffer) {
+  registerClientAcknowledgement(readOffset) {
     if (this.destroyed) {
       return;
     }
 
-    this.lastPongTime = Date.now();
-    this.connected = true;
+    this.registerReadOffset(readOffset);
+  }
 
-    let readOffset = senimanDecode(pongBuffer.subarray(2))[0];
-
-    if (readOffset == 0) {
-      setTimeout(() => {
-        // reconnectionId prop is set to 0 after the window is destroyed through the ping loop
-        if (this.reconnectionId != 0) {
-          this.destroy();
-        }
-      }, 1000);
-    } else {
-      this.registerReadOffset(readOffset);
-    }
+  requestDestroy() {
+    let reconnectionId = this.reconnectionId;
+    setTimeout(() => {
+      if (!this.destroyed && this.reconnectionId === reconnectionId) {
+        this.destroy();
+      }
+    }, 1000);
   }
 
   registerReadOffset(readOffset) {
@@ -983,29 +961,43 @@ export class Window {
     this.global_readOffset = readOffset;
 
     while (
-      this.publications &&
-      this.publicationHead < this.publications.length &&
-      this.publications[this.publicationHead + 1] <= readOffset
+      this.publicationEndOffset > 0 &&
+      this.publicationEndOffset <= readOffset
     ) {
-      this.publicationHead += 2;
+      if (
+        this.publications &&
+        this.publicationHead < this.publications.length
+      ) {
+        this.publicationEndOffset = this.publications[this.publicationHead++];
+      } else {
+        this.publicationEndOffset = 0;
+      }
     }
 
-    if (
-      this.publications &&
-      this.publicationHead === this.publications.length
-    ) {
+    if (this.publications && this.publicationHead === this.publications.length) {
       this.publications = null;
       this.publicationHead = 0;
     } else if (
       this.publications &&
-      this.publicationHead >= 128 &&
+      this.publicationHead >= 64 &&
       this.publicationHead * 2 >= this.publications.length
     ) {
       this.publications = this.publications.slice(this.publicationHead);
       this.publicationHead = 0;
     }
 
-    // free unused pages
+    this._releaseAcknowledgedPages();
+
+    if (this.outputRetentionTracking) {
+      this.windowManager._updateWindowRetainedOutput(this, madeProgress);
+      this.windowManager._afterWindowOutputProgress(this, madeProgress);
+    }
+  }
+
+  _releaseAcknowledgedPages() {
+    // A standard page remains writable across publications. It becomes safe
+    // to recycle only after rollover finalizes it and the client has
+    // acknowledged its complete range.
     while (true) {
       let page = this.pages[0];
 
@@ -1020,7 +1012,10 @@ export class Window {
       }
 
       // if the page is fully read, remove it
-      if (readOffset >= (page.global_headOffset + page.finalSize)) {
+      if (
+        this.global_readOffset >=
+        page.global_headOffset + page.finalSize
+      ) {
         let page = this.pages.shift();
 
         // return the page to the pool for later reuse
@@ -1028,11 +1023,6 @@ export class Window {
       } else {
         break;
       }
-    }
-
-    if (this.outputRetentionTracking) {
-      this.windowManager._updateWindowRetainedOutput(this, madeProgress);
-      this.windowManager._afterWindowOutputProgress(this, madeProgress);
     }
   }
 
@@ -1043,27 +1033,22 @@ export class Window {
 
     if (this.global_publishOffset > this.global_readOffset) {
       let readOffset = this.global_readOffset;
+      let publicationEndOffset = this.publicationEndOffset;
       let publications = this.publications;
 
-      if (!publications) {
+      if (publicationEndOffset === 0) {
         throw new Error('Cannot replay a missing window publication');
       }
 
-      for (
-        let i = this.publicationHead;
-        i < publications.length;
-        i += 2
-      ) {
-        let startOffset = publications[i];
-        let endOffset = publications[i + 1];
+      this.bufferFn(this._readOutputRange(readOffset, publicationEndOffset));
+      readOffset = publicationEndOffset;
 
-        if (endOffset <= readOffset) {
-          continue;
+      if (publications) {
+        for (let i = this.publicationHead; i < publications.length; i++) {
+          let endOffset = publications[i];
+          this.bufferFn(this._readOutputRange(readOffset, endOffset));
+          readOffset = endOffset;
         }
-
-        startOffset = Math.max(readOffset, startOffset);
-        this.bufferFn(this._readOutputRange(startOffset, endOffset));
-        readOffset = endOffset;
       }
 
       if (readOffset != this.global_publishOffset) {
@@ -1088,7 +1073,7 @@ export class Window {
     console.log('reconnected in window', this.id, readOffset);
 
     this.connected = true;
-    this.lastPongTime = Date.now();
+    this.windowManager._markWindowReconnected?.(this);
 
     this.registerReadOffset(readOffset);
     this._restreamUnreadPages();
@@ -1111,7 +1096,15 @@ export class Window {
     }
 
     let handler = this.eventHandlers.get(txPortId);
-    let argsList = senimanDecode(inputBuffer.subarray(2));
+
+    // The common event shape has no arguments. Avoid a Buffer view, decoder
+    // closure, empty string, and empty array for every such event.
+    let argsList = inputBuffer.length === 10 &&
+      inputBuffer.readUInt16LE(6) === 0 &&
+      inputBuffer.readUInt8(8) === MARKERS_ARRAY &&
+      inputBuffer.readUInt8(9) === 0
+      ? EMPTY_ARGUMENTS
+      : senimanDecode(inputBuffer.subarray(6));
 
     handler.apply(null, argsList);
   }
@@ -1141,6 +1134,7 @@ export class Window {
     clearTimeout(this.postScriptTimeout);
 
     this.mutationGroup = null;
+    this.publicationEndOffset = 0;
     this.publications = null;
     this.publicationHead = 0;
     this.publicationOpen = false;
@@ -1190,18 +1184,23 @@ export class Window {
       return;
     }
 
-    let mg = this.mutationGroup;
+    let page = this.mutationGroup;
 
-    if (mg && mg.page.buffer.length > STANDARD_PAGE_SIZE) {
-      mg.page.finalSize = this.global_writeOffset - mg.page.global_headOffset;
+    if (page && page.buffer.length > STANDARD_PAGE_SIZE) {
+      page.finalSize = this.global_writeOffset - page.global_headOffset;
     }
 
     this.mutationGroup = null;
-    this._publishWrittenOutput();
+    this._publishWrittenOutput(page);
+
+    if (page && page.finalSize > 0) {
+      this._releaseAcknowledgedPages();
+    }
   }
 
   _readOutputRange(startOffset, endOffset) {
-    let buffers = [];
+    let firstBuffer = null;
+    let buffers = null;
     let readOffset = startOffset;
 
     for (let page of this.pages) {
@@ -1216,10 +1215,19 @@ export class Window {
 
       let chunkStartOffset = Math.max(readOffset, pageStartOffset);
       let chunkEndOffset = Math.min(endOffset, pageEndOffset);
-      buffers.push(page.buffer.subarray(
+      let buffer = page.buffer.subarray(
         chunkStartOffset - pageStartOffset,
         chunkEndOffset - pageStartOffset
-      ));
+      );
+
+      if (firstBuffer === null) {
+        firstBuffer = buffer;
+      } else {
+        if (buffers === null) {
+          buffers = [firstBuffer];
+        }
+        buffers.push(buffer);
+      }
       readOffset = chunkEndOffset;
 
       if (readOffset === endOffset) {
@@ -1231,12 +1239,12 @@ export class Window {
       throw new Error('Cannot read a missing window output range');
     }
 
-    return buffers.length === 1
-      ? buffers[0]
+    return buffers === null
+      ? firstBuffer
       : Buffer.concat(buffers, endOffset - startOffset);
   }
 
-  _publishWrittenOutput() {
+  _publishWrittenOutput(publicationPage = null) {
     let startOffset = this.global_publishOffset;
     let endOffset = this.global_writeOffset;
 
@@ -1244,11 +1252,14 @@ export class Window {
       return;
     }
 
-    if (!this.publications) {
-      this.publications = [];
+    if (this.publicationEndOffset === 0) {
+      this.publicationEndOffset = endOffset;
+    } else {
+      if (!this.publications) {
+        this.publications = [];
+      }
+      this.publications.push(endOffset);
     }
-
-    this.publications.push(startOffset, endOffset);
     this.global_publishOffset = endOffset;
 
     if (this.outputRetentionTracking) {
@@ -1260,7 +1271,25 @@ export class Window {
     }
 
     if (this.connected) {
-      this.bufferFn(this._readOutputRange(startOffset, endOffset));
+      let outputBuffer = null;
+
+      if (publicationPage) {
+        let pageStartOffset = publicationPage.global_headOffset;
+        let pageEndOffset = publicationPage.finalSize > 0
+          ? pageStartOffset + publicationPage.finalSize
+          : this.global_writeOffset;
+
+        if (startOffset >= pageStartOffset && endOffset <= pageEndOffset) {
+          outputBuffer = publicationPage.buffer.subarray(
+            startOffset - pageStartOffset,
+            endOffset - pageStartOffset
+          );
+        }
+      }
+
+      this.bufferFn(
+        outputBuffer || this._readOutputRange(startOffset, endOffset)
+      );
     }
 
     if (this.outputRetentionTracking) {
@@ -1268,7 +1297,7 @@ export class Window {
     }
   }
 
-  _allocCommandBuffer(size) {
+  _allocCommandPage(size, scheduleFlush = true) {
     if (this.destroyed) {
       throw new Error('Cannot write a client command after the window has been destroyed');
     }
@@ -1283,57 +1312,56 @@ export class Window {
         ? this._allocPage(this.global_writeOffset, pageSize)
         : lastPage;
 
-      this.mutationGroup = {
-        page,
-        pageStartOffset: this.global_writeOffset,
-      };
+      // Keep the page itself as the mutation marker. The former wrapper object
+      // was allocated once per publication but carried no additional state.
+      this.mutationGroup = page;
 
-      queueMicrotask(() => {
-        this._flushMutationGroup();
-      });
+      if (scheduleFlush && !this.publicationOpen) {
+        queueMicrotask(() => {
+          this._flushMutationGroup();
+        });
+      }
     }
 
-    let mg = this.mutationGroup;
+    let page = this.mutationGroup;
 
-    let currentPageOffset = this.global_writeOffset - mg.page.global_headOffset;
+    let currentPageOffset = this.global_writeOffset - page.global_headOffset;
 
     // if we're about to overflow the current page, let's allocate a new one
-    if ((currentPageOffset + size) > mg.page.buffer.length) {
-      let page = mg.page;
+    if ((currentPageOffset + size) > page.buffer.length) {
       page.finalSize = currentPageOffset;
 
       this._flushMutationGroup();
 
-      let newPage = this._allocPage(this.global_writeOffset, pageSize);
-
-      mg = this.mutationGroup = {
-        page: newPage,
-        pageStartOffset: this.global_writeOffset
-      };
+      page = this._allocPage(this.global_writeOffset, pageSize);
+      this.mutationGroup = page;
 
       currentPageOffset = 0;
     }
 
     this.global_writeOffset += size;
 
-    return mg.page.buffer.subarray(currentPageOffset, currentPageOffset + size);
+    this.commandBufferOffset = currentPageOffset;
+    return page.buffer;
   }
 
   _streamInitWindow() {
-    let buf = this._allocCommandBuffer(1 + 21)
-    buf.writeUInt8(CMD_INIT_WINDOW, 0);
-    buf.write(this.pageParams.windowId, 1, 21);
+    let buf = this._allocCommandPage(1 + 21)
+    let offset = this.commandBufferOffset;
+    buf.writeUInt8(CMD_INIT_WINDOW, offset);
+    buf.write(this.pageParams.windowId, offset + 1, 21);
   }
 
   _streamInstallEventTypeCommand(eventType) {
     // translate the eventType int to a string
     let eventName = eventTypeNameMap[eventType];
-    let buf = this._allocCommandBuffer(1 + 1 + 1 + eventName.length);
+    let buf = this._allocCommandPage(1 + 1 + 1 + eventName.length);
+    let offset = this.commandBufferOffset;
 
-    buf.writeUInt8(CMD_INSTALL_EVENT_TYPE, 0);
-    buf.writeUInt8(eventType, 1);
-    buf.writeUInt8(eventName.length, 2);
-    buf.write(eventName, 3, eventName.length);
+    buf.writeUInt8(CMD_INSTALL_EVENT_TYPE, offset);
+    buf.writeUInt8(eventType, offset + 1);
+    buf.writeUInt8(eventName.length, offset + 2);
+    buf.write(eventName, offset + 3, eventName.length);
 
     this.clientEventTypeInstallationSet.add(eventType);
   }
@@ -1454,7 +1482,8 @@ export class Window {
   _allocServerBoundCommand(prefixSize, serverBindFns) {
     let sizeWriter = new BufferWriter();
     this._writeServerBoundValues(sizeWriter, serverBindFns);
-    return new BufferWriter(this._allocCommandBuffer(prefixSize + sizeWriter.offset));
+    let buffer = this._allocCommandPage(prefixSize + sizeWriter.offset);
+    return new BufferWriter(buffer, this.commandBufferOffset);
   }
 
   _streamTemplateInstallCommand(templateId) {
@@ -1498,11 +1527,12 @@ export class Window {
   }
 
   _streamBlockInitCommand2(blockId, blockTemplateIds) {
-    let buf = this._allocCommandBuffer(1 + 2 + 2);
+    let buf = this._allocCommandPage(1 + 2 + 2);
+    let offset = this.commandBufferOffset;
 
-    buf.writeUInt8(CMD_INIT_BLOCK, 0);
-    buf.writeUInt16BE(blockId, 1);
-    buf.writeUInt16BE(blockTemplateIds, 3);
+    buf.writeUInt8(CMD_INIT_BLOCK, offset);
+    buf.writeUInt16BE(blockId, offset + 1);
+    buf.writeUInt16BE(blockTemplateIds, offset + 3);
   }
 
   _createSequence(listLength) {
@@ -1512,11 +1542,12 @@ export class Window {
     // CMD + BLOCK_ID + LIST_LENGTH
     let bufferLength = 1 + 2 + 2;
 
-    let buf = this._allocCommandBuffer(bufferLength);
+    let buf = this._allocCommandPage(bufferLength);
+    let offset = this.commandBufferOffset;
 
-    buf.writeUInt8(CMD_INIT_SEQUENCE, 0);
-    buf.writeUInt16BE(_seqId, 1);
-    buf.writeUInt16BE(listLength, 3);
+    buf.writeUInt8(CMD_INIT_SEQUENCE, offset);
+    buf.writeUInt16BE(_seqId, offset + 1);
+    buf.writeUInt16BE(listLength, offset + 3);
 
     onCleanup(() => {
       this._handleBlockCleanup(_seqId);
@@ -1549,35 +1580,37 @@ export class Window {
     // get the value
     // value is blockId
 
-    let textBuffer = Buffer.from(value, "utf-8")
+    let textBuffer = Buffer.from(value, "utf-8");
     let textLength = textBuffer.length;
 
     // TODO: handle string length longer than 32K
-    let buf2 = this._allocCommandBuffer(1 + 2 + 2 + 2 + textLength);
+    let buffer = this._allocCommandPage(1 + 2 + 2 + 2 + textLength);
+    let offset = this.commandBufferOffset;
 
-    buf2.writeUInt8(CMD_ATTACH_ANCHOR, 0);
-    buf2.writeUInt16BE(blockId, 1);
+    buffer.writeUInt8(CMD_ATTACH_ANCHOR, offset);
+    buffer.writeUInt16BE(blockId, offset + 1);
 
-    buf2.writeUInt16BE(anchorIndex, 3);
+    buffer.writeUInt16BE(anchorIndex, offset + 3);
 
     if (textLength > 32677) {
       throw new Error();
     }
 
-    buf2.writeUInt16BE(textLength, 5);
-    textBuffer.copy(buf2, 7);
+    buffer.writeUInt16BE(textLength, offset + 5);
+    textBuffer.copy(buffer, offset + 7);
   }
 
   _streamAttachBlockCommand(parentBlockId, anchorIndex, blockId) {
-    let buf2 = this._allocCommandBuffer(1 + 2 + 2 + 2);
+    let buf2 = this._allocCommandPage(1 + 2 + 2 + 2);
+    let offset = this.commandBufferOffset;
 
-    buf2.writeUInt8(CMD_ATTACH_ANCHOR, 0);
-    buf2.writeUInt16BE(parentBlockId, 1);
-    buf2.writeUInt16BE(anchorIndex, 3);
+    buf2.writeUInt8(CMD_ATTACH_ANCHOR, offset);
+    buf2.writeUInt16BE(parentBlockId, offset + 1);
+    buf2.writeUInt16BE(anchorIndex, offset + 3);
 
     let modifiedBlockId = blockId;
 
-    buf2.writeUInt16BE(modifiedBlockId |= (1 << 15), 5);
+    buf2.writeUInt16BE(modifiedBlockId |= (1 << 15), offset + 5);
 
     if (this.blockOnMountFns.has(blockId)) {
       let onMountFns = this.blockOnMountFns.get(blockId);
@@ -1605,6 +1638,7 @@ export class Window {
       }
 
       this.blockOnMountFns.delete(blockId);
+
     }
   }
 
@@ -1637,12 +1671,13 @@ export class Window {
   }
 
   _streamAttachRefCommand(blockId, targetId, refId) {
-    let buf = this._allocCommandBuffer(1 + 2 + 1 + 2);
+    let buf = this._allocCommandPage(1 + 2 + 1 + 2);
+    let offset = this.commandBufferOffset;
 
-    buf.writeUInt8(CMD_ATTACH_REF, 0);
-    buf.writeUInt16BE(blockId, 1);
-    buf.writeUInt8(targetId, 3);
-    buf.writeUInt16BE(refId, 4);
+    buf.writeUInt8(CMD_ATTACH_REF, offset);
+    buf.writeUInt16BE(blockId, offset + 1);
+    buf.writeUInt8(targetId, offset + 3);
+    buf.writeUInt16BE(refId, offset + 4);
   }
 
   _streamRunLifecycleCommand(blockId, targetId, clientFnId, serverBindFns) {
@@ -1819,14 +1854,15 @@ export class Window {
       // TODO: improve this abstraction
       let elRef = {
         _staticHelper: (mode, propName, propValue) => {
-          let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + uvarintSize(propName) + 2 + propValue.length);
+          let buf = this._allocCommandPage(1 + 2 + 1 + 1 + uvarintSize(propName) + 2 + propValue.length);
+          let commandOffset = this.commandBufferOffset;
 
-          buf.writeUInt8(CMD_ELEMENT_UPDATE, 0);
-          buf.writeUInt16BE(blockId, 1);
-          buf.writeUInt8(targetId, 3);
-          buf.writeUInt8(mode, 4);
+          buf.writeUInt8(CMD_ELEMENT_UPDATE, commandOffset);
+          buf.writeUInt16BE(blockId, commandOffset + 1);
+          buf.writeUInt8(targetId, commandOffset + 3);
+          buf.writeUInt8(mode, commandOffset + 4);
 
-          let offset = writeUvarint(buf, propName, 5);
+          let offset = writeUvarint(buf, propName, commandOffset + 5);
 
           buf.writeUInt16BE(propValue.length, offset);
           offset += 2;
@@ -1869,7 +1905,8 @@ export class Window {
             commandSize += valueIndex ? 0 : Buffer.byteLength(value);
           }
 
-          let writer = new BufferWriter(this._allocCommandBuffer(commandSize));
+          let commandBuffer = this._allocCommandPage(commandSize);
+          let writer = new BufferWriter(commandBuffer, this.commandBufferOffset);
           writer.writeUInt8(CMD_ELEMENT_UPDATE);
           writer.writeUInt16BE(blockId);
           writer.writeUInt8(targetId);
@@ -1903,13 +1940,14 @@ export class Window {
 
         removeAttribute: (propName) => {
           let tokenId = this._registerAttrKey(propName);
-          let buf = this._allocCommandBuffer(1 + 2 + 1 + 1 + uvarintSize(tokenId));
+          let buf = this._allocCommandPage(1 + 2 + 1 + 1 + uvarintSize(tokenId));
+          let offset = this.commandBufferOffset;
 
-          buf.writeUInt8(CMD_ELEMENT_UPDATE, 0);
-          buf.writeUInt16BE(blockId, 1);
-          buf.writeUInt8(targetId, 3);
-          buf.writeUInt8(UPDATE_MODE_REMOVE_ATTR, 4);
-          writeUvarint(buf, tokenId, 5);
+          buf.writeUInt8(CMD_ELEMENT_UPDATE, offset);
+          buf.writeUInt16BE(blockId, offset + 1);
+          buf.writeUInt8(targetId, offset + 3);
+          buf.writeUInt8(UPDATE_MODE_REMOVE_ATTR, offset + 4);
+          writeUvarint(buf, tokenId, offset + 5);
         },
 
         setAttribute: (propName, propValue) => {
@@ -1965,12 +2003,13 @@ export class Window {
     let CMD_MODIFY_TOKENMAP = 12;
 
     let tokenLength = Buffer.byteLength(tokenName);
-    let buf = this._allocCommandBuffer(1 + 1 + tokenLength + 1);
+    let buf = this._allocCommandPage(1 + 1 + tokenLength + 1);
+    let offset = this.commandBufferOffset;
 
-    buf.writeUInt8(CMD_MODIFY_TOKENMAP, 0);
-    buf.writeUInt8(tokenLength, 1);
-    buf.write(tokenName, 2, tokenLength);
-    buf.writeUInt8(0, 2 + tokenLength);
+    buf.writeUInt8(CMD_MODIFY_TOKENMAP, offset);
+    buf.writeUInt8(tokenLength, offset + 1);
+    buf.write(tokenName, offset + 2, tokenLength);
+    buf.writeUInt8(0, offset + 2 + tokenLength);
   }
 
   _attach(blockId, anchorIndex, nodeResult) {
@@ -2072,10 +2111,11 @@ export class Window {
     // CMD + BLOCK_ID
     let bufferLength = 1 + 2;
 
-    let buf = this._allocCommandBuffer(bufferLength);
+    let buf = this._allocCommandPage(bufferLength);
+    let offset = this.commandBufferOffset;
 
-    buf.writeUInt8(CMD_INIT_SEQUENCE, 0);
-    buf.writeUInt16BE(newSeqId, 1);
+    buf.writeUInt8(CMD_INIT_SEQUENCE, offset);
+    buf.writeUInt16BE(newSeqId, offset + 1);
 
     onDispose(() => {
       this._handleBlockCleanup(newSeqId);
@@ -2099,12 +2139,13 @@ export class Window {
   _remove_sequenceItems(sequence, startIndex, count) {
     let seqId = sequence.id;
 
-    let buf = this._allocCommandBuffer(1 + 2 + 2 + 2);
+    let buf = this._allocCommandPage(1 + 2 + 2 + 2);
+    let offset = this.commandBufferOffset;
 
-    buf.writeUInt8(CMD_SEQUENCE_REMOVE_ITEMS, 0);
-    buf.writeUInt16BE(seqId, 1);
-    buf.writeUInt16BE(startIndex, 3);
-    buf.writeUInt16BE(count, 5);
+    buf.writeUInt8(CMD_SEQUENCE_REMOVE_ITEMS, offset);
+    buf.writeUInt16BE(seqId, offset + 1);
+    buf.writeUInt16BE(startIndex, offset + 3);
+    buf.writeUInt16BE(count, offset + 5);
   }
 
   _insert_sequenceItems(sequence, startIndex, startItemId, nodeResults) {
@@ -2184,7 +2225,8 @@ export class Window {
 
     sequence.registerDisposeFns(startIndex, disposeFns);
 
-    let writer = new BufferWriter(this._allocCommandBuffer(commandSize));
+    let commandBuffer = this._allocCommandPage(commandSize);
+    let writer = new BufferWriter(commandBuffer, this.commandBufferOffset);
     writer.writeUInt8(CMD_SEQUENCE_INSERT_ITEMS);
     writer.writeUInt16BE(sequenceId);
     writer.writeUInt16BE(startIndex);
@@ -2252,6 +2294,7 @@ const MARKERS_BOOLEAN = 6;
 const MARKERS_ARRAY = 8;
 const MARKERS_OBJECT = 9;
 const MARKERS_ARRAY_BUFFER = 10;
+const EMPTY_ARGUMENTS = [];
 
 function senimanDecode(buffer) {
   let stringBufferLength = buffer.readUInt16LE(0);
