@@ -2296,6 +2296,7 @@ export function createChannel() {
 let textDecoder = new TextDecoder();
 
 const MARKERS_STRING = 1;
+const MARKERS_NULL = 2;
 const MARKERS_NUMBER_INT16 = 3;
 const MARKERS_NUMBER_INT32 = 4;
 const MARKERS_NUMBER_FLOAT64 = 5;
@@ -2322,7 +2323,8 @@ function senimanDecode(buffer) {
 
     switch (marker) {
       case MARKERS_ARRAY: {
-        let length = buffer[position++];
+        let length = buffer.readUInt16LE(position);
+        position += 2;
 
         // create array of a certain length
         let arr = new Array(length);
@@ -2365,8 +2367,12 @@ function senimanDecode(buffer) {
       case MARKERS_BOOLEAN: {
         return !!buffer[position++];
       }
+      case MARKERS_NULL: {
+        return null;
+      }
       case MARKERS_OBJECT: {
-        let length = buffer[position++];
+        let length = buffer.readUInt16LE(position);
+        position += 2;
         let obj = {};
 
         for (let i = 0; i < length; i++) {
