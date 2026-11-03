@@ -421,100 +421,33 @@
         break;
     }
   }
-  let _compileTemplate = (templateTokenList) => {
+  // Numeric character references decode exactly like the named ones, in text and attributes.
+  let escapeHtml = (value) => value.replace(/[&<>"]/g, ch => '&#' + ch.charCodeAt() + ';');
 
-    let totalElementCount = getUint16();
-    let totalProcessed = 0;
-    let templateString = '';
-    let isSvg = false;
+  // @include src/template-reader.js
 
-    let dig = (isRoot) => {
+  let readTemplate = createTemplateReader(getUint8, getUint16, getUvarint, getString);
 
-      while (totalProcessed < totalElementCount) {
-        let firstByte = getUint8();
-        let tagNameId = firstByte & 63; // get first 6 bits of the byte
-        let nextSibling = (firstByte & 128) > 0; // 8th-bit
+  // Elements are serialized to HTML and parsed with innerHTML; ELSCRIPT becomes a function
+  // that walks a clone of the template to its anchors and targets.
+  let _installTemplate2 = (varint) => {
+    let html = '';
+    let isSvg;
+    let [templateId, refs, anchors, targets] = readTemplate(varint, GlobalTokenList,
+      (parent, tagName, attrs) => {
+        // TODO: this is a hack to make SVG work -- do this during compilation?
+        isSvg = isSvg || !parent && tagName == 'path';
+        html += `<${tagName}${attrs.map(([name, value]) => ` ${name}="${escapeHtml(value)}"`).join('')}>`;
+        return tagName;
+      },
+      // Text is escaped -- except the compiler's '<!>' placeholder (parsed into a comment node
+      // on purpose) and the contents of raw-text elements, where the parser doesn't decode entities.
+      (parent, text) => html += parent == 'script' || parent == 'style' || text == '<!>' ? text : escapeHtml(text),
+      (tagName) => selfClosingTagSet.has(tagName) || (html += `</${tagName}>`)
+    );
 
-        // handle if text
-        if (tagNameId == 0) {
-          let textLength = getUint16();
-          templateString += getString(textLength);
-        } else {
-          let attrId;
-          let tagName = templateTokenList[tagNameId - 1];
-          let isSelfClosing = selfClosingTagSet.has(tagName);
-
-          templateString += `<${tagName}`;
-
-          if (isRoot && tagName == 'path') {
-            isSvg = true;
-          }
-
-          while (attrId = getUint8()) {
-            let attrName = templateTokenList[attrId - 1];
-            let attrValueString = '';
-
-            if (attrName == 'style') {
-              let propKeyId;
-
-              while ((propKeyId = getUint8())) {
-                let propKey = templateTokenList[propKeyId - 1];
-                let propValueId = getUint8();
-                let propValue = templateTokenList[propValueId - 1];
-
-                attrValueString += `${propKey}:${propValue};`;
-              }
-            } else {
-              let attrValueLength = getUint16();
-              attrValueString = getString(attrValueLength);
-            }
-
-            templateString += ` ${attrName}="${attrValueString}"`;
-          }
-
-          templateString += '>';
-
-          if (!isSelfClosing) {
-            let hasChildren = (firstByte & 64) > 0; // 7th-bit
-
-            if (hasChildren) {
-              dig(false);
-            }
-
-            templateString += `</${tagName}>`;
-          }
-        }
-
-        totalProcessed++;
-
-        if (!nextSibling) {
-          break;
-        }
-      }
-    }
-
-    dig(true);
-
-    // TODO: this is a hack to make SVG work -- do this during compilation?
-    if (isSvg) {
-      templateString = `<svg>${templateString}</svg>`;
-    }
-
-    return [templateString, isSvg];
-  }
-
-  let _installTemplate2 = () => {
-    let templateId = getUint16();
-    let templateTokenList = [];
-    let id;
-
-    while (id = getUint16()) {
-      templateTokenList.push(GlobalTokenList[id]);
-    }
-
-    let [templateString, isSvg] = _compileTemplate(templateTokenList);
     const t = createElement("template");
-    t.innerHTML = templateString;
+    t.innerHTML = isSvg ? `<svg>${html}</svg>` : html;
     let node = t.content.firstChild;
 
     // handle case where template is a script -- need to create a new script element from scratch
@@ -528,57 +461,16 @@
       node = node.firstChild;
     }
 
+    // the root is `_`, element i is `_i`
+    let ref = (index) => index < 0 ? '' : index;
+
     templateDefinitionMap.set(templateId, {
       tpl: node,
-      fn: _compileFn2(templateId)
+      fn: new Function('_',
+        refs.map(([rel, index], i) => `let _${i}=_${ref(index)}.${rel == 1 ? 'firstChild' : 'nextSibling'};`).join('') +
+        `return[[${anchors.map(([el, marker]) => `{el:_${ref(el)}${marker < 0 ? '' : ',marker:_' + marker}}`)}],[${targets.map(index => '_' + index)}]]`
+      )
     })
-  }
-
-  let _compileFn2 = (templateId) => {
-    let fnString = "";
-    let refElementsCount = getUint8();
-
-    for (let i = 0; i < refElementsCount; i++) {
-      let rel = getUint8();
-      let relRefId = getUint8();
-
-      let FIRST_CHILD = 1;
-
-      // root has no number associated in the variable name (let _) vs (let _1)
-      let refElName = relRefId < 255 ? relRefId : '';
-      let referenceType = rel == FIRST_CHILD ? 'firstChild' : 'nextSibling';
-
-      fnString += `let _${i}=_${refElName}.${referenceType};`;
-    }
-
-    let anchorCount = getUint8();
-
-    fnString += 'return [[';
-
-    let str = [];
-
-    for (i = 0; i < anchorCount; i++) {
-      let elId = getUint8();// elScript.anchors[i].el;
-      let beforeElId = getUint8();
-
-      // in beforeEl context, 255 means undefined -- ie. no beforeEl applicable. 
-      // 255 that is usually used to refer to rootElement can be reused here since 
-      // there is no situation in which rootElement is an anchor's beforeElement.
-      let beforeElStr = beforeElId == 255 ? '' : `,marker:_${beforeElId}`;
-      str.push(`{el:_${(elId < 255 ? elId : '') + beforeElStr}}`);
-    }
-
-    fnString += str.join(',') + '],[';
-
-    let targetElementCount = getUint8();
-
-    str = [];
-    for (i = 0; i < targetElementCount; i++) {
-      str.push(`_${getUint8()}`);
-    }
-    fnString += str.join(',') + ']];';
-
-    return new Function("_", fnString);
   }
 
   let _initBlock = () => {
@@ -591,9 +483,14 @@
     _blocksMap.set(blockId, new Block(blockId, componentRootElement, targetEls, anchorDefs));
   }
 
-  // TODO: move to another way that doesn't require a global
-  Text.prototype.insertInto = function (parentEl, marker) {
-    parentEl.insertBefore(this, marker);
+  // Items are text nodes, Blocks or Sequences. Text nodes are inserted directly; Blocks and
+  // Sequences know how to insert themselves. (Removal needs no helper: Text has native remove().)
+  let insertItem = (item, parentEl, marker) => {
+    if (item.nodeType) {
+      parentEl.insertBefore(item, marker);
+    } else {
+      item.insertInto(parentEl, marker);
+    }
   };
 
   class Block {
@@ -623,7 +520,7 @@
         oldItem.remove();
       }
 
-      item.insertInto(anchor.el, anchor.marker);
+      insertItem(item, anchor.el, anchor.marker);
     }
 
     insertInto(parentEl, marker) {
@@ -659,7 +556,7 @@
       this.mounted = true;
 
       for (let i = 0; i < this.items.length; i++) {
-        this.items[i].insertInto(parentEl, this.endMarker);
+        insertItem(this.items[i], parentEl, this.endMarker);
       } 
     }
 
@@ -710,7 +607,7 @@
 
     _insert(isLastItem, index, item) {
       let insertionMarker = isLastItem ? this.endMarker : getInsertionMarker(this.items[index + 1]);
-      item.insertInto(this.endMarker.parentNode, insertionMarker);
+      insertItem(item, this.endMarker.parentNode, insertionMarker);
     }
 
     _removeItems(startIndex, count) {
@@ -725,7 +622,7 @@
   }
 
   let getInsertionMarker = (item) => {
-    if (item instanceof Text) {
+    if (item.nodeType) {
       return item;
     } else if (item instanceof Sequence) {
       return item.items.length > 0
@@ -895,6 +792,8 @@
 
       sequence._removeItems(startIndex, count);
     },
+    // 20: CMD_INSTALL_TEMPLATE_VARINT
+    () => _installTemplate2(true),
   ];
 
   let _constructItem = () => {

@@ -1,0 +1,976 @@
+exports[`compiler snapshot: 1000 rows (larger than the initial 2KB buffer) 1`] = `
+--- compiled ---
+<168332 chars, sha256:e41e3ff4b552a9bc>
+--- block 0 (compact) ---
+tokens (2): ["div","class"]
+template: 30894 bytes
+  <61788 chars, sha256:9fba434ad502d9c1>
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: 255 static siblings 1`] = `
+--- compiled ---
+<7582 chars, sha256:c8a6b039d64b0497>
+--- block 0 (compact) ---
+tokens (2): ["div","span"]
+template: 514 bytes
+  0100410082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  0200
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: 255 vs 256 block tokens via distinct inline style values 1`] = `
+--- compiled ---
+<38803 chars, sha256:04fcb0f8a9039107>
+--- block 0 (compact) ---
+tokens (255): ["div","style","width","0px","1px","2px","3px","4px","5px","6px","7px","8px","9px","10px","11px","12px","13px","14px","15px","16px","17px","18px","19px","20px","21px","22px","23px","24px","25px","26px","27px","28px","29px","30px","31px","32px","33px","34px","35px","36px","37px","38px","39px","40px","41px","42px","43px","44px","45px","46px","47px","48px","49px","50px","51px","52px","53px","54px","55px","56px","57px","58px","59px","60px","61px","62px","63px","64px","65px","66px","67px","68px","69px","70px","71px","72px","73px","74px","75px","76px","77px","78px","79px","80px","81px","82px","83px","84px","85px","86px","87px","88px","89px","90px","91px","92px","93px","94px","95px","96px","97px","98px","99px","100px","101px","102px","103px","104px","105px","106px","107px","108px","109px","110px","111px","112px","113px","114px","115px","116px","117px","118px","119px","120px","121px","122px","123px","124px","125px","126px","127px","128px","129px","130px","131px","132px","133px","134px","135px","136px","137px","138px","139px","140px","141px","142px","143px","144px","145px","146px","147px","148px","149px","150px","151px","152px","153px","154px","155px","156px","157px","158px","159px","160px","161px","162px","163px","164px","165px","166px","167px","168px","169px","170px","171px","172px","173px","174px","175px","176px","177px","178px","179px","180px","181px","182px","183px","184px","185px","186px","187px","188px","189px","190px","191px","192px","193px","194px","195px","196px","197px","198px","199px","200px","201px","202px","203px","204px","205px","206px","207px","208px","209px","210px","211px","212px","213px","214px","215px","216px","217px","218px","219px","220px","221px","222px","223px","224px","225px","226px","227px","228px","229px","230px","231px","232px","233px","234px","235px","236px","237px","238px","239px","240px","241px","242px","243px","244px","245px","246px","247px","248px","249px","250px","251px"]
+template: 1516 bytes
+  00fd410081020304000081020305000081020306000081020307000081020308
+  00008102030900008102030a00008102030b00008102030c00008102030d0000
+  8102030e00008102030f00008102031000008102031100008102031200008102
+  0313000081020314000081020315000081020316000081020317000081020318
+  00008102031900008102031a00008102031b00008102031c00008102031d0000
+  8102031e00008102031f00008102032000008102032100008102032200008102
+  0323000081020324000081020325000081020326000081020327000081020328
+  00008102032900008102032a00008102032b00008102032c00008102032d0000
+  8102032e00008102032f00008102033000008102033100008102033200008102
+  0333000081020334000081020335000081020336000081020337000081020338
+  00008102033900008102033a00008102033b00008102033c00008102033d0000
+  8102033e00008102033f00008102034000008102034100008102034200008102
+  0343000081020344000081020345000081020346000081020347000081020348
+  00008102034900008102034a00008102034b00008102034c00008102034d0000
+  8102034e00008102034f00008102035000008102035100008102035200008102
+  0353000081020354000081020355000081020356000081020357000081020358
+  00008102035900008102035a00008102035b00008102035c00008102035d0000
+  8102035e00008102035f00008102036000008102036100008102036200008102
+  0363000081020364000081020365000081020366000081020367000081020368
+  00008102036900008102036a00008102036b00008102036c00008102036d0000
+  8102036e00008102036f00008102037000008102037100008102037200008102
+  0373000081020374000081020375000081020376000081020377000081020378
+  00008102037900008102037a00008102037b00008102037c00008102037d0000
+  8102037e00008102037f00008102038000008102038100008102038200008102
+  0383000081020384000081020385000081020386000081020387000081020388
+  00008102038900008102038a00008102038b00008102038c00008102038d0000
+  8102038e00008102038f00008102039000008102039100008102039200008102
+  0393000081020394000081020395000081020396000081020397000081020398
+  00008102039900008102039a00008102039b00008102039c00008102039d0000
+  8102039e00008102039f0000810203a00000810203a10000810203a200008102
+  03a30000810203a40000810203a50000810203a60000810203a70000810203a8
+  0000810203a90000810203aa0000810203ab0000810203ac0000810203ad0000
+  810203ae0000810203af0000810203b00000810203b10000810203b200008102
+  03b30000810203b40000810203b50000810203b60000810203b70000810203b8
+  0000810203b90000810203ba0000810203bb0000810203bc0000810203bd0000
+  810203be0000810203bf0000810203c00000810203c10000810203c200008102
+  03c30000810203c40000810203c50000810203c60000810203c70000810203c8
+  0000810203c90000810203ca0000810203cb0000810203cc0000810203cd0000
+  810203ce0000810203cf0000810203d00000810203d10000810203d200008102
+  03d30000810203d40000810203d50000810203d60000810203d70000810203d8
+  0000810203d90000810203da0000810203db0000810203dc0000810203dd0000
+  810203de0000810203df0000810203e00000810203e10000810203e200008102
+  03e30000810203e40000810203e50000810203e60000810203e70000810203e8
+  0000810203e90000810203ea0000810203eb0000810203ec0000810203ed0000
+  810203ee0000810203ef0000810203f00000810203f10000810203f200008102
+  03f30000810203f40000810203f50000810203f60000810203f70000810203f8
+  0000810203f90000810203fa0000810203fb0000810203fc0000810203fd0000
+  810203fe0000010203ff0000
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+--- block 1 (varint) ---
+tokens (256): ["div","style","width","0px","1px","2px","3px","4px","5px","6px","7px","8px","9px","10px","11px","12px","13px","14px","15px","16px","17px","18px","19px","20px","21px","22px","23px","24px","25px","26px","27px","28px","29px","30px","31px","32px","33px","34px","35px","36px","37px","38px","39px","40px","41px","42px","43px","44px","45px","46px","47px","48px","49px","50px","51px","52px","53px","54px","55px","56px","57px","58px","59px","60px","61px","62px","63px","64px","65px","66px","67px","68px","69px","70px","71px","72px","73px","74px","75px","76px","77px","78px","79px","80px","81px","82px","83px","84px","85px","86px","87px","88px","89px","90px","91px","92px","93px","94px","95px","96px","97px","98px","99px","100px","101px","102px","103px","104px","105px","106px","107px","108px","109px","110px","111px","112px","113px","114px","115px","116px","117px","118px","119px","120px","121px","122px","123px","124px","125px","126px","127px","128px","129px","130px","131px","132px","133px","134px","135px","136px","137px","138px","139px","140px","141px","142px","143px","144px","145px","146px","147px","148px","149px","150px","151px","152px","153px","154px","155px","156px","157px","158px","159px","160px","161px","162px","163px","164px","165px","166px","167px","168px","169px","170px","171px","172px","173px","174px","175px","176px","177px","178px","179px","180px","181px","182px","183px","184px","185px","186px","187px","188px","189px","190px","191px","192px","193px","194px","195px","196px","197px","198px","199px","200px","201px","202px","203px","204px","205px","206px","207px","208px","209px","210px","211px","212px","213px","214px","215px","216px","217px","218px","219px","220px","221px","222px","223px","224px","225px","226px","227px","228px","229px","230px","231px","232px","233px","234px","235px","236px","237px","238px","239px","240px","241px","242px","243px","244px","245px","246px","247px","248px","249px","250px","251px","252px"]
+template: 1651 bytes
+  fe01410081020304000081020305000081020306000081020307000081020308
+  00008102030900008102030a00008102030b00008102030c00008102030d0000
+  8102030e00008102030f00008102031000008102031100008102031200008102
+  0313000081020314000081020315000081020316000081020317000081020318
+  00008102031900008102031a00008102031b00008102031c00008102031d0000
+  8102031e00008102031f00008102032000008102032100008102032200008102
+  0323000081020324000081020325000081020326000081020327000081020328
+  00008102032900008102032a00008102032b00008102032c00008102032d0000
+  8102032e00008102032f00008102033000008102033100008102033200008102
+  0333000081020334000081020335000081020336000081020337000081020338
+  00008102033900008102033a00008102033b00008102033c00008102033d0000
+  8102033e00008102033f00008102034000008102034100008102034200008102
+  0343000081020344000081020345000081020346000081020347000081020348
+  00008102034900008102034a00008102034b00008102034c00008102034d0000
+  8102034e00008102034f00008102035000008102035100008102035200008102
+  0353000081020354000081020355000081020356000081020357000081020358
+  00008102035900008102035a00008102035b00008102035c00008102035d0000
+  8102035e00008102035f00008102036000008102036100008102036200008102
+  0363000081020364000081020365000081020366000081020367000081020368
+  00008102036900008102036a00008102036b00008102036c00008102036d0000
+  8102036e00008102036f00008102037000008102037100008102037200008102
+  0373000081020374000081020375000081020376000081020377000081020378
+  00008102037900008102037a00008102037b00008102037c00008102037d0000
+  8102037e00008102037f00008102038001000081020381010000810203820100
+  0081020383010000810203840100008102038501000081020386010000810203
+  8701000081020388010000810203890100008102038a0100008102038b010000
+  8102038c0100008102038d0100008102038e0100008102038f01000081020390
+  0100008102039101000081020392010000810203930100008102039401000081
+  0203950100008102039601000081020397010000810203980100008102039901
+  00008102039a0100008102039b0100008102039c0100008102039d0100008102
+  039e0100008102039f010000810203a0010000810203a1010000810203a20100
+  00810203a3010000810203a4010000810203a5010000810203a6010000810203
+  a7010000810203a8010000810203a9010000810203aa010000810203ab010000
+  810203ac010000810203ad010000810203ae010000810203af010000810203b0
+  010000810203b1010000810203b2010000810203b3010000810203b401000081
+  0203b5010000810203b6010000810203b7010000810203b8010000810203b901
+  0000810203ba010000810203bb010000810203bc010000810203bd0100008102
+  03be010000810203bf010000810203c0010000810203c1010000810203c20100
+  00810203c3010000810203c4010000810203c5010000810203c6010000810203
+  c7010000810203c8010000810203c9010000810203ca010000810203cb010000
+  810203cc010000810203cd010000810203ce010000810203cf010000810203d0
+  010000810203d1010000810203d2010000810203d3010000810203d401000081
+  0203d5010000810203d6010000810203d7010000810203d8010000810203d901
+  0000810203da010000810203db010000810203dc010000810203dd0100008102
+  03de010000810203df010000810203e0010000810203e1010000810203e20100
+  00810203e3010000810203e4010000810203e5010000810203e6010000810203
+  e7010000810203e8010000810203e9010000810203ea010000810203eb010000
+  810203ec010000810203ed010000810203ee010000810203ef010000810203f0
+  010000810203f1010000810203f2010000810203f3010000810203f401000081
+  0203f5010000810203f6010000810203f7010000810203f8010000810203f901
+  0000810203fa010000810203fb010000810203fc010000810203fd0100008102
+  03fe010000810203ff01000001020380020000
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: 256 static siblings (root sentinel boundary) 1`] = `
+--- compiled ---
+<7610 chars, sha256:af79837c90a210d1>
+--- block 0 (compact) ---
+tokens (2): ["div","span"]
+template: 516 bytes
+  0101410082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  82000200
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: 5000 rows (exceeds max page size) 1`] = `
+--- compiled ---
+<844332 chars, sha256:edafc5ad3967a34b>
+--- block 0 ---
+throws: Seniman template limit reached: this block's template is 158906 bytes, exceeding SENIMAN_MAX_PAGE_SIZE=131072. Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.
+`;
+
+exports[`compiler snapshot: 63 vs 64 distinct tag names 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "div",
+    children: [{
+      type: "t0"
+    }, {
+      type: "t1"
+    }, {
+      type: "t2"
+    }, {
+      type: "t3"
+    }, {
+      type: "t4"
+    }, {
+      type: "t5"
+    }, {
+      type: "t6"
+    }, {
+      type: "t7"
+    }, {
+      type: "t8"
+    }, {
+      type: "t9"
+    }, {
+      type: "t10"
+    }, {
+      type: "t11"
+    }, {
+      type: "t12"
+    }, {
+      type: "t13"
+    }, {
+      type: "t14"
+    }, {
+      type: "t15"
+    }, {
+      type: "t16"
+    }, {
+      type: "t17"
+    }, {
+      type: "t18"
+    }, {
+      type: "t19"
+    }, {
+      type: "t20"
+    }, {
+      type: "t21"
+    }, {
+      type: "t22"
+    }, {
+      type: "t23"
+    }, {
+      type: "t24"
+    }, {
+      type: "t25"
+    }, {
+      type: "t26"
+    }, {
+      type: "t27"
+    }, {
+      type: "t28"
+    }, {
+      type: "t29"
+    }, {
+      type: "t30"
+    }, {
+      type: "t31"
+    }, {
+      type: "t32"
+    }, {
+      type: "t33"
+    }, {
+      type: "t34"
+    }, {
+      type: "t35"
+    }, {
+      type: "t36"
+    }, {
+      type: "t37"
+    }, {
+      type: "t38"
+    }, {
+      type: "t39"
+    }, {
+      type: "t40"
+    }, {
+      type: "t41"
+    }, {
+      type: "t42"
+    }, {
+      type: "t43"
+    }, {
+      type: "t44"
+    }, {
+      type: "t45"
+    }, {
+      type: "t46"
+    }, {
+      type: "t47"
+    }, {
+      type: "t48"
+    }, {
+      type: "t49"
+    }, {
+      type: "t50"
+    }, {
+      type: "t51"
+    }, {
+      type: "t52"
+    }, {
+      type: "t53"
+    }, {
+      type: "t54"
+    }, {
+      type: "t55"
+    }, {
+      type: "t56"
+    }, {
+      type: "t57"
+    }, {
+      type: "t58"
+    }, {
+      type: "t59"
+    }, {
+      type: "t60"
+    }, {
+      type: "t61"
+    }]
+  }
+});
+const _senimanBlock2 = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "div",
+    children: [{
+      type: "t0"
+    }, {
+      type: "t1"
+    }, {
+      type: "t2"
+    }, {
+      type: "t3"
+    }, {
+      type: "t4"
+    }, {
+      type: "t5"
+    }, {
+      type: "t6"
+    }, {
+      type: "t7"
+    }, {
+      type: "t8"
+    }, {
+      type: "t9"
+    }, {
+      type: "t10"
+    }, {
+      type: "t11"
+    }, {
+      type: "t12"
+    }, {
+      type: "t13"
+    }, {
+      type: "t14"
+    }, {
+      type: "t15"
+    }, {
+      type: "t16"
+    }, {
+      type: "t17"
+    }, {
+      type: "t18"
+    }, {
+      type: "t19"
+    }, {
+      type: "t20"
+    }, {
+      type: "t21"
+    }, {
+      type: "t22"
+    }, {
+      type: "t23"
+    }, {
+      type: "t24"
+    }, {
+      type: "t25"
+    }, {
+      type: "t26"
+    }, {
+      type: "t27"
+    }, {
+      type: "t28"
+    }, {
+      type: "t29"
+    }, {
+      type: "t30"
+    }, {
+      type: "t31"
+    }, {
+      type: "t32"
+    }, {
+      type: "t33"
+    }, {
+      type: "t34"
+    }, {
+      type: "t35"
+    }, {
+      type: "t36"
+    }, {
+      type: "t37"
+    }, {
+      type: "t38"
+    }, {
+      type: "t39"
+    }, {
+      type: "t40"
+    }, {
+      type: "t41"
+    }, {
+      type: "t42"
+    }, {
+      type: "t43"
+    }, {
+      type: "t44"
+    }, {
+      type: "t45"
+    }, {
+      type: "t46"
+    }, {
+      type: "t47"
+    }, {
+      type: "t48"
+    }, {
+      type: "t49"
+    }, {
+      type: "t50"
+    }, {
+      type: "t51"
+    }, {
+      type: "t52"
+    }, {
+      type: "t53"
+    }, {
+      type: "t54"
+    }, {
+      type: "t55"
+    }, {
+      type: "t56"
+    }, {
+      type: "t57"
+    }, {
+      type: "t58"
+    }, {
+      type: "t59"
+    }, {
+      type: "t60"
+    }, {
+      type: "t61"
+    }, {
+      type: "t62"
+    }]
+  }
+});
+function A() {
+  return _senimanCreateBlock(_senimanBlock, null, null, null, null, null);
+}
+function B() {
+  return _senimanCreateBlock(_senimanBlock2, null, null, null, null, null);
+}
+--- block 0 (compact) ---
+tokens (63): ["div","t0","t1","t2","t3","t4","t5","t6","t7","t8","t9","t10","t11","t12","t13","t14","t15","t16","t17","t18","t19","t20","t21","t22","t23","t24","t25","t26","t27","t28","t29","t30","t31","t32","t33","t34","t35","t36","t37","t38","t39","t40","t41","t42","t43","t44","t45","t46","t47","t48","t49","t50","t51","t52","t53","t54","t55","t56","t57","t58","t59","t60","t61"]
+template: 128 bytes
+  003f4100820083008400850086008700880089008a008b008c008d008e008f00
+  90009100920093009400950096009700980099009a009b009c009d009e009f00
+  a000a100a200a300a400a500a600a700a800a900aa00ab00ac00ad00ae00af00
+  b000b100b200b300b400b500b600b700b800b900ba00bb00bc00bd00be003f00
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+--- block 1 (varint) ---
+tokens (64): ["div","t0","t1","t2","t3","t4","t5","t6","t7","t8","t9","t10","t11","t12","t13","t14","t15","t16","t17","t18","t19","t20","t21","t22","t23","t24","t25","t26","t27","t28","t29","t30","t31","t32","t33","t34","t35","t36","t37","t38","t39","t40","t41","t42","t43","t44","t45","t46","t47","t48","t49","t50","t51","t52","t53","t54","t55","t56","t57","t58","t59","t60","t61","t62"]
+template: 131 bytes
+  404100820083008400850086008700880089008a008b008c008d008e008f0090
+  009100920093009400950096009700980099009a009b009c009d009e009f00a0
+  00a100a200a300a400a500a600a700a800a900aa00ab00ac00ad00ae00af00b0
+  00b100b200b300b400b500b600b700b800b900ba00bb00bc00bd00be00bf3f00
+  3f4000
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: anchors at start, middle and end with markers 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "ul",
+    children: [{
+      type: "$anchor"
+    }, {
+      type: "li",
+      children: [{
+        type: "$text",
+        text: "one"
+      }]
+    }, {
+      type: "$anchor"
+    }, {
+      type: "$text",
+      text: "<!>"
+    }, {
+      type: "$anchor"
+    }, {
+      type: "li",
+      children: [{
+        type: "$text",
+        text: "two"
+      }]
+    }, {
+      type: "$anchor"
+    }]
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock, [() => props.a(), () => props.b(), () => props.c(), () => props.d()], null, null, null, null);
+}
+--- block 0 (compact) ---
+tokens (2): ["ul","li"]
+template: 26 bytes
+  00064100c2000000036f6e658000033c213e420000000374776f
+elscript: 17 bytes (3 refs, 4 anchors, 0 targets)
+  0301ff0200020104ff00ff01ff02ffff00
+`;
+
+exports[`compiler snapshot: client function with server bindings 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanClientFunction = _senimanDeclareClientFunction({
+  argNames: ["event"],
+  body: "{let[_$s0]=this.serverFunctions;_$s0(event.type)}"
+});
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "button",
+    children: [{
+      type: "$text",
+      text: "Save"
+    }]
+  }
+});
+function A(props) {
+  let save = props.save;
+  return _senimanCreateBlock(_senimanBlock, null, [{
+    targetId: 255,
+    type: 1,
+    fn: {
+      clientFnId: _senimanClientFunction,
+      serverBindFns: () => [save]
+    }
+  }], null, null, null);
+}
+--- block 0 (compact) ---
+tokens (1): ["button"]
+template: 11 bytes
+  0002410000000453617665
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: components, children and nested blocks 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "li",
+    children: [{
+      type: "$anchor"
+    }]
+  }
+});
+const _senimanBlock2 = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "aside",
+    children: [{
+      type: "$text",
+      text: "Open"
+    }]
+  }
+});
+const _senimanBlock3 = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "main",
+    children: [{
+      type: "$anchor"
+    }, {
+      type: "$text",
+      text: "<!>"
+    }, {
+      type: "$text",
+      text: " "
+    }, {
+      type: "$anchor"
+    }, {
+      type: "$text",
+      text: "<!>"
+    }, {
+      type: "$text",
+      text: " "
+    }, {
+      type: "$anchor"
+    }]
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock3, [_senimanCreateComponent(Header, {
+    title: "hi"
+  }), _senimanCreateComponent(List, {
+    get children() {
+      return props.items().map(item => _senimanCreateBlock(_senimanBlock, [item], null, null, null, null));
+    }
+  }), () => props.open() && _senimanCreateBlock(_senimanBlock2, null, null, null, null, null)], null, null, null, null);
+}
+--- block 0 (compact) ---
+tokens (1): ["li"]
+template: 4 bytes
+  00010100
+elscript: 5 bytes (0 refs, 1 anchors, 0 targets)
+  0001ffff00
+--- block 1 (compact) ---
+tokens (1): ["aside"]
+template: 11 bytes
+  000241000000044f70656e
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+--- block 2 (compact) ---
+tokens (1): ["main"]
+template: 24 bytes
+  000541008000033c213e800001208000033c213e00000120
+elscript: 15 bytes (3 refs, 3 anchors, 0 targets)
+  0301ff0200020103ff00ff02ffff00
+`;
+
+exports[`compiler snapshot: deep nesting with target at the bottom 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "div",
+    children: [{
+      type: "div",
+      children: [{
+        type: "div",
+        children: [{
+          type: "div",
+          children: [{
+            type: "div",
+            children: [{
+              type: "span",
+              target: true,
+              children: [{
+                type: "$text",
+                text: "deep"
+              }]
+            }]
+          }]
+        }]
+      }]
+    }]
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock, null, [{
+    targetId: 0,
+    type: 1,
+    fn: () => props.x()
+  }], null, null, null);
+}
+--- block 0 (compact) ---
+tokens (2): ["div","span"]
+template: 21 bytes
+  000741004100410041004100420000000464656570
+elscript: 14 bytes (5 refs, 0 anchors, 1 targets)
+  0501ff0100010101020103000104
+`;
+
+exports[`compiler snapshot: dynamic text, attribute, class and style 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "div",
+    children: [{
+      type: "$text",
+      text: "Count: "
+    }, {
+      type: "$anchor"
+    }]
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock, [() => props.count()], null, [{
+    targetId: 255,
+    effectFn(elRef, _p$) {
+      const _v$0 = props.title(),
+        _v$1 = props.kind(),
+        _v$2 = props.width();
+      _v$0 !== _p$._v$0 && elRef.setAttribute("title", _p$._v$0 = _v$0);
+      _v$1 !== _p$._v$1 && elRef.setClassName(_p$._v$1 = _v$1);
+      _v$2 !== _p$._v$2 && elRef.setStyleProperty("width", _p$._v$2 = _v$2);
+      return _p$;
+    },
+    init: {
+      _v$0: undefined,
+      _v$1: undefined,
+      _v$2: undefined
+    }
+  }], null, null);
+}
+--- block 0 (compact) ---
+tokens (1): ["div"]
+template: 14 bytes
+  00024100000007436f756e743a20
+elscript: 5 bytes (0 refs, 1 anchors, 0 targets)
+  0001ffff00
+`;
+
+exports[`compiler snapshot: events, refs and onMount 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanClientFunction = _senimanDeclareClientFunction({
+  argNames: [],
+  body: "{}"
+});
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "section",
+    children: [{
+      type: "button",
+      target: true,
+      children: [{
+        type: "$text",
+        text: "Go"
+      }]
+    }, {
+      type: "$text",
+      text: " "
+    }, {
+      type: "input",
+      target: true
+    }]
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock, null, [{
+    targetId: 0,
+    type: 1,
+    fn: () => props.go()
+  }], null, [{
+    ref: props.inputRef,
+    targetId: 1
+  }], [{
+    targetId: 1,
+    type: 1,
+    fn: {
+      clientFnId: _senimanClientFunction
+    }
+  }]);
+}
+--- block 0 (compact) ---
+tokens (3): ["section","button","input"]
+template: 17 bytes
+  00054100c200000002476f800001200300
+elscript: 11 bytes (3 refs, 0 anchors, 2 targets)
+  0301ff0200020100020002
+`;
+
+exports[`compiler snapshot: literal expression attributes are static, not effects 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "div",
+    children: [{
+      type: "input",
+      attributes: {
+        "title": "a \\"quoted\\" <b>",
+        "class": "x y",
+        "size": "5"
+      }
+    }]
+  }
+});
+function A() {
+  return _senimanCreateBlock(_senimanBlock, null, null, null, null, null);
+}
+--- block 0 (compact) ---
+tokens (5): ["div","input","title","class","size"]
+template: 33 bytes
+  000241000203000e61202271756f74656422203c623e04000378207905000135
+  00
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: non-ASCII text and attribute 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "p",
+    attributes: {
+      "title": "h\\xE9llo \\u2713"
+    },
+    children: [{
+      type: "$text",
+      text: "\\xDCn\\xEFc\\xF6d\\xE9 \\u2014 \\u65E5\\u672C\\u8A9E"
+    }]
+  }
+});
+function A() {
+  return _senimanCreateBlock(_senimanBlock, null, null, null, null, null);
+}
+--- block 0 (compact) ---
+tokens (2): ["p","title"]
+template: 45 bytes
+  00024102000a68c3a96c6c6f20e29c9300000019c39c6ec3af63c3b664c3a920
+  e2809420e697a5e69cace8aa9e
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: static run before an expression (ELSCRIPT chain limit) 1`] = `
+--- compiled ---
+<8919 chars, sha256:6a5afc0875fcd3a9>
+--- block 0 (varint) ---
+tokens (2): ["div","span"]
+template: 606 bytes
+  ae02410082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  820082008200820082008200820082008200820082008200820082000200
+elscript: 782 bytes (301 refs, 1 anchors, 0 targets)
+  ad020100020102020203020402050206020702080209020a020b020c020d020e
+  020f0210021102120213021402150216021702180219021a021b021c021d021e
+  021f0220022102220223022402250226022702280229022a022b022c022d022e
+  022f0230023102320233023402350236023702380239023a023b023c023d023e
+  023f0240024102420243024402450246024702480249024a024b024c024d024e
+  024f0250025102520253025402550256025702580259025a025b025c025d025e
+  025f0260026102620263026402650266026702680269026a026b026c026d026e
+  026f0270027102720273027402750276027702780279027a027b027c027d027e
+  027f028001028101028201028301028401028501028601028701028801028901
+  028a01028b01028c01028d01028e01028f010290010291010292010293010294
+  01029501029601029701029801029901029a01029b01029c01029d01029e0102
+  9f0102a00102a10102a20102a30102a40102a50102a60102a70102a80102a901
+  02aa0102ab0102ac0102ad0102ae0102af0102b00102b10102b20102b30102b4
+  0102b50102b60102b70102b80102b90102ba0102bb0102bc0102bd0102be0102
+  bf0102c00102c10102c20102c30102c40102c50102c60102c70102c80102c901
+  02ca0102cb0102cc0102cd0102ce0102cf0102d00102d10102d20102d30102d4
+  0102d50102d60102d70102d80102d90102da0102db0102dc0102dd0102de0102
+  df0102e00102e10102e20102e30102e40102e50102e60102e70102e80102e901
+  02ea0102eb0102ec0102ed0102ee0102ef0102f00102f10102f20102f30102f4
+  0102f50102f60102f70102f80102f90102fa0102fb0102fc0102fd0102fe0102
+  ff01028002028102028202028302028402028502028602028702028802028902
+  028a02028b02028c02028d02028e02028f020290020291020292020293020294
+  02029502029602029702029802029902029a02029b02029c02029d02029e0202
+  9f0202a00202a10202a20202a30202a40202a50202a60202a70202a80202a902
+  02aa0202ab0202ac020100ad0200
+`;
+
+exports[`compiler snapshot: static text, attributes, inline style and class 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "div",
+    attributes: {
+      "id": "main",
+      "class": "card big"
+    },
+    style: {
+      "color": "red",
+      "padding": "4px"
+    },
+    children: [{
+      type: "$text",
+      text: "Hello "
+    }, {
+      type: "b",
+      children: [{
+        type: "$text",
+        text: "world"
+      }]
+    }]
+  }
+});
+function A() {
+  return _senimanCreateBlock(_senimanBlock, null, null, null, null, null);
+}
+--- block 0 (compact) ---
+tokens (9): ["div","b","style","color","red","padding","4px","id","class"]
+template: 47 bytes
+  0004410304050607000800046d61696e09000863617264206269670080000648
+  656c6c6f204200000005776f726c64
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: svg path 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "path",
+    attributes: {
+      "d": "M0 0L10 10"
+    }
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock, null, null, [{
+    targetId: 255,
+    effectFn(elRef, _p$) {
+      const _v$ = props.stroke();
+      _v$ !== _p$ && elRef.setAttribute("stroke", _v$);
+      return _v$;
+    }
+  }], null, null);
+}
+--- block 0 (compact) ---
+tokens (2): ["path","d"]
+template: 17 bytes
+  00010102000a4d3020304c313020313000
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: tag IDs stay within 6 bits when many style tokens come first 1`] = `
+--- compiled ---
+<5633 chars, sha256:8e88f96fa837bf22>
+--- block 0 (compact) ---
+tokens (76): ["div","p","b","i","style","width","1px","0px","2px","3px","4px","5px","6px","7px","8px","9px","10px","11px","12px","13px","14px","15px","16px","17px","18px","19px","20px","21px","22px","23px","24px","25px","26px","27px","28px","29px","30px","31px","32px","33px","34px","35px","36px","37px","38px","39px","40px","41px","42px","43px","44px","45px","46px","47px","48px","49px","50px","51px","52px","53px","54px","55px","56px","57px","58px","59px","60px","61px","62px","63px","64px","65px","66px","67px","68px","69px"]
+template: 432 bytes
+  00494105060700008205060800008205060700008205060900008205060a0000
+  8205060b00008205060c00008205060d00008205060e00008205060f00008205
+  0610000082050611000082050612000082050613000082050614000082050615
+  00008205061600008205061700008205061800008205061900008205061a0000
+  8205061b00008205061c00008205061d00008205061e00008205061f00008205
+  0620000082050621000082050622000082050623000082050624000082050625
+  00008205062600008205062700008205062800008205062900008205062a0000
+  8205062b00008205062c00008205062d00008205062e00008205062f00008205
+  0630000082050631000082050632000082050633000082050634000082050635
+  00008205063600008205063700008205063800008205063900008205063a0000
+  8205063b00008205063c00008205063d00008205063e00008205063f00008205
+  0640000082050641000082050642000082050643000082050644000082050645
+  00008205064600008205064700008205064800008205064900008205064a0000
+  8205064b00008205064c000083000400
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;

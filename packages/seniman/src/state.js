@@ -202,6 +202,12 @@ export function enqueueWindowInput(windowId, inputBuffer) {
 let ExecWorkStartTimeout;
 let SynchronousInputDepth = 0;
 
+// True when no scheduled work remains -- neither a pending turn nor queued window work.
+// Work runs in time slices across many timer turns, so tests use this to wait for a render to finish.
+export function isSchedulerIdle() {
+  return !ExecWorkStartTimeout && !scheduler_hasWork();
+}
+
 function _scheduleExecWork() {
 
   if (SynchronousInputDepth > 0) {

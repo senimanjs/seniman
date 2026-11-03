@@ -6,10 +6,10 @@ Initialize a new `npm` project in a folder of your choice:
 npm init
 ```
 
-Then, install Seniman 0.0.186:
+Then, install Seniman 0.0.187:
   
 ```bash
-npm install seniman@0.0.186
+npm install seniman@0.0.187
 ```
 
 Seniman's server runtime and generated browser runtime are released together.

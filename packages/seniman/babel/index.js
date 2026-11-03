@@ -140,7 +140,7 @@ function nodeHasDynamicAttribute(node) {
 
       } else {
         // Don't support static string styles for now
-        throw new Error();
+        throw new Error('Seniman compiler: style must be an object expression, e.g. style={{ color: "red" }}; string styles are not supported.');
       }
     } else {
       if (value == null) {
@@ -249,10 +249,6 @@ function createCompiler(path) {
           style: [],
           attributes: {},
           style_v2: {
-            static: [],
-            dynamic: []
-          },
-          class_v2: {
             static: [],
             dynamic: []
           }
@@ -394,7 +390,7 @@ function createCompiler(path) {
       let trimmedValue = node.value.replace(/\s\s+/g, ' ');
 
       if (trimmedValue == '') {
-        throw new Error();
+        throw new Error('Seniman compiler internal error: encountered an empty JSXText node.');
       }
 
       let isNewBlockEnclosingElement = parentElement == null;
@@ -1028,6 +1024,16 @@ function camelCaseToDash(str) {
   return str.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
 }
 
+// attr={"literal"} / attr={5} are static (see isStaticExpression / nodeHasDynamicAttribute):
+// the element is not allocated a target, so they must go into the template, not an effect.
+function staticLiteralAttributeValue(value) {
+  if (value && value.type == 'JSXExpressionContainer' && isStaticExpression(value.expression)) {
+    return { type: 'StringLiteral', value: String(value.expression.value) };
+  }
+
+  return value;
+}
+
 function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node, element) {
 
   let styleConditions = []; // { type: 'classList', key: 'selected', condition: expression }
@@ -1099,26 +1105,19 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
       } else if (value.type == 'JSXExpressionContainer') {
         processStyleObject(value.expression);
       } else {
-        throw new Error();
+        throw new Error(`Seniman compiler: unsupported style attribute value of type ${value.type}; use style={{ ... }}.`);
       }
 
     } else if (attr.name.name == 'class') {
-      let value = attr.value;
+      let value = staticLiteralAttributeValue(attr.value);
 
       if (value.type == 'StringLiteral') {
         element.attributes.class = value.value;
-
-        // populate element.class_v2.static value
-        let classNames = value.value.split(' ');
-
-        classNames.forEach(className => {
-          element.class_v2.static.push(className);
-        });
       } else if (value.type == 'JSXExpressionContainer') {
         styleConditions.push({ type: 'class', condition: value.expression });
       }
     } else {
-      let value = attr.value;
+      let value = staticLiteralAttributeValue(attr.value);
       //compressionRegistry.elementAttributeNames.add(attrName);
 
       // if value is null, then it's a value-less attribute. assign an empty string to it.
@@ -1134,6 +1133,14 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
 
   if (styleConditions.length == 0) {
     return;
+  }
+
+  if (targetId === undefined) {
+    // An undefined targetId is encoded as target 0 and silently updates the wrong element.
+    throw new Error(
+      `Seniman compiler internal error: <${element.type}> has a dynamic attribute but was not allocated a target. ` +
+      `nodeHasDynamicAttribute and handleCreateElementEffectsEntryExpression disagree.`
+    );
   }
 
   let isMultiConditionStyleEffect = styleConditions.length > 1;
@@ -1406,6 +1413,12 @@ function prepElement(element) {
     let childEl = element.children[i];
 
     if (childEl.type == '$anchor') {
+      if (hasPrecedingAnchor) {
+        // Consecutive anchors would otherwise share one insertion marker, so re-attaching
+        // an earlier anchor's item would land it after the later ones. Separate them.
+        element.children.splice(i, 0, { type: '$text', value: '<!>' });
+        i++;
+      }
       hasPrecedingAnchor = true;
       i++;
     } else if (childEl.type == '$text') {

@@ -1854,7 +1854,16 @@ export class Window {
       // TODO: improve this abstraction
       let elRef = {
         _staticHelper: (mode, propName, propValue) => {
-          let buf = this._allocCommandPage(1 + 2 + 1 + 1 + uvarintSize(propName) + 2 + propValue.length);
+          // The client decodes the value as UTF-8 bytes, so the prefix must be the byte length.
+          let propValueLength = Buffer.byteLength(propValue);
+
+          if (propValueLength > 65535) {
+            throw new Error(
+              `Seniman element update value is ${propValueLength} bytes, exceeding the 16-bit length limit of 65535 bytes.`
+            );
+          }
+
+          let buf = this._allocCommandPage(1 + 2 + 1 + 1 + uvarintSize(propName) + 2 + propValueLength);
           let commandOffset = this.commandBufferOffset;
 
           buf.writeUInt8(CMD_ELEMENT_UPDATE, commandOffset);
@@ -1864,9 +1873,9 @@ export class Window {
 
           let offset = writeUvarint(buf, propName, commandOffset + 5);
 
-          buf.writeUInt16BE(propValue.length, offset);
+          buf.writeUInt16BE(propValueLength, offset);
           offset += 2;
-          buf.write(propValue, offset, propValue.length);
+          buf.write(propValue, offset, propValueLength);
         },
 
         setStyleProperty: (propName, propValue) => {

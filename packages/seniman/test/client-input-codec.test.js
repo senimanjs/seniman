@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
+import { loadClientSource } from '../scripts/client-source.js';
 import { Window } from '../dist/window.js';
 
 const ARGTYPE_STRING = 1;
@@ -23,17 +23,13 @@ async function createBrowserRuntime() {
     }
   }
 
-  let source = await readFile(
-    new URL('../frontend/browser.js', import.meta.url),
-    'utf8'
-  );
+  let source = await loadClientSource();
 
   vm.runInNewContext(source, {
     ArrayBuffer,
     DataView,
     Map,
     Set,
-    Text: class {},
     TextDecoder,
     TextEncoder,
     Uint8Array,

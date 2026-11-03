@@ -81,6 +81,7 @@ export class Text extends Node {
     super();
     this.data = text == '<!>' ? '' : String(text);
     this.nodeName = '#text';
+    this.nodeType = 3;
   }
 
   insertInto(parentElement, marker) {
@@ -105,15 +106,37 @@ export class Element extends Node {
     super();
     this.tagName = tagName.toLowerCase();
     this.nodeName = tagName.toUpperCase();
+    this.nodeType = 1;
     this.attributes = createAttributes();
     this.styles = {};
     this.children = [];
     this.listeners = new Map();
 
+    let element = this;
+
+    // Mirrors the CSSStyleDeclaration behavior the decoder relies on: an empty value removes
+    // the property, and assigning '' to cssText clears every property.
     this.style = {
-      cssText: '',
-      setProperty: (key, value) => {
-        this.styles[key] = value;
+      setProperty(key, value) {
+        if (value === '' || value == null) {
+          delete element.styles[key];
+        } else {
+          element.styles[key] = value;
+        }
+      },
+      get cssText() {
+        return Object.keys(element.styles).map(key => `${key}: ${element.styles[key]}`).join('; ');
+      },
+      set cssText(value) {
+        element.styles = {};
+
+        for (let declaration of String(value).split(';')) {
+          let separator = declaration.indexOf(':');
+
+          if (separator > 0) {
+            this.setProperty(declaration.slice(0, separator).trim(), declaration.slice(separator + 1).trim());
+          }
+        }
       }
     };
   }
@@ -121,13 +144,14 @@ export class Element extends Node {
   printAttributes() {
     let string = '';
 
+    // Attribute values can carry user data, so they must be escaped like text.
     for (let key in this.attributes) {
-      string += ` ${key}="${this.attributes[key]}"`;
+      string += ` ${key}="${escape(this.attributes[key])}"`;
     }
 
     let styleKeys = Object.keys(this.styles);
     if (styleKeys.length > 0) {
-      string += ` style="${styleKeys.map(key => `${key}: ${this.styles[key]}`).join('; ')}"`;
+      string += ` style="${escape(styleKeys.map(key => `${key}: ${this.styles[key]}`).join('; '))}"`;
     }
     return string;
   }

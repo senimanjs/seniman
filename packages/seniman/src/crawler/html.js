@@ -1,4 +1,5 @@
-import { Text, createElement, selfClosingTagSet } from './dom.js';
+import { Text, createElement } from './dom.js';
+import { createTemplateReader } from '../template-reader.js';
 
 let magicSplitUint16 = (key) => {
   return [key & (1 << 15), key & 0x7FFF];
@@ -314,86 +315,6 @@ export class HtmlRenderingContext {
       return values;
     }
 
-    let _compileTemplate = (templateTokenList) => {
-
-      let totalElementCount = getUint16();
-      let totalProcessed = 0;
-      let rootElement;
-
-      let dig = (parentElement) => {
-
-        while (totalProcessed < totalElementCount) {
-          let firstByte = getUint8();
-          let tagNameId = firstByte & 63; // get first 6 bits of the byte
-          let nextSibling = (firstByte & 128) > 0; // 8th-bit
-
-          // handle if text
-          if (tagNameId == 0) {
-            let textLength = getUint16();
-            let str = getString(textLength);
-            let textNode = new Text(str);
-
-            if (parentElement) {
-              parentElement.appendChild(textNode);
-            } else {
-              rootElement = textNode;
-            }
-          } else {
-            let attrId;
-            let tagName = templateTokenList[tagNameId - 1];
-            let element = createElement(tagName);
-            let isSelfClosing = selfClosingTagSet.has(tagName);
-
-            while (attrId = getUint8()) {
-              let attrName = templateTokenList[attrId - 1];
-              let attrValueString = '';
-
-              if (attrName == 'style') {
-                let propKeyId;
-
-                while (propKeyId = getUint8()) {
-                  let propKey = templateTokenList[propKeyId - 1];
-                  let propValueId = getUint8();
-                  let propValue = templateTokenList[propValueId - 1];
-
-                  element.style.setProperty(propKey, propValue);
-                }
-              } else {
-                let attrValueLength = getUint16();
-                attrValueString = getString(attrValueLength);
-
-                element.setAttribute(attrName, attrValueString);
-              }
-            }
-
-            if (parentElement) {
-              parentElement.appendChild(element);
-            } else {
-              rootElement = element;
-            }
-
-            if (!isSelfClosing) {
-              let hasChildren = (firstByte & 64) > 0; // 7th-bit
-
-              if (hasChildren) {
-                dig(element);
-              }
-            }
-          }
-
-          totalProcessed++;
-
-          if (!nextSibling) {
-            break;
-          }
-        }
-      }
-
-      dig();
-
-      return rootElement;
-    }
-
     let _getBlockTargetElement = (blockId, targetId) => {
       let block = getBlock(blockId);
       return targetId == 255 ? block.rootEl : block.targetEls[targetId];
@@ -463,14 +384,14 @@ export class HtmlRenderingContext {
             } else if (propName == 'value') {
               //targetHandlerElement.value = '';
             } else {
-              //targetHandlerElement.removeAttribute(propName);
+              targetHandlerElement.removeAttribute(propName);
             }
 
             break;
           }
         case UPDATE_MODE_MULTI_STYLEPROP:
           let keyLength;
-          //targetHandlerElement.style.cssText = '';
+          targetHandlerElement.style.cssText = '';
 
           //console.log('UPDATE_MODE_MULTI_STYLEPROP', updateMode == UPDATE_MODE_STYLEPROP ? 'STYLEPROP' : 'SET_ATTR');
           while ((keyLength = getUint16()) > 0) {
@@ -504,106 +425,53 @@ export class HtmlRenderingContext {
       }
     }
 
-    // we need can't do new Function in this context since CloudFlare workers service worker syntax does not support it
-    let _compileFn3 = (templateId) => {
-      let refElementsCount = getUint8();
-      let refEls = [];
-      let anchorEls = [];
-      let targetElIds = [];
-
-      for (let i = 0; i < refElementsCount; i++) {
-        let rel = getUint8();
-        let relRefId = getUint8();
-
-        refEls.push({ relRefId, rel });
-      }
-
-      let anchorCount = getUint8();
-
-      for (let i = 0; i < anchorCount; i++) {
-        let elId = getUint8();
-        let beforeElId = getUint8();
-
-        // in beforeEl context, 255 means undefined -- ie. no beforeEl applicable. 
-        // 255 that is usually used to refer to rootElement can be reused here since 
-        // there is no situation in which rootElement is an anchor's beforeElement.
-        // let beforeElStr = beforeElId == 255 ? '' : `,marker:_${beforeElId}`;
-        // str.push(`{el:_${(elId < 255 ? elId : '') + beforeElStr}}`);
-        anchorEls.push({ elId, beforeElId });
-      }
-
-      let targetElementCount = getUint8();
-
-      for (let i = 0; i < targetElementCount; i++) {
-
-        let elId = getUint8();
-
-        targetElIds.push(elId);
-      }
-
-      return (rootElement) => {
-        let $els = [];
-
-        for (let i = 0; i < refElementsCount; i++) {
-          let { relRefId, rel } = refEls[i];
-          let FIRST_CHILD = 1;
-          let refEl = relRefId < 255 ? $els[relRefId] : rootElement;
-
-          $els.push(rel == FIRST_CHILD ? refEl.firstChild : refEl.nextSibling);
-        }
-
-        let $anchors = [];
-
-        for (let i = 0; i < anchorCount; i++) {
-          let { elId, beforeElId } = anchorEls[i];
-
-          let $el = elId == 255 ? rootElement : $els[elId];
-          let $beforeEl = beforeElId == 255 ? null : $els[beforeElId];
-
-          if ($beforeEl) {
-            $anchors.push({
-              el: $el,
-              marker: $beforeEl
-            });
-          } else {
-            $anchors.push({
-              el: $el
-            });
-          }
-        }
-
-        let $targets = [];
-
-        for (let i = 0; i < targetElementCount; i++) {
-          let elId = targetElIds[i];
-
-          $targets.push($els[elId]);
-        }
-
-        return [$anchors, $targets];
-      };
-    }
-
     let _initSequence = () => {
       let seqId = getUint16();
       _blocksMap.set(seqId, new Sequence(seqId));
     };
 
-    let _installTemplate2 = () => {
-      let templateId = getUint16();
-      let templateTokenList = [];
-      let id;
+    let readTemplate = createTemplateReader(getUint8, getUint16, getUvarint, getString);
 
-      while (id = getUint16()) {
-        templateTokenList.push(GlobalTokenList[id]);
-      }
+    // Builds the template tree directly. ELSCRIPT becomes a closure rather than generated code,
+    // since Cloudflare Workers don't allow new Function.
+    let _installTemplate2 = (varint) => {
+      let rootNode;
+      let append = (parent, node) => parent ? parent.appendChild(node) : rootNode = node;
 
-      let templateNode = _compileTemplate(templateTokenList);
+      let [templateId, refs, anchors, targets] = readTemplate(varint, GlobalTokenList,
+        (parent, tagName, attrs) => {
+          let element = createElement(tagName);
+
+          for (let [name, value] of attrs) {
+            if (name == 'style') {
+              element.style.cssText = value;
+            } else {
+              element.setAttribute(name, value);
+            }
+          }
+
+          return append(parent, element);
+        },
+        (parent, text) => append(parent, new Text(text)),
+        () => { }
+      );
 
       templateDefinitionMap.set(templateId, {
-        tpl: templateNode,
-        fn: _compileFn3(templateId)
-      })
+        tpl: rootNode,
+        fn: (rootElement) => {
+          let els = [];
+          let resolve = (index) => index < 0 ? rootElement : els[index];
+
+          for (let [rel, index] of refs) {
+            els.push(rel == 1 ? resolve(index).firstChild : resolve(index).nextSibling);
+          }
+
+          return [
+            anchors.map(([el, marker]) => marker < 0 ? { el: resolve(el) } : { el: resolve(el), marker: els[marker] }),
+            targets.map(index => els[index])
+          ];
+        }
+      });
     }
 
     let _attachAtAnchorV2 = () => {
@@ -763,7 +631,9 @@ export class HtmlRenderingContext {
         let count = getUint16();
 
         sequence._removeItems(startIndex, count);
-      }
+      },
+      // 20: CMD_INSTALL_TEMPLATE_VARINT
+      () => _installTemplate2(true)
     ];
 
     this.onBufferFn = (_buffer) => {

@@ -1,6 +1,6 @@
 {
   "name": "seniman",
-  "version": "0.0.186",
+  "version": "0.0.187",
   "description": "",
   "main": "./dist/index.js",
   "types": "./types/index.d.ts",
@@ -101,6 +101,7 @@
     "@babel/preset-typescript": "^7.29.7",
     "@types/node": "^26.0.0",
     "execa": "^7.2.0",
+    "jsdom": "^30.1.3",
     "typescript": "^7.0.2",
     "uglify-js": "^3.17.4"
   }

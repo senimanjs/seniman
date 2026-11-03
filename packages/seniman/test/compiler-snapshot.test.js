@@ -1,0 +1,210 @@
+// Golden snapshot of the whole compilation pipeline: JSX -> babel plugin -> _declareBlock
+// encoding (template + ELSCRIPT bytes). Any change to compiled output, encoded bytes, or
+// encoded sizes shows up as a snapshot diff.
+//
+// After an intentional change, regenerate and review the diff:
+//   node --test --test-update-snapshots test/compiler-snapshot.test.js
+
+import test from 'node:test';
+import { createHash } from 'node:crypto';
+import { transformSync } from '@babel/core';
+import seniman from '../babel/index.js';
+import { _declareBlock, blockDefinitions } from '../src/declare.js';
+
+// Large outputs are recorded as size + hash to keep the snapshot reviewable.
+const INLINE_LIMIT = 4096;
+
+const range = (count, fn) => Array.from({ length: count }, (_, i) => fn(i)).join('');
+
+const fixtures = {
+  'static text, attributes, inline style and class': `
+    function A() {
+      return <div id="main" class="card big" style={{ color: 'red', padding: '4px' }}>Hello <b>world</b></div>;
+    }
+  `,
+  'dynamic text, attribute, class and style': `
+    function A(props) {
+      return <div title={props.title()} class={props.kind()} style={{ width: props.width() }}>
+        Count: {props.count()}
+      </div>;
+    }
+  `,
+  'events, refs and onMount': `
+    function A(props) {
+      return <section>
+        <button onClick={() => props.go()}>Go</button>
+        <input ref={props.inputRef} onMount={$c(() => {})} />
+      </section>;
+    }
+  `,
+  'client function with server bindings': `
+    function A(props) {
+      let save = props.save;
+      return <button onClick={$c((event) => { $s(save)(event.type); })}>Save</button>;
+    }
+  `,
+  'components, children and nested blocks': `
+    function A(props) {
+      return <main>
+        <Header title="hi" />
+        <List>{props.items().map(item => <li>{item}</li>)}</List>
+        {props.open() && <aside>Open</aside>}
+      </main>;
+    }
+  `,
+  'anchors at start, middle and end with markers': `
+    function A(props) {
+      return <ul>{props.a()}<li>one</li>{props.b()}{props.c()}<li>two</li>{props.d()}</ul>;
+    }
+  `,
+  'deep nesting with target at the bottom': `
+    function A(props) {
+      return <div><div><div><div><div><span onClick={() => props.x()}>deep</span></div></div></div></div></div>;
+    }
+  `,
+  'literal expression attributes are static, not effects': `
+    function A() {
+      return <div><input title={"a \\"quoted\\" <b>"} class={"x y"} size={5} /></div>;
+    }
+  `,
+  'svg path': `
+    function A(props) {
+      return <path d="M0 0L10 10" stroke={props.stroke()} />;
+    }
+  `,
+  'non-ASCII text and attribute': `
+    function A() {
+      return <p title="héllo ✓">Ünïcödé — 日本語</p>;
+    }
+  `,
+  '255 static siblings': `
+    function A() { return <div>${range(255, () => '<span></span>')}</div>; }
+  `,
+  '256 static siblings (root sentinel boundary)': `
+    function A() { return <div>${range(256, () => '<span></span>')}</div>; }
+  `,
+  'static run before an expression (ELSCRIPT chain limit)': `
+    function A(props) { return <div>${range(300, () => '<span></span>')}{props.x()}<span></span></div>; }
+  `,
+  // tokens = div, style, width + one per distinct value: 252 values -> 255 tokens (ok), 253 -> 256 (throws)
+  '255 vs 256 block tokens via distinct inline style values': `
+    function A() { return <div>${range(252, i => `<div style={{ width: '${i}px' }}></div>`)}</div>; }
+    function B() { return <div>${range(253, i => `<div style={{ width: '${i}px' }}></div>`)}</div>; }
+  `,
+  // Tags are registered before attribute/style tokens, so they keep IDs <= 63 regardless of
+  // how many other tokens the block uses; only distinct tag names count toward the 6-bit limit.
+  'tag IDs stay within 6 bits when many style tokens come first': `
+    function A() { return <div style={{ width: '1px' }}>${range(70, i => `<p style={{ width: '${i}px' }}></p>`)}<b></b><i></i></div>; }
+  `,
+  '63 vs 64 distinct tag names': `
+    function A() { return <div>${range(62, i => `<t${i}></t${i}>`)}</div>; }
+    function B() { return <div>${range(63, i => `<t${i}></t${i}>`)}</div>; }
+  `,
+  '1000 rows (larger than the initial 2KB buffer)': `
+    function A() { return <div>${range(1000, i => `<div class="row">Hello row number ${i}</div>`)}</div>; }
+  `,
+  '5000 rows (exceeds max page size)': `
+    function A() { return <div>${range(5000, i => `<div class="row">Hello row number ${i}</div>`)}</div>; }
+  `,
+};
+
+function compile(source) {
+  return transformSync(source, {
+    filename: 'fixture.jsx',
+    babelrc: false,
+    configFile: false,
+    plugins: [seniman]
+  }).code;
+}
+
+// Runs the compiled module's top level with stubbed runtime imports, collecting the
+// block definitions it declares. Component bodies are never invoked.
+function collectBlockDefinitions(code) {
+  let importPattern = /^import \{([^}]*)\} from "seniman\/_autogen\/v1";$/m;
+  let specifiers = code.match(importPattern)[1].split(',').map(spec => {
+    let [imported, local] = spec.trim().split(/\s+as\s+/);
+    return { imported, local: local || imported };
+  });
+
+  let defs = [];
+  let runtime = {
+    _declareBlock: def => defs.push(def),
+    _declareClientFunction: () => 0
+  };
+
+  let body = code.replace(importPattern, '');
+  let fn = new Function(...specifiers.map(s => s.local), body);
+  fn(...specifiers.map(s => runtime[s.imported] || (() => { })));
+
+  return defs;
+}
+
+function summarize(text) {
+  let hash = createHash('sha256').update(text).digest('hex').slice(0, 16);
+  return `<${text.length} chars, sha256:${hash}>`;
+}
+
+function hexLines(buffer) {
+  let hex = buffer.toString('hex');
+
+  if (hex.length > INLINE_LIMIT) {
+    return '  ' + summarize(hex);
+  }
+
+  return hex.match(/.{1,64}/g).map(line => '  ' + line).join('\n');
+}
+
+function describeBlock(def, index) {
+  let block;
+
+  try {
+    block = blockDefinitions.get(_declareBlock(structuredClone(def)));
+  } catch (error) {
+    return `--- block ${index} ---\nthrows: ${error.message}`;
+  }
+
+  let el = block.elScriptBuffer;
+  let refs, anchors, targets;
+
+  if (block.varint) {
+    let offset = 0;
+    let varint = () => { let value = 0, shift = 1, byte; do { byte = el[offset++]; value += (byte & 0x7f) * shift; shift *= 128; } while (byte & 0x80); return value; };
+    refs = varint();
+    for (let i = 0; i < refs; i++) { offset++; varint(); }
+    anchors = varint();
+    for (let i = 0; i < anchors; i++) { varint(); varint(); }
+    targets = varint();
+  } else {
+    refs = el[0];
+    anchors = el[1 + 2 * refs];
+    targets = el[2 + 2 * refs + 2 * anchors];
+  }
+
+  return [
+    `--- block ${index} (${block.varint ? 'varint' : 'compact'}) ---`,
+    `tokens (${block.tokens.length}): ${summarizeIfLong(JSON.stringify(block.tokens))}`,
+    `template: ${block.templateBuffer.length} bytes`,
+    hexLines(block.templateBuffer),
+    `elscript: ${el.length} bytes (${refs} refs, ${anchors} anchors, ${targets} targets)`,
+    hexLines(el)
+  ].join('\n');
+}
+
+function summarizeIfLong(text) {
+  return text.length > INLINE_LIMIT ? summarize(text) : text;
+}
+
+for (let [name, source] of Object.entries(fixtures)) {
+  test(`compiler snapshot: ${name}`, (t) => {
+    let code = compile(source);
+    let defs = collectBlockDefinitions(code);
+
+    let output = [
+      '--- compiled ---',
+      code.length > INLINE_LIMIT ? summarize(code) : code,
+      ...defs.map(describeBlock)
+    ].join('\n');
+
+    t.assert.snapshot(output, { serializers: [value => value] });
+  });
+}

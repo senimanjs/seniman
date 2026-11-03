@@ -292,19 +292,10 @@ test('single-page publications bypass the general retained-page scan', () => {
 
 test('large initial templates are not limited by page size', async () => {
   let text = 'large-template-content-'.repeat(1000);
-  let textBuffer = Buffer.from(text);
-  let templateBuffer = Buffer.alloc(7 + textBuffer.length);
-  templateBuffer.writeUInt16BE(2, 0);
-  templateBuffer.writeUInt8(1 | (1 << 6), 2);
-  templateBuffer.writeUInt8(0, 3);
-  templateBuffer.writeUInt8(0, 4);
-  templateBuffer.writeUInt16BE(textBuffer.length, 5);
-  textBuffer.copy(templateBuffer, 7);
 
   let templateId = _declareBlock({
-    tokens: ['main'],
-    templateBuffer: templateBuffer.toString('base64'),
-    elScriptBuffer: Buffer.from([0, 0, 0]).toString('base64')
+    v: '2.0',
+    root: { type: 'main', children: [{ type: '$text', text }] }
   });
   let root = createRoot(() =>
     _createBlock(templateId, null, null, null, null, null)

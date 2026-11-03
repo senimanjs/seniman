@@ -3,6 +3,7 @@ import { execa } from 'execa';
 import uglifyjs from 'uglify-js';
 import zlib from 'zlib';
 import crypto from 'crypto';
+import { loadClientSource } from './client-source.js';
 
 // throw error if not run in the packages/seniman directory
 if (!process.cwd().endsWith('/packages/seniman')) {
@@ -15,9 +16,7 @@ async function buildClientScaffolding(config) {
 
   await fs.promises.mkdir(targetDirectory, { recursive: true });
 
-  let jsCode = await fs.promises.readFile(process.cwd() + '/frontend/browser.js');
-
-  let jsCodeString = jsCode.toString();
+  let jsCodeString = await loadClientSource();
   var options = {
     toplevel: true,
     mangle: {
