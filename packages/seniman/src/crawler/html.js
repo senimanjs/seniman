@@ -463,14 +463,14 @@ export class HtmlRenderingContext {
             } else if (propName == 'value') {
               //targetHandlerElement.value = '';
             } else {
-              //targetHandlerElement.removeAttribute(propName);
+              targetHandlerElement.removeAttribute(propName);
             }
 
             break;
           }
         case UPDATE_MODE_MULTI_STYLEPROP:
           let keyLength;
-          //targetHandlerElement.style.cssText = '';
+          targetHandlerElement.style.cssText = '';
 
           //console.log('UPDATE_MODE_MULTI_STYLEPROP', updateMode == UPDATE_MODE_STYLEPROP ? 'STYLEPROP' : 'SET_ATTR');
           while ((keyLength = getUint16()) > 0) {
