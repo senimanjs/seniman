@@ -121,13 +121,14 @@ export class Element extends Node {
   printAttributes() {
     let string = '';
 
+    // Attribute values can carry user data, so they must be escaped like text.
     for (let key in this.attributes) {
-      string += ` ${key}="${this.attributes[key]}"`;
+      string += ` ${key}="${escape(this.attributes[key])}"`;
     }
 
     let styleKeys = Object.keys(this.styles);
     if (styleKeys.length > 0) {
-      string += ` style="${styleKeys.map(key => `${key}: ${this.styles[key]}`).join('; ')}"`;
+      string += ` style="${escape(styleKeys.map(key => `${key}: ${this.styles[key]}`).join('; '))}"`;
     }
     return string;
   }
