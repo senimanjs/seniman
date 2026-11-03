@@ -421,6 +421,8 @@
         break;
     }
   }
+  let escapeHtml = (value) => value.replace(/[&<>"]/g, ch => ch == '&' ? '&amp;' : ch == '<' ? '&lt;' : ch == '>' ? '&gt;' : '&quot;');
+
   let _compileTemplate = (templateTokenList) => {
 
     let totalElementCount = getUint16();
@@ -428,7 +430,7 @@
     let templateString = '';
     let isSvg = false;
 
-    let dig = (isRoot) => {
+    let dig = (isRoot, isRawText) => {
 
       while (totalProcessed < totalElementCount) {
         let firstByte = getUint8();
@@ -438,7 +440,12 @@
         // handle if text
         if (tagNameId == 0) {
           let textLength = getUint16();
-          templateString += getString(textLength);
+          let text = getString(textLength);
+
+          // The template is parsed with innerHTML, so text is escaped -- except the compiler's
+          // '<!>' placeholder (parsed into a comment node on purpose) and the contents of
+          // raw-text elements, where the parser does not decode entities.
+          templateString += isRawText || text == '<!>' ? text : escapeHtml(text);
         } else {
           let attrId;
           let tagName = templateTokenList[tagNameId - 1];
@@ -469,7 +476,7 @@
               attrValueString = getString(attrValueLength);
             }
 
-            templateString += ` ${attrName}="${attrValueString}"`;
+            templateString += ` ${attrName}="${escapeHtml(attrValueString)}"`;
           }
 
           templateString += '>';
@@ -478,7 +485,7 @@
             let hasChildren = (firstByte & 64) > 0; // 7th-bit
 
             if (hasChildren) {
-              dig(false);
+              dig(false, tagName == 'script' || tagName == 'style');
             }
 
             templateString += `</${tagName}>`;
