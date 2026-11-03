@@ -1,3 +1,4 @@
+import { MAX_PAGE_SIZE } from './buffer-pool.js';
 
 export let blockDefinitions = new Map();
 export let firstChild = 1;
@@ -12,22 +13,14 @@ function createNewBlockId() {
 }
 
 export function _declareBlock(def) {
-
-  if (def.v == '2.0') {
-    let blockId = _declareBlockV2(def);
-    return blockId;
-  } else {
-    let blockId = createNewBlockId();
-
-    blockDefinitions.set(blockId, {
-      id: blockId,
-      tokens: def.tokens,
-      templateBuffer: Buffer.from(def.templateBuffer, 'base64'),
-      elScriptBuffer: Buffer.from(def.elScriptBuffer, 'base64')
-    });
-
-    return blockId;
+  if (def.v != '2.0') {
+    throw new Error(
+      `Unsupported block definition version: ${def.v}. ` +
+      `Recompile with the seniman babel plugin that ships with this version of seniman.`
+    );
   }
+
+  return _declareBlockV2(def);
 }
 
 let CMD_INSTALL_TEMPLATE = 1;
@@ -137,21 +130,73 @@ function _declareBlockV2(def) {
   let blockId = createNewBlockId();
 
   let tokens = [];
+  let templateBuffer = getTemplateBuffer(def.root, tokens);
+  let elScriptBuffer = getElscriptBuffer(def.root);
+
+  // Must match the CMD_INSTALL_TEMPLATE size computed in streamBlockTemplateInstall.
+  // Checked here so an oversized block fails at module load instead of first render.
+  let installCommandSize = 3 + tokens.length * 2 + 2 + templateBuffer.length + elScriptBuffer.length;
+
+  if (installCommandSize > MAX_PAGE_SIZE) {
+    throw new Error(
+      `Seniman template limit reached: this block's template is ${installCommandSize} bytes, exceeding ` +
+      `SENIMAN_MAX_PAGE_SIZE=${MAX_PAGE_SIZE}. ` +
+      `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.`
+    );
+  }
 
   blockDefinitions.set(blockId, {
     id: blockId,
-    templateBuffer: getTemplateBuffer(def.root, tokens),
-    elScriptBuffer: getElscriptBuffer(def.root),
+    templateBuffer,
+    elScriptBuffer,
     tokens
   });
 
   return blockId;
 }
 
+// In-memory reference to a block's root element while building ELSCRIPT; encoded as 255 on the wire.
+const ROOT_EL_REF = -1;
+
+function encodeElRef(ref) {
+  return ref == ROOT_EL_REF ? 255 : ref;
+}
+
+// Template length prefixes and the element count are encoded as uint16.
+const MAX_UINT16 = 65535;
+
 function getTemplateBuffer(rootElement, tokens) {
   let offset = 0;
   let buf = Buffer.alloc(2048);
   let totalElementCount = 0;
+
+  function ensureCapacity(byteCount) {
+    let required = offset + byteCount;
+
+    if (required <= buf.length) {
+      return;
+    }
+
+    let newLength = buf.length * 2;
+
+    while (newLength < required) {
+      newLength *= 2;
+    }
+
+    let newBuf = Buffer.alloc(newLength);
+    buf.copy(newBuf, 0, 0, offset);
+    buf = newBuf;
+  }
+
+  function checkStringLength(byteLength, what) {
+    if (byteLength > MAX_UINT16) {
+      throw new Error(
+        `Seniman template limit reached: a static ${what} in this block is ${byteLength} bytes, ` +
+        `exceeding the 16-bit length limit of ${MAX_UINT16} bytes. ` +
+        `Pass it as a dynamic expression instead (e.g. {value}).`
+      );
+    }
+  }
 
   function getVariableId(tagName) {
 
@@ -213,6 +258,7 @@ function getTemplateBuffer(rootElement, tokens) {
         firstByte = firstByte | (1 << 7);
       }
 
+      ensureCapacity(1);
       buf.writeUInt8(firstByte, offset);
       offset++;
 
@@ -220,6 +266,8 @@ function getTemplateBuffer(rootElement, tokens) {
       if (tagNameId == 0) {
         let textLength = Buffer.byteLength(el.text);
 
+        checkStringLength(textLength, 'text');
+        ensureCapacity(2 + textLength);
         buf.writeUInt16BE(textLength, offset);
         offset += 2;
 
@@ -231,6 +279,7 @@ function getTemplateBuffer(rootElement, tokens) {
 
         if (el.style) {
           let attrId = getVariableId('style');
+          ensureCapacity(1);
           buf.writeUInt8(attrId, offset);
           offset++;
 
@@ -239,12 +288,14 @@ function getTemplateBuffer(rootElement, tokens) {
             let styleKeyId = getVariableId(propName);
             let styleValueId = getVariableId(propValue);
 
+            ensureCapacity(2);
             buf.writeUInt8(styleKeyId, offset);
             buf.writeUInt8(styleValueId, offset + 1);
 
             offset += 2;
           });
 
+          ensureCapacity(1);
           buf.writeUInt8(0, offset);
 
           offset++;
@@ -262,18 +313,25 @@ function getTemplateBuffer(rootElement, tokens) {
             throw new Error();
           }
 
+          let attrValue = el.attributes[attrName];
+          // The client decodes this as UTF-8 bytes, so the prefix must be the byte length.
+          let attrValueLength = Buffer.byteLength(attrValue);
+
+          checkStringLength(attrValueLength, `"${attrName}" attribute value`);
+          ensureCapacity(1 + 2 + attrValueLength);
+
           buf.writeUInt8(attrId, offset);
           offset++;
 
-          let attrValue = el.attributes[attrName];
-          buf.writeUInt16BE(attrValue.length, offset);
+          buf.writeUInt16BE(attrValueLength, offset);
 
           offset += 2;
-          buf.write(attrValue, offset, attrValue.length);
-          offset += attrValue.length;
+          buf.write(attrValue, offset, attrValueLength);
+          offset += attrValueLength;
 
         }
 
+        ensureCapacity(1);
         buf.writeUInt8(0, offset);
         offset++;
       }
@@ -285,6 +343,14 @@ function getTemplateBuffer(rootElement, tokens) {
   }
 
   dig([rootElement]);
+
+  if (totalElementCount > MAX_UINT16) {
+    throw new Error(
+      `Seniman template limit reached: this block has ${totalElementCount} static elements, exceeding ` +
+      `the 16-bit element count limit of ${MAX_UINT16}. ` +
+      `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.`
+    );
+  }
 
   let elementCountBuffer = Buffer.alloc(2);
 
@@ -389,7 +455,10 @@ function getElscriptBuffer(rootElement) {
     }
   }
 
-  _buildElScript(rootElement, 255);
+  // Internally the root is referenced by ROOT_EL_REF rather than 255, because 255 is
+  // also a real element index once a block has 256+ walked elements -- prune() would
+  // otherwise mistake the root reference for a dependency on element 255.
+  _buildElScript(rootElement, ROOT_EL_REF);
 
   function prune() {
 
@@ -432,7 +501,7 @@ function getElscriptBuffer(rootElement) {
       for (let j = i; j < _els.length; j++) {
         let _el = _els[j];
 
-        if (_el.relRefId < 255 && _el.relRefId > i) {
+        if (_el.relRefId > i) {
           _el.relRefId -= 1;
         }
       }
@@ -441,7 +510,7 @@ function getElscriptBuffer(rootElement) {
 
         let _anchor = _anchors[j];
 
-        if (_anchor.el > i && _anchor.el != 255) {
+        if (_anchor.el > i) {
           _anchor.el -= 1;
         }
 
@@ -452,11 +521,11 @@ function getElscriptBuffer(rootElement) {
 
       for (let j = 0; j < _targets.length; j++) {
 
-        if (_targets[j] == 255) {
+        if (_targets[j] == ROOT_EL_REF) {
           throw new Error('Invalid compiler implementation. Root element (id 255) need not be part of the targets array.');
         }
 
-        if (_targets[j] > i && _targets[j] != 255) {
+        if (_targets[j] > i) {
           _targets[j] -= 1;
         }
       }
@@ -500,7 +569,7 @@ function _createElScriptBuffer(els, anchors, targets) {
     let refEl = els[i];
     //let relCodeMap = {firstChild}
     buf.writeUInt8(refEl.rel, offset + i * 2);
-    buf.writeUInt8(refEl.relRefId, offset + i * 2 + 1);
+    buf.writeUInt8(encodeElRef(refEl.relRefId), offset + i * 2 + 1);
   }
 
   offset += 2 * refElementsCount;
@@ -510,7 +579,7 @@ function _createElScriptBuffer(els, anchors, targets) {
   for (let i = 0; i < anchorCount; i++) {
     let anchor = anchors[i];
 
-    buf.writeUInt8(anchor.el, offset + i * 2);
+    buf.writeUInt8(encodeElRef(anchor.el), offset + i * 2);
 
     // in beforeEl context, 255 means undefined -- ie. no beforeEl applicable. 
     // 255 that is usually used to refer to rootElement can be reused here since 

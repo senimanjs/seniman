@@ -1,0 +1,490 @@
+exports[`compiler snapshot: 1000 rows (larger than the initial 2KB buffer) 1`] = `
+--- compiled ---
+<190332 chars, sha256:51de835678f7ec0d>
+--- block 0 ---
+tokens (2): ["div","class"]
+template: 30894 bytes
+  <61788 chars, sha256:9fba434ad502d9c1>
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: 255 static siblings 1`] = `
+--- compiled ---
+<7582 chars, sha256:c8a6b039d64b0497>
+--- block 0 ---
+tokens (2): ["div","span"]
+template: 514 bytes
+  0100410082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  0200
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: 256 static siblings (root sentinel boundary) 1`] = `
+--- compiled ---
+<7610 chars, sha256:af79837c90a210d1>
+--- block 0 ---
+tokens (2): ["div","span"]
+template: 516 bytes
+  0101410082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  8200820082008200820082008200820082008200820082008200820082008200
+  82000200
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: 5000 rows (exceeds max page size) 1`] = `
+--- compiled ---
+<954332 chars, sha256:dade095cf6c2409c>
+--- block 0 ---
+throws: Seniman template limit reached: this block's template is 158906 bytes, exceeding SENIMAN_MAX_PAGE_SIZE=131072. Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.
+`;
+
+exports[`compiler snapshot: 63 vs 64 block tokens via distinct inline style values 1`] = `
+--- compiled ---
+<9698 chars, sha256:9acb83fd31327cab>
+--- block 0 ---
+tokens (63): ["div","style","width","0px","1px","2px","3px","4px","5px","6px","7px","8px","9px","10px","11px","12px","13px","14px","15px","16px","17px","18px","19px","20px","21px","22px","23px","24px","25px","26px","27px","28px","29px","30px","31px","32px","33px","34px","35px","36px","37px","38px","39px","40px","41px","42px","43px","44px","45px","46px","47px","48px","49px","50px","51px","52px","53px","54px","55px","56px","57px","58px","59px"]
+template: 364 bytes
+  003d410081020304000081020305000081020306000081020307000081020308
+  00008102030900008102030a00008102030b00008102030c00008102030d0000
+  8102030e00008102030f00008102031000008102031100008102031200008102
+  0313000081020314000081020315000081020316000081020317000081020318
+  00008102031900008102031a00008102031b00008102031c00008102031d0000
+  8102031e00008102031f00008102032000008102032100008102032200008102
+  0323000081020324000081020325000081020326000081020327000081020328
+  00008102032900008102032a00008102032b00008102032c00008102032d0000
+  8102032e00008102032f00008102033000008102033100008102033200008102
+  0333000081020334000081020335000081020336000081020337000081020338
+  00008102033900008102033a00008102033b00008102033c00008102033d0000
+  8102033e00000102033f0000
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+--- block 1 ---
+throws: Seniman template limit reached: this block uses more than 63 unique tokens before/including tag "60px". Template tag IDs are 6-bit encoded, so tag IDs above 63 will corrupt the DOM. Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component to reduce per-block token variety.
+`;
+
+exports[`compiler snapshot: anchors at start, middle and end with markers 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "ul",
+    children: [{
+      type: "$anchor"
+    }, {
+      type: "li",
+      children: [{
+        type: "$text",
+        text: "one"
+      }]
+    }, {
+      type: "$anchor"
+    }, {
+      type: "$anchor"
+    }, {
+      type: "li",
+      children: [{
+        type: "$text",
+        text: "two"
+      }]
+    }, {
+      type: "$anchor"
+    }]
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock, [() => props.a(), () => props.b(), () => props.c(), () => props.d()], null, null, null, null);
+}
+--- block 0 ---
+tokens (2): ["ul","li"]
+template: 20 bytes
+  00054100c2000000036f6e65420000000374776f
+elscript: 15 bytes (2 refs, 4 anchors, 0 targets)
+  0201ff020004ff00ff01ff01ffff00
+`;
+
+exports[`compiler snapshot: client function with server bindings 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanClientFunction = _senimanDeclareClientFunction({
+  argNames: ["event"],
+  body: "{let[_$s0]=this.serverFunctions;_$s0(event.type)}"
+});
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "button",
+    children: [{
+      type: "$text",
+      text: "Save"
+    }]
+  }
+});
+function A(props) {
+  let save = props.save;
+  return _senimanCreateBlock(_senimanBlock, null, [{
+    targetId: 255,
+    type: 1,
+    fn: {
+      clientFnId: _senimanClientFunction,
+      serverBindFns: () => [save]
+    }
+  }], null, null, null);
+}
+--- block 0 ---
+tokens (1): ["button"]
+template: 11 bytes
+  0002410000000453617665
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: components, children and nested blocks 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "li",
+    children: [{
+      type: "$anchor"
+    }]
+  }
+});
+const _senimanBlock2 = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "aside",
+    children: [{
+      type: "$text",
+      text: "Open"
+    }]
+  }
+});
+const _senimanBlock3 = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "main",
+    children: [{
+      type: "$anchor"
+    }, {
+      type: "$text",
+      text: "<!>"
+    }, {
+      type: "$text",
+      text: " "
+    }, {
+      type: "$anchor"
+    }, {
+      type: "$text",
+      text: "<!>"
+    }, {
+      type: "$text",
+      text: " "
+    }, {
+      type: "$anchor"
+    }]
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock3, [_senimanCreateComponent(Header, {
+    title: "hi"
+  }), _senimanCreateComponent(List, {
+    get children() {
+      return props.items().map(item => _senimanCreateBlock(_senimanBlock, [item], null, null, null, null));
+    }
+  }), () => props.open() && _senimanCreateBlock(_senimanBlock2, null, null, null, null, null)], null, null, null, null);
+}
+--- block 0 ---
+tokens (1): ["li"]
+template: 4 bytes
+  00010100
+elscript: 5 bytes (0 refs, 1 anchors, 0 targets)
+  0001ffff00
+--- block 1 ---
+tokens (1): ["aside"]
+template: 11 bytes
+  000241000000044f70656e
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+--- block 2 ---
+tokens (1): ["main"]
+template: 24 bytes
+  000541008000033c213e800001208000033c213e00000120
+elscript: 15 bytes (3 refs, 3 anchors, 0 targets)
+  0301ff0200020103ff00ff02ffff00
+`;
+
+exports[`compiler snapshot: deep nesting with target at the bottom 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "div",
+    children: [{
+      type: "div",
+      children: [{
+        type: "div",
+        children: [{
+          type: "div",
+          children: [{
+            type: "div",
+            children: [{
+              type: "span",
+              target: true,
+              children: [{
+                type: "$text",
+                text: "deep"
+              }]
+            }]
+          }]
+        }]
+      }]
+    }]
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock, null, [{
+    targetId: 0,
+    type: 1,
+    fn: () => props.x()
+  }], null, null, null);
+}
+--- block 0 ---
+tokens (2): ["div","span"]
+template: 21 bytes
+  000741004100410041004100420000000464656570
+elscript: 14 bytes (5 refs, 0 anchors, 1 targets)
+  0501ff0100010101020103000104
+`;
+
+exports[`compiler snapshot: dynamic text, attribute, class and style 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "div",
+    children: [{
+      type: "$text",
+      text: "Count: "
+    }, {
+      type: "$anchor"
+    }]
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock, [() => props.count()], null, [{
+    targetId: 255,
+    effectFn(elRef, _p$) {
+      const _v$0 = props.title(),
+        _v$1 = props.kind(),
+        _v$2 = props.width();
+      _v$0 !== _p$._v$0 && elRef.setAttribute("title", _p$._v$0 = _v$0);
+      _v$1 !== _p$._v$1 && elRef.setClassName(_p$._v$1 = _v$1);
+      _v$2 !== _p$._v$2 && elRef.setStyleProperty("width", _p$._v$2 = _v$2);
+      return _p$;
+    },
+    init: {
+      _v$0: undefined,
+      _v$1: undefined,
+      _v$2: undefined
+    }
+  }], null, null);
+}
+--- block 0 ---
+tokens (1): ["div"]
+template: 14 bytes
+  00024100000007436f756e743a20
+elscript: 5 bytes (0 refs, 1 anchors, 0 targets)
+  0001ffff00
+`;
+
+exports[`compiler snapshot: events, refs and onMount 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanClientFunction = _senimanDeclareClientFunction({
+  argNames: [],
+  body: "{}"
+});
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "section",
+    children: [{
+      type: "button",
+      target: true,
+      children: [{
+        type: "$text",
+        text: "Go"
+      }]
+    }, {
+      type: "$text",
+      text: " "
+    }, {
+      type: "input",
+      target: true
+    }]
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock, null, [{
+    targetId: 0,
+    type: 1,
+    fn: () => props.go()
+  }], null, [{
+    ref: props.inputRef,
+    targetId: 1
+  }], [{
+    targetId: 1,
+    type: 1,
+    fn: {
+      clientFnId: _senimanClientFunction
+    }
+  }]);
+}
+--- block 0 ---
+tokens (3): ["section","button","input"]
+template: 17 bytes
+  00054100c200000002476f800001200300
+elscript: 11 bytes (3 refs, 0 anchors, 2 targets)
+  0301ff0200020100020002
+`;
+
+exports[`compiler snapshot: non-ASCII text and attribute 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "p",
+    attributes: {
+      "title": "h\\xE9llo \\u2713"
+    },
+    children: [{
+      type: "$text",
+      text: "\\xDCn\\xEFc\\xF6d\\xE9 \\u2014 \\u65E5\\u672C\\u8A9E"
+    }]
+  }
+});
+function A() {
+  return _senimanCreateBlock(_senimanBlock, null, null, null, null, null);
+}
+--- block 0 ---
+tokens (2): ["p","title"]
+template: 45 bytes
+  00024102000a68c3a96c6c6f20e29c9300000019c39c6ec3af63c3b664c3a920
+  e2809420e697a5e69cace8aa9e
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: static run before an expression (ELSCRIPT chain limit) 1`] = `
+--- compiled ---
+<8919 chars, sha256:6a5afc0875fcd3a9>
+--- block 0 ---
+throws: Seniman template limit reached: this block needs more than 255 referenceable elements. ELSCRIPT indices are 8-bit with 255 reserved, so indices above 254 will corrupt anchors/targets. Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.
+`;
+
+exports[`compiler snapshot: static text, attributes, inline style and class 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "div",
+    attributes: {
+      "id": "main",
+      "class": "card big"
+    },
+    style: {
+      "color": "red",
+      "padding": "4px"
+    },
+    class: ["card", "big"],
+    children: [{
+      type: "$text",
+      text: "Hello "
+    }, {
+      type: "b",
+      children: [{
+        type: "$text",
+        text: "world"
+      }]
+    }]
+  }
+});
+function A() {
+  return _senimanCreateBlock(_senimanBlock, null, null, null, null, null);
+}
+--- block 0 ---
+tokens (9): ["div","style","color","red","padding","4px","id","class","b"]
+template: 47 bytes
+  0004410203040506000700046d61696e08000863617264206269670080000648
+  656c6c6f204900000005776f726c64
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
+exports[`compiler snapshot: svg path 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "path",
+    attributes: {
+      "d": "M0 0L10 10"
+    }
+  }
+});
+function A(props) {
+  return _senimanCreateBlock(_senimanBlock, null, null, [{
+    targetId: 255,
+    effectFn(elRef, _p$) {
+      const _v$ = props.stroke();
+      _v$ !== _p$ && elRef.setAttribute("stroke", _v$);
+      return _v$;
+    }
+  }], null, null);
+}
+--- block 0 ---
+tokens (2): ["path","d"]
+template: 17 bytes
+  00010102000a4d3020304c313020313000
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
