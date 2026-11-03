@@ -421,112 +421,33 @@
         break;
     }
   }
-  let escapeHtml = (value) => value.replace(/[&<>"]/g, ch => ch == '&' ? '&amp;' : ch == '<' ? '&lt;' : ch == '>' ? '&gt;' : '&quot;');
+  // Numeric character references decode exactly like the named ones, in text and attributes.
+  let escapeHtml = (value) => value.replace(/[&<>"]/g, ch => '&#' + ch.charCodeAt() + ';');
 
-  // varint: CMD_INSTALL_TEMPLATE_VARINT -- same layout, but counts, lengths and token IDs are
-  // varints, and a tag field of 63 means the tag ID follows as a varint.
-  let _compileTemplate = (templateTokenList, varint) => {
-    let readId = varint ? getUvarint : getUint8;
-    let readLength = varint ? getUvarint : getUint16;
-    let totalElementCount = readLength();
-    let totalProcessed = 0;
-    let templateString = '';
-    let isSvg = false;
+  // @include src/template-reader.js
 
-    let dig = (isRoot, isRawText) => {
+  let readTemplate = createTemplateReader(getUint8, getUint16, getUvarint, getString);
 
-      while (totalProcessed < totalElementCount) {
-        let firstByte = getUint8();
-        let tagNameId = firstByte & 63; // get first 6 bits of the byte
-        let nextSibling = (firstByte & 128) > 0; // 8th-bit
-
-        if (varint && tagNameId == 63) {
-          tagNameId = getUvarint();
-        }
-
-        // handle if text
-        if (tagNameId == 0) {
-          let text = getString(readLength());
-
-          // The template is parsed with innerHTML, so text is escaped -- except the compiler's
-          // '<!>' placeholder (parsed into a comment node on purpose) and the contents of
-          // raw-text elements, where the parser does not decode entities.
-          templateString += isRawText || text == '<!>' ? text : escapeHtml(text);
-        } else {
-          let attrId;
-          let tagName = templateTokenList[tagNameId - 1];
-          let isSelfClosing = selfClosingTagSet.has(tagName);
-
-          templateString += `<${tagName}`;
-
-          if (isRoot && tagName == 'path') {
-            isSvg = true;
-          }
-
-          while (attrId = readId()) {
-            let attrName = templateTokenList[attrId - 1];
-            let attrValueString = '';
-
-            if (attrName == 'style') {
-              let propKeyId;
-
-              while ((propKeyId = readId())) {
-                let propKey = templateTokenList[propKeyId - 1];
-                let propValueId = readId();
-                let propValue = templateTokenList[propValueId - 1];
-
-                attrValueString += `${propKey}:${propValue};`;
-              }
-            } else {
-              attrValueString = getString(readLength());
-            }
-
-            templateString += ` ${attrName}="${escapeHtml(attrValueString)}"`;
-          }
-
-          templateString += '>';
-
-          if (!isSelfClosing) {
-            let hasChildren = (firstByte & 64) > 0; // 7th-bit
-
-            if (hasChildren) {
-              dig(false, tagName == 'script' || tagName == 'style');
-            }
-
-            templateString += `</${tagName}>`;
-          }
-        }
-
-        totalProcessed++;
-
-        if (!nextSibling) {
-          break;
-        }
-      }
-    }
-
-    dig(true);
-
-    // TODO: this is a hack to make SVG work -- do this during compilation?
-    if (isSvg) {
-      templateString = `<svg>${templateString}</svg>`;
-    }
-
-    return [templateString, isSvg];
-  }
-
+  // Elements are serialized to HTML and parsed with innerHTML; ELSCRIPT becomes a function
+  // that walks a clone of the template to its anchors and targets.
   let _installTemplate2 = (varint) => {
-    let templateId = getUint16();
-    let templateTokenList = [];
-    let id;
+    let html = '';
+    let isSvg;
+    let [templateId, refs, anchors, targets] = readTemplate(varint, GlobalTokenList,
+      (parent, tagName, attrs) => {
+        // TODO: this is a hack to make SVG work -- do this during compilation?
+        isSvg = isSvg || !parent && tagName == 'path';
+        html += `<${tagName}${attrs.map(([name, value]) => ` ${name}="${escapeHtml(value)}"`).join('')}>`;
+        return tagName;
+      },
+      // Text is escaped -- except the compiler's '<!>' placeholder (parsed into a comment node
+      // on purpose) and the contents of raw-text elements, where the parser doesn't decode entities.
+      (parent, text) => html += parent == 'script' || parent == 'style' || text == '<!>' ? text : escapeHtml(text),
+      (tagName) => selfClosingTagSet.has(tagName) || (html += `</${tagName}>`)
+    );
 
-    while (id = getUint16()) {
-      templateTokenList.push(GlobalTokenList[id]);
-    }
-
-    let [templateString, isSvg] = _compileTemplate(templateTokenList, varint);
     const t = createElement("template");
-    t.innerHTML = templateString;
+    t.innerHTML = isSvg ? `<svg>${html}</svg>` : html;
     let node = t.content.firstChild;
 
     // handle case where template is a script -- need to create a new script element from scratch
@@ -540,63 +461,16 @@
       node = node.firstChild;
     }
 
+    // the root is `_`, element i is `_i`
+    let ref = (index) => index < 0 ? '' : index;
+
     templateDefinitionMap.set(templateId, {
       tpl: node,
-      fn: _compileFn2(varint)
+      fn: new Function('_',
+        refs.map(([rel, index], i) => `let _${i}=_${ref(index)}.${rel == 1 ? 'firstChild' : 'nextSibling'};`).join('') +
+        `return[[${anchors.map(([el, marker]) => `{el:_${ref(el)}${marker < 0 ? '' : ',marker:_' + marker}}`)}],[${targets.map(index => '_' + index)}]]`
+      )
     })
-  }
-
-  // Compact ELSCRIPT: uint8 counts and indices, 255 = root / "no marker".
-  // Varint ELSCRIPT: varint counts; refs are varint index + 1, 0 = root / "no marker".
-  let _compileFn2 = (varint) => {
-    let fnString = "";
-    let readCount = varint ? getUvarint : getUint8;
-    // returns the element index, or -1 for root / "no marker"
-    let readRef = varint
-      ? () => getUvarint() - 1
-      : () => { let ref = getUint8(); return ref == 255 ? -1 : ref; };
-    let refElementsCount = readCount();
-
-    for (let i = 0; i < refElementsCount; i++) {
-      let rel = getUint8();
-      let relRefId = readRef();
-
-      let FIRST_CHILD = 1;
-
-      // root has no number associated in the variable name (let _) vs (let _1)
-      let refElName = relRefId < 0 ? '' : relRefId;
-      let referenceType = rel == FIRST_CHILD ? 'firstChild' : 'nextSibling';
-
-      fnString += `let _${i}=_${refElName}.${referenceType};`;
-    }
-
-    let anchorCount = readCount();
-
-    fnString += 'return [[';
-
-    let str = [];
-
-    for (i = 0; i < anchorCount; i++) {
-      let elId = readRef();
-      let beforeElId = readRef();
-
-      // In beforeEl context the root sentinel means "no marker" (append); the root is never
-      // an anchor's next sibling, so the two can't be confused.
-      let beforeElStr = beforeElId < 0 ? '' : `,marker:_${beforeElId}`;
-      str.push(`{el:_${(elId < 0 ? '' : elId) + beforeElStr}}`);
-    }
-
-    fnString += str.join(',') + '],[';
-
-    let targetElementCount = readCount();
-
-    str = [];
-    for (i = 0; i < targetElementCount; i++) {
-      str.push(`_${readCount()}`);
-    }
-    fnString += str.join(',') + ']];';
-
-    return new Function("_", fnString);
   }
 
   let _initBlock = () => {

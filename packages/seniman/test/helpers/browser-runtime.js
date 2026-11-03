@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { loadClientSource } from '../../scripts/client-source.js';
 import {
   Element,
   Node,
@@ -9,10 +9,8 @@ import {
 
 export { Element, Node, Text };
 
-const browserSource = readFile(
-  new URL('../../frontend/browser.js', import.meta.url),
-  'utf8'
-);
+// The client script with its shared modules inlined, exactly as the build ships it.
+const browserSource = loadClientSource();
 
 export class FakeDocument {
   constructor() {
