@@ -81,6 +81,7 @@ export class Text extends Node {
     super();
     this.data = text == '<!>' ? '' : String(text);
     this.nodeName = '#text';
+    this.nodeType = 3;
   }
 
   insertInto(parentElement, marker) {
@@ -105,6 +106,7 @@ export class Element extends Node {
     super();
     this.tagName = tagName.toLowerCase();
     this.nodeName = tagName.toUpperCase();
+    this.nodeType = 1;
     this.attributes = createAttributes();
     this.styles = {};
     this.children = [];

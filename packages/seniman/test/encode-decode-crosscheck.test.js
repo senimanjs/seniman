@@ -498,10 +498,7 @@ async function settle() {
 
 async function createSession(App, generated) {
   let dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>');
-  let browser = await createBrowserRuntime({
-    document: dom.window.document,
-    Text: dom.window.Text
-  });
+  let browser = await createBrowserRuntime({ document: dom.window.document });
 
   let crawler = new HtmlRenderingContext();
   crawler.onRenderComplete(() => { });

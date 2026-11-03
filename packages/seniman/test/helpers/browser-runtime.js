@@ -81,8 +81,6 @@ export async function createBrowserRuntime(options = {}) {
     DataView,
     Map,
     Set,
-    // browser.js patches Text.prototype, so it must be the DOM's own Text class.
-    Text: options.Text || Text,
     TextDecoder,
     TextEncoder,
     Uint8Array,

@@ -598,9 +598,14 @@
     _blocksMap.set(blockId, new Block(blockId, componentRootElement, targetEls, anchorDefs));
   }
 
-  // TODO: move to another way that doesn't require a global
-  Text.prototype.insertInto = function (parentEl, marker) {
-    parentEl.insertBefore(this, marker);
+  // Items are text nodes, Blocks or Sequences. Text nodes are inserted directly; Blocks and
+  // Sequences know how to insert themselves. (Removal needs no helper: Text has native remove().)
+  let insertItem = (item, parentEl, marker) => {
+    if (item.nodeType) {
+      parentEl.insertBefore(item, marker);
+    } else {
+      item.insertInto(parentEl, marker);
+    }
   };
 
   class Block {
@@ -630,7 +635,7 @@
         oldItem.remove();
       }
 
-      item.insertInto(anchor.el, anchor.marker);
+      insertItem(item, anchor.el, anchor.marker);
     }
 
     insertInto(parentEl, marker) {
@@ -666,7 +671,7 @@
       this.mounted = true;
 
       for (let i = 0; i < this.items.length; i++) {
-        this.items[i].insertInto(parentEl, this.endMarker);
+        insertItem(this.items[i], parentEl, this.endMarker);
       } 
     }
 
@@ -717,7 +722,7 @@
 
     _insert(isLastItem, index, item) {
       let insertionMarker = isLastItem ? this.endMarker : getInsertionMarker(this.items[index + 1]);
-      item.insertInto(this.endMarker.parentNode, insertionMarker);
+      insertItem(item, this.endMarker.parentNode, insertionMarker);
     }
 
     _removeItems(startIndex, count) {
@@ -732,7 +737,7 @@
   }
 
   let getInsertionMarker = (item) => {
-    if (item instanceof Text) {
+    if (item.nodeType) {
       return item;
     } else if (item instanceof Sequence) {
       return item.items.length > 0
