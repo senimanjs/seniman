@@ -112,6 +112,9 @@ const _senimanBlock = _senimanDeclareBlock({
     }, {
       type: "$anchor"
     }, {
+      type: "$text",
+      text: "<!>"
+    }, {
       type: "$anchor"
     }, {
       type: "li",
@@ -129,10 +132,10 @@ function A(props) {
 }
 --- block 0 ---
 tokens (2): ["ul","li"]
-template: 20 bytes
-  00054100c2000000036f6e65420000000374776f
-elscript: 15 bytes (2 refs, 4 anchors, 0 targets)
-  0201ff020004ff00ff01ff01ffff00
+template: 26 bytes
+  00064100c2000000036f6e658000033c213e420000000374776f
+elscript: 17 bytes (3 refs, 4 anchors, 0 targets)
+  0301ff0200020104ff00ff01ff02ffff00
 `;
 
 exports[`compiler snapshot: client function with server bindings 1`] = `

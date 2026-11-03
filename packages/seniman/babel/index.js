@@ -1424,6 +1424,12 @@ function prepElement(element) {
     let childEl = element.children[i];
 
     if (childEl.type == '$anchor') {
+      if (hasPrecedingAnchor) {
+        // Consecutive anchors would otherwise share one insertion marker, so re-attaching
+        // an earlier anchor's item would land it after the later ones. Separate them.
+        element.children.splice(i, 0, { type: '$text', value: '<!>' });
+        i++;
+      }
       hasPrecedingAnchor = true;
       i++;
     } else if (childEl.type == '$text') {
