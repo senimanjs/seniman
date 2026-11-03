@@ -10,6 +10,9 @@
 // with DOM APIs (no HTML parsing involved). Any encoder/decoder desync -- wrong anchor
 // position, wrong target element, mangled text/attribute bytes -- shows up as a DOM mismatch.
 //
+// Every dynamic value is backed by state. After the first render, a few update rounds change
+// random values and the comparison runs again, so update commands are covered too.
+//
 // The comparison is purely on the final DOM, so these tests stay valid across intentional
 // wire-format changes. To reproduce a failure, the failing case prints its seed and JSX.
 
@@ -21,13 +24,14 @@ import seniman from '../babel/index.js';
 // The runtime contains JSX, so it is loaded from the build (`npm test` builds first via pretest;
 // when running this file directly, run `npm run build` after changing src/).
 import * as autogenRuntime from '../dist/autogen-v1/index.js';
-import { _createComponent, Window } from '../dist/window.js';
+import { _createComponent, createRef, Window } from '../dist/window.js';
 import { HtmlRenderingContext } from '../dist/crawler/html.js';
-import { deregisterWindow, registerWindow, runInWindow, useDisposableEffect } from '../dist/state.js';
+import { deregisterWindow, registerWindow, runInWindow, useDisposableEffect, useState } from '../dist/state.js';
 import { createBrowserRuntime } from './helpers/browser-runtime.js';
 
 const CASE_COUNT = Number(process.env.CROSSCHECK_CASES || 150);
 const BASE_SEED = Number(process.env.CROSSCHECK_SEED || 1);
+const UPDATE_ROUNDS = 2;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Deterministic random tree generator
@@ -58,19 +62,16 @@ const VOID_TAGS = ['input', 'br'];
 const SAFE_TEXT_CHARS = 'abcdefghij XYZ0123456789éü日本✓';
 // Characters that must survive encoding as data, never be interpreted as markup.
 const SPECIAL_CHARS = ['<', '>', '&', '"', "'", '<b>', '&amp;', '</div>', '{', '}'];
-const STYLE_PROPS = [['width', ['1px', '2px', '10px', '50%']], ['color', ['red', 'blue', 'green']], ['margin', ['0px', '4px']]];
+// Only values jsdom's CSS parser accepts, so expected and actual styles are comparable.
+const STYLE_PROPS = {
+  width: ['1px', '2px', '10px', '50%'],
+  color: ['red', 'blue', 'green'],
+  margin: ['0px', '4px'],
+  'font-weight': ['bold', '400']
+};
+const STYLE_KEYS = Object.keys(STYLE_PROPS);
 
-function generateCase(seed) {
-  let random = createRandom(seed);
-  let propValues = {};
-  let propCounter = 0;
-
-  let newProp = (value) => {
-    let name = `p${propCounter++}`;
-    propValues[name] = value;
-    return name;
-  };
-
+function createValueGenerators(random) {
   let safeText = (min = 1, max = 12) => {
     let length = min + random.int(max - min + 1);
     let text = '';
@@ -98,20 +99,70 @@ function generateCase(seed) {
     return parts.join('');
   };
 
+  let anyText = () => random.chance(0.5) ? mixedText() : safeText();
+
+  let styleObject = () => {
+    let object = {};
+    for (let key of STYLE_KEYS) {
+      if (random.chance(0.4)) {
+        object[key] = random.pick(STYLE_PROPS[key]);
+      }
+    }
+    return object;
+  };
+
+  // How each kind of dynamic value is (re)generated. null / '' / false exercise the
+  // remove-attribute, remove-style and unmount paths.
+  let valueOf = {
+    text: () => anyText(),
+    attr: () => random.chance(0.15) ? null : anyText(),
+    class: () => random.chance(0.15) ? '' : safeText(1, 8).replace(/ /g, '-'),
+    styleValue: (key) => random.chance(0.2) ? '' : random.pick(STYLE_PROPS[key]),
+    multiStyle: () => styleObject(),
+    show: () => random.chance(0.6)
+  };
+
+  return { safeText, mixedText, anyText, valueOf };
+}
+
+function generateCase(seed) {
+  let random = createRandom(seed);
+  let { safeText, mixedText, valueOf } = createValueGenerators(random);
+
+  // name -> { kind, key?, value }
+  let props = {};
+  let propCounter = 0;
+  let refCount = 0;
+
+  let newProp = (kind, key) => {
+    let name = `p${propCounter++}`;
+    props[name] = { kind, key, value: valueOf[kind](key) };
+    return name;
+  };
+
   // Node shapes:
-  //   { kind: 'element', tag, attrs: [[name, value, isExpressionString]], style: [[k, v]],
-  //     dynamicAttr: [name, propName] | null, onClick: bool, children: [...] }
-  //   { kind: 'text', value }                     -> static JSX text
-  //   { kind: 'stringExpr', value }               -> {"literal"} child
-  //   { kind: 'dynamicText', prop }               -> {props.pN}
-  //   { kind: 'nestedBlock', element }            -> {<el/>} (separate block in an anchor)
-  //   { kind: 'component', child }                -> <Box>child</Box>
+  //   { kind: 'element', tag, attrs: [[name, value, asExpression]], style: [[k, v]],
+  //     dynamicStyle: [[k, prop]], multiStyle: prop | null, dynamicClass: prop | null,
+  //     dynamicAttr: [name, prop] | null, onClick, ref, children }
+  //   { kind: 'text', value }              static JSX text
+  //   { kind: 'stringExpr', value }        {"literal"} child
+  //   { kind: 'dynamicText', prop }        {props.pN()}
+  //   { kind: 'nestedBlock', element }     {<el/>} -- a separate block in an anchor
+  //   { kind: 'conditional', prop, element } {props.pN() ? <el/> : null}
+  //   { kind: 'component', child }         <Box>child</Box>
+  //   { kind: 'svg', paths: [d], nestedPath: d | null }
+  let newElement = (tag) => ({
+    kind: 'element', tag, attrs: [], style: [], dynamicStyle: [], multiStyle: null,
+    dynamicClass: null, dynamicAttr: null, onClick: false, ref: false, children: []
+  });
+
   let genElement = (depth, budget) => {
     let isVoid = random.chance(0.08);
-    let tag = isVoid ? random.pick(VOID_TAGS) : random.pick(CONTAINER_TAGS);
-    let el = { kind: 'element', tag, attrs: [], style: [], dynamicAttr: null, onClick: false, children: [] };
+    let el = newElement(isVoid ? random.pick(VOID_TAGS) : random.pick(CONTAINER_TAGS));
 
-    if (random.chance(0.3)) {
+    if (random.chance(0.15)) {
+      el.dynamicClass = newProp('class');
+    } else if (random.chance(0.3)) {
       el.attrs.push(['class', safeText(1, 8).replace(/ /g, '-'), false]);
     }
 
@@ -120,24 +171,28 @@ function generateCase(seed) {
       el.attrs.push(['title', random.chance(0.5) ? mixedText() : safeText(), true]);
     }
 
-    if (random.chance(0.2)) {
-      let used = new Set();
-      let count = 1 + random.int(2);
+    if (random.chance(0.1)) {
+      el.multiStyle = newProp('multiStyle');
+    } else if (random.chance(0.3)) {
+      for (let key of STYLE_KEYS) {
+        if (!random.chance(0.3)) continue;
 
-      for (let i = 0; i < count; i++) {
-        let [prop, values] = random.pick(STYLE_PROPS);
-        if (used.has(prop)) continue;
-        used.add(prop);
-        el.style.push([prop, random.pick(values)]);
+        if (random.chance(0.4)) {
+          el.dynamicStyle.push([key, newProp('styleValue', key)]);
+        } else {
+          el.style.push([key, random.pick(STYLE_PROPS[key])]);
+        }
       }
     }
 
     if (random.chance(0.2)) {
-      el.dynamicAttr = ['data-t', newProp(random.chance(0.5) ? mixedText() : safeText())];
+      el.dynamicAttr = ['data-t', newProp('attr')];
     }
 
-    if (random.chance(0.1)) {
-      el.onClick = true;
+    el.onClick = random.chance(0.1);
+
+    if (random.chance(0.08)) {
+      el.ref = `r${refCount++}`;
     }
 
     if (isVoid) {
@@ -152,22 +207,31 @@ function generateCase(seed) {
     for (let i = 0; i < childCount; i++) {
       let roll = wide ? random.int(100) * 0.9 : random.int(100);
       let child;
+      let canNest = depth < 6 && budget.elements > 0;
 
-      if (roll < 30 && depth < 7 && budget.elements-- > 0) {
+      if (roll < 28 && depth < 7 && budget.elements-- > 0) {
         child = genElement(depth + 1, budget);
-      } else if (roll < 45 && !lastWasText) {
+      } else if (roll < 40 && !lastWasText) {
         // two static texts can't be adjacent in JSX source -- they'd merge
         child = { kind: 'text', value: safeText() };
-      } else if (roll < 60) {
-        child = { kind: 'dynamicText', prop: newProp(random.chance(0.5) ? mixedText() : safeText()) };
-      } else if (roll < 70) {
+      } else if (roll < 55) {
+        child = { kind: 'dynamicText', prop: newProp('text') };
+      } else if (roll < 63) {
         child = { kind: 'stringExpr', value: mixedText() };
-      } else if (roll < 80 && depth < 6 && budget.elements-- > 0) {
+      } else if (roll < 71 && canNest && budget.elements-- > 0) {
         child = { kind: 'nestedBlock', element: genElement(depth + 1, budget) };
-      } else if (roll < 85 && depth < 6 && budget.elements-- > 0) {
+      } else if (roll < 78 && canNest && budget.elements-- > 0) {
+        child = { kind: 'conditional', prop: newProp('show'), element: genElement(depth + 1, budget) };
+      } else if (roll < 83 && canNest && budget.elements-- > 0) {
         child = { kind: 'component', child: genElement(depth + 1, budget) };
+      } else if (roll < 86) {
+        child = {
+          kind: 'svg',
+          paths: Array.from({ length: random.int(3) }, () => `M${random.int(9)} 0L${random.int(9)} 9`),
+          nestedPath: random.chance(0.5) ? `M0 ${random.int(9)}L9 0` : null
+        };
       } else {
-        child = { kind: 'element', tag: 'span', attrs: [], style: [], dynamicAttr: null, onClick: false, children: [] };
+        child = newElement('span');
       }
 
       lastWasText = child.kind == 'text';
@@ -179,7 +243,22 @@ function generateCase(seed) {
 
   let root = genElement(1, { elements: 60 + random.int(200) });
 
-  return { root, propValues };
+  // A schedule of updates: for each round, the new value of a random subset of props.
+  let updates = [];
+
+  for (let round = 0; round < UPDATE_ROUNDS; round++) {
+    let changes = {};
+
+    for (let [name, prop] of Object.entries(props)) {
+      if (random.chance(0.5)) {
+        changes[name] = valueOf[prop.kind](prop.key);
+      }
+    }
+
+    updates.push(changes);
+  }
+
+  return { root, props, refCount, updates };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -193,11 +272,18 @@ function toJsx(node) {
     case 'stringExpr':
       return `{${JSON.stringify(node.value)}}`;
     case 'dynamicText':
-      return `{props.${node.prop}}`;
+      return `{props.${node.prop}()}`;
     case 'nestedBlock':
       return `{${toJsx(node.element)}}`;
+    case 'conditional':
+      return `{props.${node.prop}() ? ${toJsx(node.element)} : null}`;
     case 'component':
       return `<Box>${toJsx(node.child)}</Box>`;
+    case 'svg': {
+      let paths = node.paths.map(d => `<path d="${d}" />`).join('');
+      let nested = node.nestedPath ? `{<path d="${node.nestedPath}" />}` : '';
+      return `<svg width="10" height="10">${paths}${nested}</svg>`;
+    }
     case 'element': {
       let attrs = '';
 
@@ -205,16 +291,30 @@ function toJsx(node) {
         attrs += asExpression ? ` ${name}={${JSON.stringify(value)}}` : ` ${name}="${value}"`;
       }
 
-      if (node.style.length) {
-        attrs += ` style={{ ${node.style.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')} }}`;
+      if (node.dynamicClass) {
+        attrs += ` class={props.${node.dynamicClass}()}`;
+      }
+
+      if (node.multiStyle) {
+        attrs += ` style={props.${node.multiStyle}()}`;
+      } else if (node.style.length || node.dynamicStyle.length) {
+        let entries = [
+          ...node.style.map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`),
+          ...node.dynamicStyle.map(([k, prop]) => `${JSON.stringify(k)}: props.${prop}()`)
+        ];
+        attrs += ` style={{ ${entries.join(', ')} }}`;
       }
 
       if (node.dynamicAttr) {
-        attrs += ` ${node.dynamicAttr[0]}={props.${node.dynamicAttr[1]}}`;
+        attrs += ` ${node.dynamicAttr[0]}={props.${node.dynamicAttr[1]}()}`;
       }
 
       if (node.onClick) {
         attrs += ` onClick={() => 0}`;
+      }
+
+      if (node.ref) {
+        attrs += ` ref={props.${node.ref}}`;
       }
 
       if (VOID_TAGS.includes(node.tag)) {
@@ -232,20 +332,38 @@ const BOX_SOURCE = 'function Box(props) { return <em class="box">{props.children
 // Tree -> expected DOM (built with DOM APIs, no parsing)
 ////////////////////////////////////////////////////////////////////////////////
 
-function buildExpected(document, node, propValues) {
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// Returns a node, or null when nothing should be rendered.
+function buildExpected(document, node, values) {
   switch (node.kind) {
     case 'text':
     case 'stringExpr':
       return document.createTextNode(node.value);
     case 'dynamicText':
-      return document.createTextNode(propValues[node.prop]);
+      return document.createTextNode(values[node.prop]);
     case 'nestedBlock':
-      return buildExpected(document, node.element, propValues);
+      return buildExpected(document, node.element, values);
+    case 'conditional':
+      return values[node.prop] ? buildExpected(document, node.element, values) : null;
     case 'component': {
       let em = document.createElement('em');
       em.setAttribute('class', 'box');
-      em.appendChild(buildExpected(document, node.child, propValues));
+      em.appendChild(buildExpected(document, node.child, values));
       return em;
+    }
+    case 'svg': {
+      let svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('width', '10');
+      svg.setAttribute('height', '10');
+
+      for (let d of [...node.paths, ...(node.nestedPath ? [node.nestedPath] : [])]) {
+        let path = document.createElementNS(SVG_NS, 'path');
+        path.setAttribute('d', d);
+        svg.appendChild(path);
+      }
+
+      return svg;
     }
     case 'element': {
       let el = document.createElement(node.tag);
@@ -254,16 +372,36 @@ function buildExpected(document, node, propValues) {
         el.setAttribute(name, value);
       }
 
+      // setClassName('') goes through setAttribute with a string, so it leaves class="".
+      if (node.dynamicClass) {
+        el.setAttribute('class', values[node.dynamicClass]);
+      }
+
       for (let [k, v] of node.style) {
         el.style.setProperty(k, v);
       }
 
-      if (node.dynamicAttr) {
-        el.setAttribute(node.dynamicAttr[0], propValues[node.dynamicAttr[1]]);
+      for (let [k, prop] of node.dynamicStyle) {
+        if (values[prop]) {
+          el.style.setProperty(k, values[prop]);
+        }
+      }
+
+      if (node.multiStyle) {
+        for (let [k, v] of Object.entries(values[node.multiStyle])) {
+          el.style.setProperty(k, v);
+        }
+      }
+
+      if (node.dynamicAttr && values[node.dynamicAttr[1]] != null) {
+        el.setAttribute(node.dynamicAttr[0], values[node.dynamicAttr[1]]);
       }
 
       for (let child of node.children) {
-        el.appendChild(buildExpected(document, child, propValues));
+        let childNode = buildExpected(document, child, values);
+        if (childNode) {
+          el.appendChild(childNode);
+        }
       }
 
       return el;
@@ -276,8 +414,8 @@ function buildExpected(document, node, propValues) {
 ////////////////////////////////////////////////////////////////////////////////
 
 // Adjacent text nodes are merged and empty ones dropped (sequence markers are empty text
-// nodes, and HTML serialization merges adjacent text anyway). Attributes are sorted and
-// the style attribute is compared as parsed properties.
+// nodes, and HTML serialization merges adjacent text anyway). Attributes are sorted, an
+// empty style attribute is the same as none, and style is compared as parsed properties.
 function canonical(node, indent = '') {
   let lines = [];
   let pendingText = null;
@@ -307,7 +445,7 @@ function canonical(node, indent = '') {
       .sort();
 
     let style = [];
-    for (let i = 0; i < child.style.length; i++) {
+    for (let i = 0; i < (child.style?.length || 0); i++) {
       let prop = child.style[i];
       style.push(`${prop}:${child.style.getPropertyValue(prop)}`);
     }
@@ -351,7 +489,14 @@ function compileApp(source) {
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
-async function renderBothDecoders(App, props) {
+// Output is flushed on microtasks/timers; give it a few turns.
+async function settle() {
+  for (let i = 0; i < 5; i++) {
+    await tick();
+  }
+}
+
+async function createSession(App, generated) {
   let dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>');
   let browser = await createBrowserRuntime({
     document: dom.window.document,
@@ -401,33 +546,66 @@ async function renderBothDecoders(App, props) {
   registerWindow(window);
   window.onDestroy(() => deregisterWindow(window));
 
-  try {
-    runInWindow(window.id, () => {
-      window.rootDisposer = useDisposableEffect(() => {
-        window._attach(2, 0, _createComponent(App, props));
-      });
-    });
+  let setters = {};
 
-    // output is flushed on a microtask; give it a few turns
-    for (let i = 0; i < 5; i++) {
-      await tick();
+  // Root owns one state per dynamic prop so the test can drive updates from outside.
+  function Root() {
+    let appProps = {};
+
+    for (let [name, prop] of Object.entries(generated.props)) {
+      let [get, set] = useState(prop.value);
+      appProps[name] = get;
+      setters[name] = set;
     }
 
-    let browserBody = dom.window.document.body;
-    let crawlerBody = null;
+    for (let i = 0; i < generated.refCount; i++) {
+      appProps[`r${i}`] = createRef();
+    }
 
-    if (!decoderErrors.crawler) {
+    return _createComponent(App, appProps);
+  }
+
+  runInWindow(window.id, () => {
+    window.rootDisposer = useDisposableEffect(() => {
+      window._attach(2, 0, _createComponent(Root, {}));
+    });
+  });
+
+  await settle();
+
+  return {
+    document: dom.window.document,
+    decoderErrors,
+
+    browserBody: () => dom.window.document.body,
+
+    crawlerBody: () => {
+      if (decoderErrors.crawler) {
+        return null;
+      }
+
       try {
-        crawlerBody = new JSDOM(crawler.renderHtml()).window.document.body;
+        return new JSDOM(crawler.renderHtml()).window.document.body;
       } catch (error) {
         decoderErrors.crawler = { chunkIndex: 'renderHtml', error };
+        return null;
       }
-    }
+    },
 
-    return { browserBody, crawlerBody, decoderErrors, document: dom.window.document };
-  } finally {
-    window.destroy();
-  }
+    async update(changes) {
+      runInWindow(window.id, () => {
+        for (let [name, value] of Object.entries(changes)) {
+          setters[name](value);
+        }
+      });
+
+      await settle();
+    },
+
+    destroy() {
+      window.destroy();
+    }
+  };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -476,9 +654,41 @@ function firstDifference(actualLines, expectedLines) {
   return null;
 }
 
+function compareDecoders(seed, source, session, generated, values, phase) {
+  for (let [decoder, failure] of Object.entries(session.decoderErrors)) {
+    if (failure) {
+      failCase(seed, source,
+        `${decoder} decoder threw on output chunk ${failure.chunkIndex} (${phase}): ${failure.error.message}`,
+        failure.error.stack);
+    }
+  }
+
+  let expectedBody = session.document.createElement('body');
+  expectedBody.appendChild(buildExpected(session.document, generated.root, values));
+  let expected = canonical(expectedBody);
+
+  for (let [decoder, body] of [['browser.js', session.browserBody()], ['crawler', session.crawlerBody()]]) {
+    if (!body) {
+      continue; // a decoder error was recorded; reported on the next check
+    }
+
+    let difference = firstDifference(canonical(body), expected);
+
+    if (difference) {
+      failCase(seed, source, `${decoder} decoder produced a different DOM than expected (${phase})`, difference);
+    }
+  }
+
+  // renderHtml may have recorded a crawler error just now
+  if (session.decoderErrors.crawler) {
+    let failure = session.decoderErrors.crawler;
+    failCase(seed, source, `crawler decoder threw (${phase}): ${failure.error.message}`, failure.error.stack);
+  }
+}
+
 async function checkCase(seed) {
-  let { root, propValues } = generateCase(seed);
-  let source = `${BOX_SOURCE}\nfunction App(props) { return ${toJsx(root)}; }`;
+  let generated = generateCase(seed);
+  let source = `${BOX_SOURCE}\nfunction App(props) { return ${toJsx(generated.root)}; }`;
   let App;
 
   try {
@@ -492,32 +702,33 @@ async function checkCase(seed) {
     failCase(seed, source, `compiling/declaring the module threw: ${error.message}`, error.stack);
   }
 
-  let rendered;
+  let session;
 
   try {
-    rendered = await renderBothDecoders(App, propValues);
+    session = await createSession(App, generated);
   } catch (error) {
     failCase(seed, source, `server render threw: ${error.message}`, error.stack);
   }
 
-  for (let [decoder, failure] of Object.entries(rendered.decoderErrors)) {
-    if (failure) {
-      failCase(seed, source,
-        `${decoder} decoder threw on output chunk ${failure.chunkIndex}: ${failure.error.message}`,
-        failure.error.stack);
+  try {
+    let values = Object.fromEntries(Object.entries(generated.props).map(([name, prop]) => [name, prop.value]));
+
+    compareDecoders(seed, source, session, generated, values, 'initial render');
+
+    for (let round = 0; round < generated.updates.length; round++) {
+      let changes = generated.updates[round];
+      Object.assign(values, changes);
+
+      try {
+        await session.update(changes);
+      } catch (error) {
+        failCase(seed, source, `server update threw (update round ${round + 1}): ${error.message}`, error.stack);
+      }
+
+      compareDecoders(seed, source, session, generated, values, `after update round ${round + 1}`);
     }
-  }
-
-  let expectedBody = rendered.document.createElement('body');
-  expectedBody.appendChild(buildExpected(rendered.document, root, propValues));
-  let expected = canonical(expectedBody);
-
-  for (let [decoder, body] of [['browser.js', rendered.browserBody], ['crawler', rendered.crawlerBody]]) {
-    let difference = firstDifference(canonical(body), expected);
-
-    if (difference) {
-      failCase(seed, source, `${decoder} decoder produced a different DOM than expected`, difference);
-    }
+  } finally {
+    session.destroy();
   }
 
   return { checked: true };
