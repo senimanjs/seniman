@@ -62,6 +62,11 @@ const fixtures = {
       return <div><div><div><div><div><span onClick={() => props.x()}>deep</span></div></div></div></div></div>;
     }
   `,
+  'literal expression attributes are static, not effects': `
+    function A() {
+      return <div><input title={"a \\"quoted\\" <b>"} class={"x y"} size={5} /></div>;
+    }
+  `,
   'svg path': `
     function A(props) {
       return <path d="M0 0L10 10" stroke={props.stroke()} />;

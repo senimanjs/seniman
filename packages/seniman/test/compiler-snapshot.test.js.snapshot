@@ -384,6 +384,36 @@ elscript: 11 bytes (3 refs, 0 anchors, 2 targets)
   0301ff0200020100020002
 `;
 
+exports[`compiler snapshot: literal expression attributes are static, not effects 1`] = `
+--- compiled ---
+import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
+const _senimanBlock = _senimanDeclareBlock({
+  v: "2.0",
+  root: {
+    type: "div",
+    children: [{
+      type: "input",
+      attributes: {
+        "title": "a \\"quoted\\" <b>",
+        "class": "x y",
+        "size": "5"
+      },
+      class: ["x", "y"]
+    }]
+  }
+});
+function A() {
+  return _senimanCreateBlock(_senimanBlock, null, null, null, null, null);
+}
+--- block 0 ---
+tokens (5): ["div","input","title","class","size"]
+template: 33 bytes
+  000241000203000e61202271756f74656422203c623e04000378207905000135
+  00
+elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
+  000000
+`;
+
 exports[`compiler snapshot: non-ASCII text and attribute 1`] = `
 --- compiled ---
 import { _createBlock as _senimanCreateBlock, _createComponent as _senimanCreateComponent, useMemo as _senimanUseMemo, _declareBlock as _senimanDeclareBlock, _declareClientFunction as _senimanDeclareClientFunction } from "seniman/_autogen/v1";
