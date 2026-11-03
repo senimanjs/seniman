@@ -140,7 +140,7 @@ function nodeHasDynamicAttribute(node) {
 
       } else {
         // Don't support static string styles for now
-        throw new Error();
+        throw new Error('Seniman compiler: style must be an object expression, e.g. style={{ color: "red" }}; string styles are not supported.');
       }
     } else {
       if (value == null) {
@@ -249,10 +249,6 @@ function createCompiler(path) {
           style: [],
           attributes: {},
           style_v2: {
-            static: [],
-            dynamic: []
-          },
-          class_v2: {
             static: [],
             dynamic: []
           }
@@ -394,7 +390,7 @@ function createCompiler(path) {
       let trimmedValue = node.value.replace(/\s\s+/g, ' ');
 
       if (trimmedValue == '') {
-        throw new Error();
+        throw new Error('Seniman compiler internal error: encountered an empty JSXText node.');
       }
 
       let isNewBlockEnclosingElement = parentElement == null;
@@ -1109,7 +1105,7 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
       } else if (value.type == 'JSXExpressionContainer') {
         processStyleObject(value.expression);
       } else {
-        throw new Error();
+        throw new Error(`Seniman compiler: unsupported style attribute value of type ${value.type}; use style={{ ... }}.`);
       }
 
     } else if (attr.name.name == 'class') {
@@ -1117,13 +1113,6 @@ function handleCreateElementEffectsEntryExpression(contextBlock, targetId, node,
 
       if (value.type == 'StringLiteral') {
         element.attributes.class = value.value;
-
-        // populate element.class_v2.static value
-        let classNames = value.value.split(' ');
-
-        classNames.forEach(className => {
-          element.class_v2.static.push(className);
-        });
       } else if (value.type == 'JSXExpressionContainer') {
         styleConditions.push({ type: 'class', condition: value.expression });
       }

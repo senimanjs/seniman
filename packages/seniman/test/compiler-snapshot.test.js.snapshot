@@ -1,6 +1,6 @@
 exports[`compiler snapshot: 1000 rows (larger than the initial 2KB buffer) 1`] = `
 --- compiled ---
-<190332 chars, sha256:51de835678f7ec0d>
+<168332 chars, sha256:e41e3ff4b552a9bc>
 --- block 0 ---
 tokens (2): ["div","class"]
 template: 30894 bytes
@@ -65,7 +65,7 @@ elscript: 3 bytes (0 refs, 0 anchors, 0 targets)
 
 exports[`compiler snapshot: 5000 rows (exceeds max page size) 1`] = `
 --- compiled ---
-<954332 chars, sha256:dade095cf6c2409c>
+<844332 chars, sha256:edafc5ad3967a34b>
 --- block 0 ---
 throws: Seniman template limit reached: this block's template is 158906 bytes, exceeding SENIMAN_MAX_PAGE_SIZE=131072. Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.
 `;
@@ -400,8 +400,7 @@ const _senimanBlock = _senimanDeclareBlock({
         "title": "a \\"quoted\\" <b>",
         "class": "x y",
         "size": "5"
-      },
-      class: ["x", "y"]
+      }
     }]
   }
 });
@@ -467,7 +466,6 @@ const _senimanBlock = _senimanDeclareBlock({
       "color": "red",
       "padding": "4px"
     },
-    class: ["card", "big"],
     children: [{
       type: "$text",
       text: "Hello "

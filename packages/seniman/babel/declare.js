@@ -133,21 +133,6 @@ function _createElementExpression(element) {
       exp.properties.push(styleProperty);
     }
 
-    if (element.class_v2.static.length > 0) {
-      const classObjectExpression = t.arrayExpression(
-        element.class_v2.static.map(className => {
-          return t.stringLiteral(className);
-        })
-      );
-
-      const classProperty = t.objectProperty(
-        t.identifier('class'),
-        classObjectExpression
-      );
-
-      exp.properties.push(classProperty);
-    }
-
     if (element.children.length > 0) {
       const childrenProperty = t.objectProperty(
         t.identifier('children'),
