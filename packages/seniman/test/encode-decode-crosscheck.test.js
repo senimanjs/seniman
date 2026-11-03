@@ -26,7 +26,8 @@ import seniman from '../babel/index.js';
 import * as autogenRuntime from '../dist/autogen-v1/index.js';
 import { _createComponent, createRef, Window } from '../dist/window.js';
 import { HtmlRenderingContext } from '../dist/crawler/html.js';
-import { deregisterWindow, registerWindow, runInWindow, useDisposableEffect, useState } from '../dist/state.js';
+import { blockDefinitions } from '../dist/declare.js';
+import { deregisterWindow, isSchedulerIdle, registerWindow, runInWindow, useDisposableEffect, useState } from '../dist/state.js';
 import { createBrowserRuntime } from './helpers/browser-runtime.js';
 
 const CASE_COUNT = Number(process.env.CROSSCHECK_CASES || 150);
@@ -132,6 +133,9 @@ function generateCase(seed) {
   // name -> { kind, key?, value }
   let props = {};
   let propCounter = 0;
+  // Token-heavy cases give nearly every element a distinct attribute name and static width,
+  // so single blocks go past 63 tokens (tag IDs must still fit in 6 bits).
+  let tokenHeavy = random.chance(0.15);
   let refCount = 0;
 
   let newProp = (kind, key) => {
@@ -179,6 +183,9 @@ function generateCase(seed) {
 
         if (random.chance(0.4)) {
           el.dynamicStyle.push([key, newProp('styleValue', key)]);
+        } else if (key == 'width' && random.chance(0.5)) {
+          // a wide range of distinct static values, to push blocks past 63 tokens
+          el.style.push([key, `${random.int(400)}px`]);
         } else {
           el.style.push([key, random.pick(STYLE_PROPS[key])]);
         }
@@ -187,6 +194,17 @@ function generateCase(seed) {
 
     if (random.chance(0.2)) {
       el.dynamicAttr = ['data-t', newProp('attr')];
+    }
+
+    if (random.chance(tokenHeavy ? 0.9 : 0.15)) {
+      // many distinct attribute names, to push blocks past 63 tokens
+      el.attrs.push([`data-k${random.int(300)}`, safeText(), false]);
+    }
+
+    let hasWidth = el.style.some(([k]) => k == 'width') || el.dynamicStyle.some(([k]) => k == 'width');
+
+    if (tokenHeavy && !el.multiStyle && !hasWidth && random.chance(0.7)) {
+      el.style.push(['width', `${random.int(400)}px`]);
     }
 
     el.onClick = random.chance(0.1);
@@ -200,7 +218,7 @@ function generateCase(seed) {
     }
 
     // Occasionally generate a very wide sibling list to cross the 255 index boundary.
-    let wide = depth == 1 && random.chance(0.1);
+    let wide = depth == 1 && random.chance(tokenHeavy ? 0.7 : 0.1);
     let childCount = wide ? 200 + random.int(150) : random.int(depth > 4 ? 2 : 5);
     let lastWasText = false;
 
@@ -489,11 +507,22 @@ function compileApp(source) {
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
-// Output is flushed on microtasks/timers; give it a few turns.
+const MAX_SETTLE_TICKS = 10000;
+
+// The scheduler runs work in time slices across many timer turns, so a fixed number of
+// ticks is not enough for big blocks -- wait until it reports idle, then one more turn for
+// the final flush.
 async function settle() {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < MAX_SETTLE_TICKS; i++) {
     await tick();
+
+    if (isSchedulerIdle()) {
+      await tick();
+      return;
+    }
   }
+
+  throw new Error(`scheduler did not go idle within ${MAX_SETTLE_TICKS} ticks`);
 }
 
 async function createSession(App, generated) {
@@ -694,7 +723,7 @@ async function checkCase(seed) {
     // Blocks over a documented encoding limit are rejected at declare time -- that is the
     // expected outcome, not a desync. Anything else is a real failure.
     if (/Seniman template limit reached/.test(error.message)) {
-      return { skipped: true };
+      return { skipped: true, reason: error.message.match(/limit reached: (.*?)[.:]/)[1].replace(/\d+/g, 'N') };
     }
     failCase(seed, source, `compiling/declaring the module threw: ${error.message}`, error.stack);
   }
@@ -733,9 +762,10 @@ async function checkCase(seed) {
 
 const SLOW_CASE_MS = 2000;
 
-test(`browser and crawler decoders reproduce the encoded DOM (${CASE_COUNT} random blocks, seed ${BASE_SEED})`, { timeout: 120000 }, async () => {
+test(`browser and crawler decoders reproduce the encoded DOM (${CASE_COUNT} random blocks, seed ${BASE_SEED})`, { timeout: 120000 }, async (t) => {
   let checked = 0;
   let skipped = 0;
+  let skipReasons = {};
   let failures = [];
 
   for (let i = 0; i < CASE_COUNT; i++) {
@@ -744,7 +774,12 @@ test(`browser and crawler decoders reproduce the encoded DOM (${CASE_COUNT} rand
 
     try {
       let result = await checkCase(seed);
-      result.checked ? checked++ : skipped++;
+      if (result.checked) {
+        checked++;
+      } else {
+        skipped++;
+        skipReasons[result.reason] = (skipReasons[result.reason] || 0) + 1;
+      }
     } catch (error) {
       if (!(error instanceof CrossCheckFailure)) {
         throw error; // a bug in the harness itself
@@ -770,6 +805,11 @@ test(`browser and crawler decoders reproduce the encoded DOM (${CASE_COUNT} rand
       `First failure in full:\n${failures[0].error.message}`
     );
   }
+
+  let blocks = [...blockDefinitions.values()];
+  t.diagnostic(`${checked} checked, ${skipped} skipped at documented limits`);
+  t.diagnostic(`skip reasons: ${JSON.stringify(skipReasons)}`);
+  t.diagnostic(`declared blocks: ${blocks.length}, with >63 tokens: ${blocks.filter(b => b.tokens.length > 63).length}`);
 
   // Guard against the generator drifting into producing mostly-skipped cases.
   assert.ok(checked >= CASE_COUNT * 0.8, `only ${checked}/${CASE_COUNT} cases were checked (${skipped} skipped at limits)`);
