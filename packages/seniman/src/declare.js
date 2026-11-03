@@ -198,32 +198,59 @@ function getTemplateBuffer(rootElement, tokens) {
     }
   }
 
-  function getVariableId(tagName) {
+  // Token IDs are 1-based (0 terminates attribute/style lists). Tag IDs share the element's
+  // first byte with two flag bits, so they must fit in 6 bits; every other token is a uint8.
+  // Tags are therefore registered first, so attribute and style tokens don't push them past 63.
+  const MAX_TAG_ID = 63;
+  const MAX_TOKEN_ID = 255;
 
-    if (tagName == '$text') {
-      return 0;
-    }
+  let tokenIds = new Map();
 
-    let indexOf = tokens.indexOf(tagName);
+  function getTokenId(token) {
+    let id = tokenIds.get(token);
 
-    if (indexOf == -1) {
-      indexOf = tokens.length;
-      tokens.push(tagName);
-    }
+    if (id === undefined) {
+      tokens.push(token);
+      id = tokens.length;
+      tokenIds.set(token, id);
 
-    let id = indexOf + 1;
-
-    // Tag IDs are encoded into 6 bits in the template buffer (max 63).
-    if (id > 63) {
-      throw new Error(
-        `Seniman template limit reached: this block uses more than 63 unique tokens before/including tag "${tagName}". ` +
-        `Template tag IDs are 6-bit encoded, so tag IDs above 63 will corrupt the DOM. ` +
-        `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component ` +
-        `to reduce per-block token variety.`
-      );
+      if (id > MAX_TOKEN_ID) {
+        throw new Error(
+          `Seniman template limit reached: this block uses more than ${MAX_TOKEN_ID} unique tokens ` +
+          `(tag names, attribute names, style keys and style values). ` +
+          `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component ` +
+          `to reduce per-block token variety.`
+        );
+      }
     }
 
     return id;
+  }
+
+  function registerTags(el) {
+    if (el.type[0] == '$') {
+      return;
+    }
+
+    let id = getTokenId(el.type);
+
+    if (id > MAX_TAG_ID) {
+      throw new Error(
+        `Seniman template limit reached: this block uses more than ${MAX_TAG_ID} distinct tag names. ` +
+        `Template tag IDs are 6-bit encoded. ` +
+        `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.`
+      );
+    }
+
+    for (let child of el.children || []) {
+      registerTags(child);
+    }
+  }
+
+  registerTags(rootElement);
+
+  function getVariableId(tagName) {
+    return tagName == '$text' ? 0 : getTokenId(tagName);
   }
 
   function dig(siblings) {

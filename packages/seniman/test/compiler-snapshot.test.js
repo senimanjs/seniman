@@ -86,10 +86,19 @@ const fixtures = {
   'static run before an expression (ELSCRIPT chain limit)': `
     function A(props) { return <div>${range(300, () => '<span></span>')}{props.x()}<span></span></div>; }
   `,
-  // tokens = div, style, width + one per distinct value: 60 values -> 63 tokens (ok), 61 -> 64 (throws)
-  '63 vs 64 block tokens via distinct inline style values': `
-    function A() { return <div>${range(60, i => `<div style={{ width: '${i}px' }}></div>`)}</div>; }
-    function B() { return <div>${range(61, i => `<div style={{ width: '${i}px' }}></div>`)}</div>; }
+  // tokens = div, style, width + one per distinct value: 252 values -> 255 tokens (ok), 253 -> 256 (throws)
+  '255 vs 256 block tokens via distinct inline style values': `
+    function A() { return <div>${range(252, i => `<div style={{ width: '${i}px' }}></div>`)}</div>; }
+    function B() { return <div>${range(253, i => `<div style={{ width: '${i}px' }}></div>`)}</div>; }
+  `,
+  // Tags are registered before attribute/style tokens, so they keep IDs <= 63 regardless of
+  // how many other tokens the block uses; only distinct tag names count toward the 6-bit limit.
+  'tag IDs stay within 6 bits when many style tokens come first': `
+    function A() { return <div style={{ width: '1px' }}>${range(70, i => `<p style={{ width: '${i}px' }}></p>`)}<b></b><i></i></div>; }
+  `,
+  '63 vs 64 distinct tag names': `
+    function A() { return <div>${range(62, i => `<t${i}></t${i}>`)}</div>; }
+    function B() { return <div>${range(63, i => `<t${i}></t${i}>`)}</div>; }
   `,
   '1000 rows (larger than the initial 2KB buffer)': `
     function A() { return <div>${range(1000, i => `<div class="row">Hello row number ${i}</div>`)}</div>; }
