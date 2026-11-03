@@ -164,12 +164,24 @@ function describeBlock(def, index) {
   }
 
   let el = block.elScriptBuffer;
-  let refs = el[0];
-  let anchors = el[1 + 2 * refs];
-  let targets = el[2 + 2 * refs + 2 * anchors];
+  let refs, anchors, targets;
+
+  if (block.varint) {
+    let offset = 0;
+    let varint = () => { let value = 0, shift = 1, byte; do { byte = el[offset++]; value += (byte & 0x7f) * shift; shift *= 128; } while (byte & 0x80); return value; };
+    refs = varint();
+    for (let i = 0; i < refs; i++) { offset++; varint(); }
+    anchors = varint();
+    for (let i = 0; i < anchors; i++) { varint(); varint(); }
+    targets = varint();
+  } else {
+    refs = el[0];
+    anchors = el[1 + 2 * refs];
+    targets = el[2 + 2 * refs + 2 * anchors];
+  }
 
   return [
-    `--- block ${index} ---`,
+    `--- block ${index} (${block.varint ? 'varint' : 'compact'}) ---`,
     `tokens (${block.tokens.length}): ${summarizeIfLong(JSON.stringify(block.tokens))}`,
     `template: ${block.templateBuffer.length} bytes`,
     hexLines(block.templateBuffer),

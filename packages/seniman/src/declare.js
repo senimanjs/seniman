@@ -25,6 +25,9 @@ export function _declareBlock(def) {
 
 let CMD_INSTALL_TEMPLATE = 1;
 let CMD_MODIFY_TOKENMAP = 12;
+// Same layout as CMD_INSTALL_TEMPLATE with varint fields; only for blocks that outgrow the
+// compact form. See the format notes above getTemplateBuffer.
+let CMD_INSTALL_TEMPLATE_VARINT = 20;
 
 export function streamBlockTemplateInstall(window, templateId) {
 
@@ -65,7 +68,7 @@ export function streamBlockTemplateInstall(window, templateId) {
     + blockDef.templateBuffer.length + blockDef.elScriptBuffer.length;
   let installBuffer = window._allocCommandPage(commandSize);
   let offset = window.commandBufferOffset;
-  installBuffer.writeUInt8(CMD_INSTALL_TEMPLATE, offset);
+  installBuffer.writeUInt8(blockDef.varint ? CMD_INSTALL_TEMPLATE_VARINT : CMD_INSTALL_TEMPLATE, offset);
   installBuffer.writeUInt16BE(templateId, offset + 1);
   offset += 3;
 
@@ -129,9 +132,31 @@ export function _declareClientFunction(def) {
 function _declareBlockV2(def) {
   let blockId = createNewBlockId();
 
+  // Every block is first encoded in the compact form. Only a block that exceeds one of its
+  // fixed-width limits is re-encoded in the varint form (CMD_INSTALL_TEMPLATE_VARINT).
   let tokens = [];
-  let templateBuffer = getTemplateBuffer(def.root, tokens);
-  let elScriptBuffer = getElscriptBuffer(def.root);
+  let templateBuffer = getTemplateBuffer(def.root, tokens, false);
+  let varint = !templateBuffer;
+
+  if (varint) {
+    tokens = [];
+    templateBuffer = getTemplateBuffer(def.root, tokens, true);
+  }
+
+  // Built after a complete template pass: getTemplateBuffer normalizes element.children,
+  // which the ELSCRIPT walk relies on (an aborted compact pass leaves it incomplete).
+  let elScript = getElscript(def.root);
+  let elScriptBuffer = varint ? null : encodeElscript(elScript, false);
+
+  if (!elScriptBuffer) {
+    if (!varint) {
+      varint = true;
+      tokens = [];
+      templateBuffer = getTemplateBuffer(def.root, tokens, true);
+    }
+
+    elScriptBuffer = encodeElscript(elScript, true);
+  }
 
   // Must match the CMD_INSTALL_TEMPLATE size computed in streamBlockTemplateInstall.
   // Checked here so an oversized block fails at module load instead of first render.
@@ -149,23 +174,55 @@ function _declareBlockV2(def) {
     id: blockId,
     templateBuffer,
     elScriptBuffer,
+    varint,
     tokens
   });
 
   return blockId;
 }
 
-// In-memory reference to a block's root element while building ELSCRIPT; encoded as 255 on the wire.
+// In-memory reference to a block's root element while building ELSCRIPT.
 const ROOT_EL_REF = -1;
 
-function encodeElRef(ref) {
-  return ref == ROOT_EL_REF ? 255 : ref;
+// Compact form limits (CMD_INSTALL_TEMPLATE):
+//   - tag IDs share the element's first byte with two flag bits: 6 bits, 1..63
+//   - attribute / style token IDs: uint8, 1..255 (0 terminates the list)
+//   - element count, text and attribute value lengths: uint16
+//   - ELSCRIPT counts and element indices: uint8, with 255 = root / "no marker"
+const COMPACT_MAX_TAG_ID = 63;
+const COMPACT_MAX_TOKEN_ID = 255;
+const COMPACT_MAX_UINT16 = 65535;
+const COMPACT_MAX_ELSCRIPT_ENTRIES = 255;
+
+// Varint form (CMD_INSTALL_TEMPLATE_VARINT): the same layout, but every count, length, token ID
+// and ELSCRIPT index is an unsigned LEB128 varint. The tag stays in the first byte's low 6 bits,
+// where 63 means "the tag ID follows as a varint". ELSCRIPT element refs are written as
+// index + 1, with 0 meaning root / "no marker".
+const VARINT_TAG_ESCAPE = 63;
+
+function varintLength(value) {
+  let length = 1;
+
+  while (value >= 0x80) {
+    value = Math.floor(value / 0x80);
+    length++;
+  }
+
+  return length;
 }
 
-// Template length prefixes and the element count are encoded as uint16.
-const MAX_UINT16 = 65535;
+function writeVarint(buf, value, offset) {
+  while (value >= 0x80) {
+    buf[offset++] = (value & 0x7f) | 0x80;
+    value = Math.floor(value / 0x80);
+  }
 
-function getTemplateBuffer(rootElement, tokens) {
+  buf[offset++] = value;
+  return offset;
+}
+
+// Returns null in compact mode when the block doesn't fit the compact form.
+function getTemplateBuffer(rootElement, tokens, varint) {
   let offset = 0;
   let buf = Buffer.alloc(2048);
   let totalElementCount = 0;
@@ -188,22 +245,10 @@ function getTemplateBuffer(rootElement, tokens) {
     buf = newBuf;
   }
 
-  function checkStringLength(byteLength, what) {
-    if (byteLength > MAX_UINT16) {
-      throw new Error(
-        `Seniman template limit reached: a static ${what} in this block is ${byteLength} bytes, ` +
-        `exceeding the 16-bit length limit of ${MAX_UINT16} bytes. ` +
-        `Pass it as a dynamic expression instead (e.g. {value}).`
-      );
-    }
-  }
+  class DoesNotFitCompact extends Error { }
 
-  // Token IDs are 1-based (0 terminates attribute/style lists). Tag IDs share the element's
-  // first byte with two flag bits, so they must fit in 6 bits; every other token is a uint8.
-  // Tags are therefore registered first, so attribute and style tokens don't push them past 63.
-  const MAX_TAG_ID = 63;
-  const MAX_TOKEN_ID = 255;
-
+  // Token IDs are 1-based (0 terminates attribute/style lists). Tags are registered first so
+  // that attribute and style variety doesn't push them out of the 6-bit tag field.
   let tokenIds = new Map();
 
   function getTokenId(token) {
@@ -213,15 +258,6 @@ function getTemplateBuffer(rootElement, tokens) {
       tokens.push(token);
       id = tokens.length;
       tokenIds.set(token, id);
-
-      if (id > MAX_TOKEN_ID) {
-        throw new Error(
-          `Seniman template limit reached: this block uses more than ${MAX_TOKEN_ID} unique tokens ` +
-          `(tag names, attribute names, style keys and style values). ` +
-          `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component ` +
-          `to reduce per-block token variety.`
-        );
-      }
     }
 
     return id;
@@ -232,25 +268,52 @@ function getTemplateBuffer(rootElement, tokens) {
       return;
     }
 
-    let id = getTokenId(el.type);
-
-    if (id > MAX_TAG_ID) {
-      throw new Error(
-        `Seniman template limit reached: this block uses more than ${MAX_TAG_ID} distinct tag names. ` +
-        `Template tag IDs are 6-bit encoded. ` +
-        `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.`
-      );
-    }
+    getTokenId(el.type);
 
     for (let child of el.children || []) {
       registerTags(child);
     }
   }
 
-  registerTags(rootElement);
+  // uint8 in compact form, varint otherwise
+  function writeTokenId(id) {
+    if (varint) {
+      ensureCapacity(varintLength(id));
+      offset = writeVarint(buf, id, offset);
+    } else {
+      if (id > COMPACT_MAX_TOKEN_ID) {
+        throw new DoesNotFitCompact();
+      }
 
-  function getVariableId(tagName) {
-    return tagName == '$text' ? 0 : getTokenId(tagName);
+      ensureCapacity(1);
+      buf.writeUInt8(id, offset);
+      offset++;
+    }
+  }
+
+  // uint16 in compact form, varint otherwise
+  function writeLength(length) {
+    if (varint) {
+      ensureCapacity(varintLength(length));
+      offset = writeVarint(buf, length, offset);
+    } else {
+      if (length > COMPACT_MAX_UINT16) {
+        throw new DoesNotFitCompact();
+      }
+
+      ensureCapacity(2);
+      buf.writeUInt16BE(length, offset);
+      offset += 2;
+    }
+  }
+
+  function writeString(value) {
+    let length = Buffer.byteLength(value);
+
+    writeLength(length);
+    ensureCapacity(length);
+    buf.write(value, offset, length);
+    offset += length;
   }
 
   function dig(siblings) {
@@ -260,107 +323,67 @@ function getTemplateBuffer(rootElement, tokens) {
       totalElementCount++;
 
       let el = siblings[i];
-      let tagNameId = getVariableId(el.type);
+      let isText = el.type == '$text';
+      let tagId = isText ? 0 : getTokenId(el.type);
 
-      // retroactively add children array if it doesn't exist -- compatibility with the old logic we ported from compile-time 
+      // retroactively add children array if it doesn't exist -- compatibility with the old logic we ported from compile-time
       if (!el.children) {
         el.children = [];
       }
 
-      //let tagNameId = el.type == '$text' ? 32 : encodeCompressionMap.typeIdMapping[el.type];
-      let filteredChildren = (el.children || []).filter(childEl => childEl.type != '$anchor');
-
+      let filteredChildren = el.children.filter(childEl => childEl.type != '$anchor');
       let hasChildren = filteredChildren.length > 0;
       let nextSibling = i < (elCount - 1);
+      let escapeTag = varint && tagId >= VARINT_TAG_ESCAPE;
 
-      let firstByte = tagNameId & 63; // AND to get the first 6-bits
+      if (!varint && tagId > COMPACT_MAX_TAG_ID) {
+        throw new DoesNotFitCompact();
+      }
+
+      let firstByte = escapeTag ? VARINT_TAG_ESCAPE : tagId; // low 6 bits
 
       if (hasChildren) {
-        // set hasChildren (7th bit)
-        firstByte = firstByte | (1 << 6);
+        firstByte |= 1 << 6;
       }
 
       if (nextSibling) {
-        // set nextSibling (8th bit)
-        firstByte = firstByte | (1 << 7);
+        firstByte |= 1 << 7;
       }
 
       ensureCapacity(1);
       buf.writeUInt8(firstByte, offset);
       offset++;
 
-      // if this is a text
-      if (tagNameId == 0) {
-        let textLength = Buffer.byteLength(el.text);
+      if (escapeTag) {
+        ensureCapacity(varintLength(tagId));
+        offset = writeVarint(buf, tagId, offset);
+      }
 
-        checkStringLength(textLength, 'text');
-        ensureCapacity(2 + textLength);
-        buf.writeUInt16BE(textLength, offset);
-        offset += 2;
-
-        // write the string
-        buf.write(el.text, offset, textLength);
-        offset += textLength;
-
+      if (isText) {
+        writeString(el.text);
       } else {
-
         if (el.style) {
-          let attrId = getVariableId('style');
-          ensureCapacity(1);
-          buf.writeUInt8(attrId, offset);
-          offset++;
+          writeTokenId(getTokenId('style'));
 
-          Object.keys(el.style).forEach(propName => {
-            let propValue = el.style[propName];
-            let styleKeyId = getVariableId(propName);
-            let styleValueId = getVariableId(propValue);
+          for (let propName of Object.keys(el.style)) {
+            writeTokenId(getTokenId(propName));
+            writeTokenId(getTokenId(el.style[propName]));
+          }
 
-            ensureCapacity(2);
-            buf.writeUInt8(styleKeyId, offset);
-            buf.writeUInt8(styleValueId, offset + 1);
-
-            offset += 2;
-          });
-
-          ensureCapacity(1);
-          buf.writeUInt8(0, offset);
-
-          offset++;
+          writeTokenId(0);
         }
 
         for (let attrName in el.attributes) {
-
           if (attrName == 'style') {
             continue;
           }
 
-          let attrId = getVariableId(attrName);// encodeCompressionMap.staticAttributeMap[attrName];
-
-          if (!attrId) {
-            throw new Error();
-          }
-
-          let attrValue = el.attributes[attrName];
+          writeTokenId(getTokenId(attrName));
           // The client decodes this as UTF-8 bytes, so the prefix must be the byte length.
-          let attrValueLength = Buffer.byteLength(attrValue);
-
-          checkStringLength(attrValueLength, `"${attrName}" attribute value`);
-          ensureCapacity(1 + 2 + attrValueLength);
-
-          buf.writeUInt8(attrId, offset);
-          offset++;
-
-          buf.writeUInt16BE(attrValueLength, offset);
-
-          offset += 2;
-          buf.write(attrValue, offset, attrValueLength);
-          offset += attrValueLength;
-
+          writeString(el.attributes[attrName]);
         }
 
-        ensureCapacity(1);
-        buf.writeUInt8(0, offset);
-        offset++;
+        writeTokenId(0);
       }
 
       if (hasChildren) {
@@ -369,24 +392,41 @@ function getTemplateBuffer(rootElement, tokens) {
     }
   }
 
-  dig([rootElement]);
+  registerTags(rootElement);
 
-  if (totalElementCount > MAX_UINT16) {
-    throw new Error(
-      `Seniman template limit reached: this block has ${totalElementCount} static elements, exceeding ` +
-      `the 16-bit element count limit of ${MAX_UINT16}. ` +
-      `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.`
-    );
+  try {
+    dig([rootElement]);
+  } catch (error) {
+    if (error instanceof DoesNotFitCompact) {
+      return null;
+    }
+    throw error;
   }
 
-  let elementCountBuffer = Buffer.alloc(2);
+  let countLength;
 
-  elementCountBuffer.writeUInt16BE(totalElementCount);
+  if (varint) {
+    countLength = varintLength(totalElementCount);
+  } else {
+    if (totalElementCount > COMPACT_MAX_UINT16) {
+      return null;
+    }
+    countLength = 2;
+  }
 
-  return Buffer.concat([elementCountBuffer, buf.subarray(0, offset)]);
+  let result = Buffer.alloc(countLength + offset);
+
+  if (varint) {
+    writeVarint(result, totalElementCount, 0);
+  } else {
+    result.writeUInt16BE(totalElementCount, 0);
+  }
+
+  buf.copy(result, countLength, 0, offset);
+  return result;
 }
 
-function getElscriptBuffer(rootElement) {
+function getElscript(rootElement) {
 
   function dig3(el) {
 
@@ -561,70 +601,91 @@ function getElscriptBuffer(rootElement) {
 
   prune();
 
-  // ELSCRIPT uses uint8 indices with 255 reserved as a sentinel.
-  if (_els.length > 255) {
+  // Targets are addressed by uint8 IDs in event/update commands (255 is the block root),
+  // in both template forms.
+  if (_targets.length > 255) {
     throw new Error(
-      `Seniman template limit reached: this block needs more than 255 referenceable elements. ` +
-      `ELSCRIPT indices are 8-bit with 255 reserved, so indices above 254 will corrupt anchors/targets. ` +
+      `Seniman template limit reached: this block has more than 255 elements with dynamic attributes, ` +
+      `events or refs. Target IDs are 8-bit in update commands. ` +
       `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.`
     );
   }
 
-  if (_anchors.length > 255 || _targets.length > 255) {
-    throw new Error(
-      `Seniman template limit reached: this block has too many anchors/targets for 8-bit ELSCRIPT encoding. ` +
-      `Try wrapping a bigger section into a separate block (e.g. {<div>...</div>}) or extracting a component.`
-    );
-  }
-
-  return _createElScriptBuffer(_els, _anchors, _targets);
+  return { els: _els, anchors: _anchors, targets: _targets };
 }
 
-function _createElScriptBuffer(els, anchors, targets) {
+// Returns null in compact mode when the ELSCRIPT doesn't fit 8-bit counts and indices.
+function encodeElscript({ els, anchors, targets }, varint) {
+  if (!varint) {
+    // 255 is reserved for root / "no marker", so up to 255 entries (indices <= 254).
+    if (els.length > COMPACT_MAX_ELSCRIPT_ENTRIES || anchors.length > COMPACT_MAX_ELSCRIPT_ENTRIES) {
+      return null;
+    }
 
-  let refElementsCount = els.length;
-  let anchorCount = anchors.length;
-  let targetElementCount = targets.length;
-
-  let bufLen = (1 + 2 * refElementsCount) + (1 + 2 * anchorCount) + (1 + 1 * targetElementCount);
-  let buf = Buffer.alloc(bufLen);
-
-  buf.writeUInt8(refElementsCount, 0);
-
-  let offset = 1;
-  for (let i = 0; i < refElementsCount; i++) {
-    let refEl = els[i];
-    //let relCodeMap = {firstChild}
-    buf.writeUInt8(refEl.rel, offset + i * 2);
-    buf.writeUInt8(encodeElRef(refEl.relRefId), offset + i * 2 + 1);
+    return _createCompactElScriptBuffer(els, anchors, targets);
   }
 
-  offset += 2 * refElementsCount;
-  buf.writeUInt8(anchorCount, offset);
-  offset++;
+  // Varint refs are index + 1, with 0 = root / "no marker".
+  let encodeRef = (ref) => ref == ROOT_EL_REF || ref == undefined ? 0 : ref + 1;
+  let values = [];
 
-  for (let i = 0; i < anchorCount; i++) {
-    let anchor = anchors[i];
-
-    buf.writeUInt8(encodeElRef(anchor.el), offset + i * 2);
-
-    // in beforeEl context, 255 means undefined -- ie. no beforeEl applicable. 
-    // 255 that is usually used to refer to rootElement can be reused here since 
-    // there is no situation in which rootElement is an anchor's beforeElement.
-    buf.writeUInt8(anchor.beforeEl == undefined ? 255 : anchor.beforeEl, offset + i * 2 + 1)
+  values.push(els.length);
+  for (let refEl of els) {
+    values.push({ rel: refEl.rel }, encodeRef(refEl.relRefId));
   }
 
-  offset += 2 * anchorCount;
-  buf.writeUInt8(targetElementCount, offset);
-  offset++;
-
-  for (let i = 0; i < targetElementCount; i++) {
-    let target = targets[i];
-
-    buf.writeUInt8(target, offset + i);
+  values.push(anchors.length);
+  for (let anchor of anchors) {
+    values.push(encodeRef(anchor.el), encodeRef(anchor.beforeEl));
   }
 
-  offset += targetElementCount;
+  values.push(targets.length);
+  for (let target of targets) {
+    values.push(target);
+  }
+
+  let size = values.reduce((sum, value) => sum + (typeof value == 'object' ? 1 : varintLength(value)), 0);
+  let buf = Buffer.alloc(size);
+  let offset = 0;
+
+  for (let value of values) {
+    if (typeof value == 'object') {
+      buf.writeUInt8(value.rel, offset++); // rel stays a single byte
+    } else {
+      offset = writeVarint(buf, value, offset);
+    }
+  }
+
+  return buf;
+}
+
+function _createCompactElScriptBuffer(els, anchors, targets) {
+  let encodeElRef = (ref) => ref == ROOT_EL_REF ? 255 : ref;
+  let buf = Buffer.alloc((1 + 2 * els.length) + (1 + 2 * anchors.length) + (1 + targets.length));
+  let offset = 0;
+
+  buf.writeUInt8(els.length, offset++);
+
+  for (let refEl of els) {
+    buf.writeUInt8(refEl.rel, offset++);
+    buf.writeUInt8(encodeElRef(refEl.relRefId), offset++);
+  }
+
+  buf.writeUInt8(anchors.length, offset++);
+
+  for (let anchor of anchors) {
+    buf.writeUInt8(encodeElRef(anchor.el), offset++);
+
+    // In beforeEl context, 255 means "no marker" (append). It can't be confused with the
+    // root, since the root is never an anchor's next sibling.
+    buf.writeUInt8(anchor.beforeEl == undefined ? 255 : anchor.beforeEl, offset++);
+  }
+
+  buf.writeUInt8(targets.length, offset++);
+
+  for (let target of targets) {
+    buf.writeUInt8(target, offset++);
+  }
 
   return buf;
 }

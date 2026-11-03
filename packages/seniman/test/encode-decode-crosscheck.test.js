@@ -162,7 +162,10 @@ function generateCase(seed) {
 
   let genElement = (depth, budget) => {
     let isVoid = random.chance(0.08);
-    let el = newElement(isVoid ? random.pick(VOID_TAGS) : random.pick(CONTAINER_TAGS));
+    // Token-heavy cases also draw from many unknown tag names, so blocks go past 62 distinct
+    // tags and exercise the varint form's escaped tag IDs.
+    let containerTag = tokenHeavy && random.chance(0.8) ? `xt${random.int(300)}` : random.pick(CONTAINER_TAGS);
+    let el = newElement(isVoid ? random.pick(VOID_TAGS) : containerTag);
 
     if (random.chance(0.15)) {
       el.dynamicClass = newProp('class');
@@ -223,7 +226,7 @@ function generateCase(seed) {
     let lastWasText = false;
 
     for (let i = 0; i < childCount; i++) {
-      let roll = wide ? random.int(100) * 0.9 : random.int(100);
+      let roll = wide ? random.int(100) * (tokenHeavy ? 0.5 : 0.9) : random.int(100);
       let child;
       let canNest = depth < 6 && budget.elements > 0;
 
@@ -260,6 +263,11 @@ function generateCase(seed) {
   };
 
   let root = genElement(1, { elements: 60 + random.int(200) });
+
+  // Occasionally a static text longer than the compact form's 16-bit length.
+  if (random.chance(0.01) && root.children.length && root.children[0].kind != 'text' && !VOID_TAGS.includes(root.tag)) {
+    root.children.unshift({ kind: 'text', value: 'L'.repeat(66000 + random.int(1000)) });
+  }
 
   // A schedule of updates: for each round, the new value of a random subset of props.
   let updates = [];
@@ -807,9 +815,10 @@ test(`browser and crawler decoders reproduce the encoded DOM (${CASE_COUNT} rand
   }
 
   let blocks = [...blockDefinitions.values()];
+  let isTagToken = (token) => /^xt\d+$/.test(token) || [...CONTAINER_TAGS, ...VOID_TAGS, 'svg', 'path'].includes(token);
   t.diagnostic(`${checked} checked, ${skipped} skipped at documented limits`);
   t.diagnostic(`skip reasons: ${JSON.stringify(skipReasons)}`);
-  t.diagnostic(`declared blocks: ${blocks.length}, with >63 tokens: ${blocks.filter(b => b.tokens.length > 63).length}`);
+  t.diagnostic(`declared blocks: ${blocks.length}, with >63 tokens: ${blocks.filter(b => b.tokens.length > 63).length}, varint form: ${blocks.filter(b => b.varint).length}, >62 tags: ${blocks.filter(b => b.tokens.filter(isTagToken).length > 62).length}`);
 
   // Guard against the generator drifting into producing mostly-skipped cases.
   assert.ok(checked >= CASE_COUNT * 0.8, `only ${checked}/${CASE_COUNT} cases were checked (${skipped} skipped at limits)`);

@@ -42,20 +42,31 @@ test('static attribute length prefix is the UTF-8 byte length', () => {
   assert.equal(buf.subarray(6, 6 + length).toString(), value);
 });
 
-test('oversized blocks fail with a template limit error', () => {
-  assert.throws(
-    () => declare({ type: 'div', children: [{ type: '$text', text: 'a'.repeat(70000) }] }),
-    /static text in this block is 70000 bytes/
-  );
+test('blocks past a compact-form limit switch to the varint form', () => {
+  // over the compact form's uint16 lengths and element count, uint8 tokens and 6-bit tags
+  let cases = {
+    'long text': { type: 'div', children: [{ type: '$text', text: 'a'.repeat(70000) }] },
+    'long attribute': { type: 'div', attributes: { title: 'a'.repeat(70000) } },
+    'many tokens': { type: 'div', children: Array.from({ length: 300 }, (_, i) => ({ type: 'span', attributes: { [`data-${i}`]: '' } })) },
+    'many tags': { type: 'div', children: Array.from({ length: 100 }, (_, i) => ({ type: `t${i}` })) },
+  };
 
+  for (let [name, root] of Object.entries(cases)) {
+    assert.equal(declare(root).varint, true, name);
+  }
+
+  assert.equal(declare({ type: 'div', children: [{ type: '$text', text: 'small' }] }).varint, false);
+});
+
+test('blocks over the page size fail with a template limit error', () => {
   assert.throws(
-    () => declare({ type: 'div', attributes: { title: 'a'.repeat(70000) } }),
-    /static "title" attribute value in this block is 70000 bytes/
+    () => declare({ type: 'div', children: [{ type: '$text', text: 'a'.repeat(200000) }] }),
+    /exceeding SENIMAN_MAX_PAGE_SIZE/
   );
 
   assert.throws(
     () => declare({ type: 'div', children: Array.from({ length: 70000 }, () => ({ type: 'span' })) }),
-    /70001 static elements/
+    /exceeding SENIMAN_MAX_PAGE_SIZE/
   );
 
   assert.throws(

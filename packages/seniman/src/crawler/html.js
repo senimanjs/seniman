@@ -314,9 +314,12 @@ export class HtmlRenderingContext {
       return values;
     }
 
-    let _compileTemplate = (templateTokenList) => {
-
-      let totalElementCount = getUint16();
+    // varint: CMD_INSTALL_TEMPLATE_VARINT -- same layout, but counts, lengths and token IDs are
+    // varints, and a tag field of 63 means the tag ID follows as a varint.
+    let _compileTemplate = (templateTokenList, varint) => {
+      let readId = varint ? getUvarint : getUint8;
+      let readLength = varint ? getUvarint : getUint16;
+      let totalElementCount = readLength();
       let totalProcessed = 0;
       let rootElement;
 
@@ -327,10 +330,13 @@ export class HtmlRenderingContext {
           let tagNameId = firstByte & 63; // get first 6 bits of the byte
           let nextSibling = (firstByte & 128) > 0; // 8th-bit
 
+          if (varint && tagNameId == 63) {
+            tagNameId = getUvarint();
+          }
+
           // handle if text
           if (tagNameId == 0) {
-            let textLength = getUint16();
-            let str = getString(textLength);
+            let str = getString(readLength());
             let textNode = new Text(str);
 
             if (parentElement) {
@@ -344,23 +350,22 @@ export class HtmlRenderingContext {
             let element = createElement(tagName);
             let isSelfClosing = selfClosingTagSet.has(tagName);
 
-            while (attrId = getUint8()) {
+            while (attrId = readId()) {
               let attrName = templateTokenList[attrId - 1];
               let attrValueString = '';
 
               if (attrName == 'style') {
                 let propKeyId;
 
-                while (propKeyId = getUint8()) {
+                while (propKeyId = readId()) {
                   let propKey = templateTokenList[propKeyId - 1];
-                  let propValueId = getUint8();
+                  let propValueId = readId();
                   let propValue = templateTokenList[propValueId - 1];
 
                   element.style.setProperty(propKey, propValue);
                 }
               } else {
-                let attrValueLength = getUint16();
-                attrValueString = getString(attrValueLength);
+                attrValueString = getString(readLength());
 
                 element.setAttribute(attrName, attrValueString);
               }
@@ -505,24 +510,31 @@ export class HtmlRenderingContext {
     }
 
     // we need can't do new Function in this context since CloudFlare workers service worker syntax does not support it
-    let _compileFn3 = (templateId) => {
-      let refElementsCount = getUint8();
+    // Compact ELSCRIPT: uint8 counts and indices, 255 = root / "no marker".
+    // Varint ELSCRIPT: varint counts; refs are varint index + 1, 0 = root / "no marker".
+    let _compileFn3 = (varint) => {
+      let readCount = varint ? getUvarint : getUint8;
+      // returns the element index, or -1 for root / "no marker"
+      let readRef = varint
+        ? () => getUvarint() - 1
+        : () => { let ref = getUint8(); return ref == 255 ? -1 : ref; };
+      let refElementsCount = readCount();
       let refEls = [];
       let anchorEls = [];
       let targetElIds = [];
 
       for (let i = 0; i < refElementsCount; i++) {
         let rel = getUint8();
-        let relRefId = getUint8();
+        let relRefId = readRef();
 
         refEls.push({ relRefId, rel });
       }
 
-      let anchorCount = getUint8();
+      let anchorCount = readCount();
 
       for (let i = 0; i < anchorCount; i++) {
-        let elId = getUint8();
-        let beforeElId = getUint8();
+        let elId = readRef();
+        let beforeElId = readRef();
 
         // in beforeEl context, 255 means undefined -- ie. no beforeEl applicable. 
         // 255 that is usually used to refer to rootElement can be reused here since 
@@ -532,11 +544,11 @@ export class HtmlRenderingContext {
         anchorEls.push({ elId, beforeElId });
       }
 
-      let targetElementCount = getUint8();
+      let targetElementCount = readCount();
 
       for (let i = 0; i < targetElementCount; i++) {
 
-        let elId = getUint8();
+        let elId = readCount();
 
         targetElIds.push(elId);
       }
@@ -547,7 +559,7 @@ export class HtmlRenderingContext {
         for (let i = 0; i < refElementsCount; i++) {
           let { relRefId, rel } = refEls[i];
           let FIRST_CHILD = 1;
-          let refEl = relRefId < 255 ? $els[relRefId] : rootElement;
+          let refEl = relRefId < 0 ? rootElement : $els[relRefId];
 
           $els.push(rel == FIRST_CHILD ? refEl.firstChild : refEl.nextSibling);
         }
@@ -557,8 +569,8 @@ export class HtmlRenderingContext {
         for (let i = 0; i < anchorCount; i++) {
           let { elId, beforeElId } = anchorEls[i];
 
-          let $el = elId == 255 ? rootElement : $els[elId];
-          let $beforeEl = beforeElId == 255 ? null : $els[beforeElId];
+          let $el = elId < 0 ? rootElement : $els[elId];
+          let $beforeEl = beforeElId < 0 ? null : $els[beforeElId];
 
           if ($beforeEl) {
             $anchors.push({
@@ -589,7 +601,7 @@ export class HtmlRenderingContext {
       _blocksMap.set(seqId, new Sequence(seqId));
     };
 
-    let _installTemplate2 = () => {
+    let _installTemplate2 = (varint) => {
       let templateId = getUint16();
       let templateTokenList = [];
       let id;
@@ -598,11 +610,11 @@ export class HtmlRenderingContext {
         templateTokenList.push(GlobalTokenList[id]);
       }
 
-      let templateNode = _compileTemplate(templateTokenList);
+      let templateNode = _compileTemplate(templateTokenList, varint);
 
       templateDefinitionMap.set(templateId, {
         tpl: templateNode,
-        fn: _compileFn3(templateId)
+        fn: _compileFn3(varint)
       })
     }
 
@@ -763,7 +775,9 @@ export class HtmlRenderingContext {
         let count = getUint16();
 
         sequence._removeItems(startIndex, count);
-      }
+      },
+      // 20: CMD_INSTALL_TEMPLATE_VARINT
+      () => _installTemplate2(true)
     ];
 
     this.onBufferFn = (_buffer) => {

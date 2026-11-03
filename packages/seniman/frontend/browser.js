@@ -423,9 +423,12 @@
   }
   let escapeHtml = (value) => value.replace(/[&<>"]/g, ch => ch == '&' ? '&amp;' : ch == '<' ? '&lt;' : ch == '>' ? '&gt;' : '&quot;');
 
-  let _compileTemplate = (templateTokenList) => {
-
-    let totalElementCount = getUint16();
+  // varint: CMD_INSTALL_TEMPLATE_VARINT -- same layout, but counts, lengths and token IDs are
+  // varints, and a tag field of 63 means the tag ID follows as a varint.
+  let _compileTemplate = (templateTokenList, varint) => {
+    let readId = varint ? getUvarint : getUint8;
+    let readLength = varint ? getUvarint : getUint16;
+    let totalElementCount = readLength();
     let totalProcessed = 0;
     let templateString = '';
     let isSvg = false;
@@ -437,10 +440,13 @@
         let tagNameId = firstByte & 63; // get first 6 bits of the byte
         let nextSibling = (firstByte & 128) > 0; // 8th-bit
 
+        if (varint && tagNameId == 63) {
+          tagNameId = getUvarint();
+        }
+
         // handle if text
         if (tagNameId == 0) {
-          let textLength = getUint16();
-          let text = getString(textLength);
+          let text = getString(readLength());
 
           // The template is parsed with innerHTML, so text is escaped -- except the compiler's
           // '<!>' placeholder (parsed into a comment node on purpose) and the contents of
@@ -457,23 +463,22 @@
             isSvg = true;
           }
 
-          while (attrId = getUint8()) {
+          while (attrId = readId()) {
             let attrName = templateTokenList[attrId - 1];
             let attrValueString = '';
 
             if (attrName == 'style') {
               let propKeyId;
 
-              while ((propKeyId = getUint8())) {
+              while ((propKeyId = readId())) {
                 let propKey = templateTokenList[propKeyId - 1];
-                let propValueId = getUint8();
+                let propValueId = readId();
                 let propValue = templateTokenList[propValueId - 1];
 
                 attrValueString += `${propKey}:${propValue};`;
               }
             } else {
-              let attrValueLength = getUint16();
-              attrValueString = getString(attrValueLength);
+              attrValueString = getString(readLength());
             }
 
             templateString += ` ${attrName}="${escapeHtml(attrValueString)}"`;
@@ -510,7 +515,7 @@
     return [templateString, isSvg];
   }
 
-  let _installTemplate2 = () => {
+  let _installTemplate2 = (varint) => {
     let templateId = getUint16();
     let templateTokenList = [];
     let id;
@@ -519,7 +524,7 @@
       templateTokenList.push(GlobalTokenList[id]);
     }
 
-    let [templateString, isSvg] = _compileTemplate(templateTokenList);
+    let [templateString, isSvg] = _compileTemplate(templateTokenList, varint);
     const t = createElement("template");
     t.innerHTML = templateString;
     let node = t.content.firstChild;
@@ -537,51 +542,57 @@
 
     templateDefinitionMap.set(templateId, {
       tpl: node,
-      fn: _compileFn2(templateId)
+      fn: _compileFn2(varint)
     })
   }
 
-  let _compileFn2 = (templateId) => {
+  // Compact ELSCRIPT: uint8 counts and indices, 255 = root / "no marker".
+  // Varint ELSCRIPT: varint counts; refs are varint index + 1, 0 = root / "no marker".
+  let _compileFn2 = (varint) => {
     let fnString = "";
-    let refElementsCount = getUint8();
+    let readCount = varint ? getUvarint : getUint8;
+    // returns the element index, or -1 for root / "no marker"
+    let readRef = varint
+      ? () => getUvarint() - 1
+      : () => { let ref = getUint8(); return ref == 255 ? -1 : ref; };
+    let refElementsCount = readCount();
 
     for (let i = 0; i < refElementsCount; i++) {
       let rel = getUint8();
-      let relRefId = getUint8();
+      let relRefId = readRef();
 
       let FIRST_CHILD = 1;
 
       // root has no number associated in the variable name (let _) vs (let _1)
-      let refElName = relRefId < 255 ? relRefId : '';
+      let refElName = relRefId < 0 ? '' : relRefId;
       let referenceType = rel == FIRST_CHILD ? 'firstChild' : 'nextSibling';
 
       fnString += `let _${i}=_${refElName}.${referenceType};`;
     }
 
-    let anchorCount = getUint8();
+    let anchorCount = readCount();
 
     fnString += 'return [[';
 
     let str = [];
 
     for (i = 0; i < anchorCount; i++) {
-      let elId = getUint8();// elScript.anchors[i].el;
-      let beforeElId = getUint8();
+      let elId = readRef();
+      let beforeElId = readRef();
 
-      // in beforeEl context, 255 means undefined -- ie. no beforeEl applicable. 
-      // 255 that is usually used to refer to rootElement can be reused here since 
-      // there is no situation in which rootElement is an anchor's beforeElement.
-      let beforeElStr = beforeElId == 255 ? '' : `,marker:_${beforeElId}`;
-      str.push(`{el:_${(elId < 255 ? elId : '') + beforeElStr}}`);
+      // In beforeEl context the root sentinel means "no marker" (append); the root is never
+      // an anchor's next sibling, so the two can't be confused.
+      let beforeElStr = beforeElId < 0 ? '' : `,marker:_${beforeElId}`;
+      str.push(`{el:_${(elId < 0 ? '' : elId) + beforeElStr}}`);
     }
 
     fnString += str.join(',') + '],[';
 
-    let targetElementCount = getUint8();
+    let targetElementCount = readCount();
 
     str = [];
     for (i = 0; i < targetElementCount; i++) {
-      str.push(`_${getUint8()}`);
+      str.push(`_${readCount()}`);
     }
     fnString += str.join(',') + ']];';
 
@@ -907,6 +918,8 @@
 
       sequence._removeItems(startIndex, count);
     },
+    // 20: CMD_INSTALL_TEMPLATE_VARINT
+    () => _installTemplate2(true),
   ];
 
   let _constructItem = () => {
